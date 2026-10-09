@@ -75,12 +75,10 @@ sidecar → trim and cut → Save (ffmpeg, atomic, original kept).
 
 ## Risks and the first test
 
-- **Biggest unknown: a `QQuickWidget` inside an OBS dock on Wayland.** OBS has its own
-  OpenGL context for the preview. Nothing in OBS uses QML today. It could render fine, or
-  it could flicker or crash. **First step is a throwaway spike, not the plugin:** a plugin
-  with one dock that loads `EditBar.qml`, tested in a Test Drive VM. If it fails, the
-  fallback is Monologue's editor in its own window launched from the same plugin (still one
-  install, one hotkey, one recording button), and then we say so.
+- **Was the biggest unknown: a `QQuickWidget` inside an OBS dock on Wayland. Spike 1 answered it (ADR 0004).**
+  The default OpenGL path turned OBS's preview black; forcing Qt Quick's software renderer fixed it,
+  and Monologue's real `EditBar.qml` ran in the dock. Not yet proven on real hardware (the VM is virgl),
+  and video playback inside the dock was not tested.
 - **Qt Multimedia FFmpeg backend inside OBS:** only matters if the editor plays video through
   `QtMultimedia`. Both link the system ffmpeg on Arch, but check for symbol clashes in the spike.
 - **`obs-websocket` submodule is not checked out** in `obs/plugins/obs-websocket`. Harmless
@@ -102,6 +100,7 @@ sidecar → trim and cut → Save (ffmpeg, atomic, original kept).
 
 ## Next
 
-1. Practice copy: a Test Drive VM with Omarchy, OBS 32 and the Qt packages, started by one command.
-2. The dock spike above. Pass or fail decides decision 1's fallback.
-3. Screen design, then the plugin.
+1. Practice copy: done (Test Drive VM `test-drive-mobs-spike`).
+2. Dock spike: done, passed with software rendering (ADR 0004, `docs/spike-1-dock-in-obs.png`).
+3. Spike 2: play a recorded take inside the dock (video output without GL), and re-check on real hardware.
+4. Screen design, then the plugin.

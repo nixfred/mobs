@@ -12,5 +12,6 @@
   - Not ruled out: live streaming (stays in as an OBS feature), packaging (later).
 - Risk: the combined app is the largest option. Fallback if it stalls: record with OBS, open the take in Monologue's editor.
 - Tech design drafted 2026-10-09 (docs/tech-design.md, ADR 0003, decided): MOBS is an OBS plugin in mobs/ with a record dock and an edit dock, reusing Monologue's editor source by path, with the hotkey over D-Bus. OBS does all recording; Monologue's camera capture is dropped. Neither obs/ nor monologue/ is edited.
-- Biggest unknown: a QQuickWidget (QML) inside an OBS dock on Wayland. Fallback: the editor opens in its own window from the same plugin.
-- Next: practice copy (Test Drive VM with Omarchy, OBS 32, Qt), then the dock spike, then the screen design, then the plugin. Fred approved the tech design 2026-10-09; hotkey is physical Alt + Shift + V (pause: Ctrl + Alt + Shift + V), checked free.
+- Spike 1 PASSED 2026-10-09 (ADR 0004, mobs/spike/, docs/spike-1-dock-in-obs.png): Monologue's real EditBar.qml runs in an OBS dock on native Wayland. The default OpenGL Qt Quick path turned OBS's preview black; software rendering fixed it (A/B in a Test Drive VM). Not yet proven on real hardware (VM is virgl) or with video playback in the dock.
+- Practice copy: Test Drive VM test-drive-mobs-spike (OBS 32.2.2, Qt 6.11.2, cmake/ninja added; its package DB was stale, refreshed with pacman -Sy).
+- Next: spike 2 (play a take inside the dock without GL, check on gus hardware), then the screen design, then the plugin.
