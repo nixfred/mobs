@@ -1,0 +1,11 @@
+# OBS's own submodules, re-mapped under obs/ because OBS lives here as a git subtree.
+# A subtree merge brings OBS's gitlink bumps along; this file lets `git submodule update --init` act on them.
+[submodule "obs/deps/libdshowcapture/src"]
+	path = obs/deps/libdshowcapture/src
+	url = https://github.com/obsproject/libdshowcapture.git
+[submodule "obs/plugins/obs-browser"]
+	path = obs/plugins/obs-browser
+	url = https://github.com/obsproject/obs-browser.git
+[submodule "obs/plugins/obs-websocket"]
+	path = obs/plugins/obs-websocket
+	url = https://github.com/obsproject/obs-websocket.git

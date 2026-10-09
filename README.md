@@ -22,8 +22,8 @@ From Clarity's Idea Box: control-plane #10 “Go fork https://github.com/omacom/
 
 ### Follow-up answers
 
-- Approach: should MOBS be a real fork of both programs or a small wrapper around them?: not answered
-- Main use: what do you want to do most with MOBS?: not answered
+- Approach: should MOBS be a real fork of both programs or a small wrapper around them?: A new project, set up so it can always pull commit updates from both official upstreams (answered 2026-10-09; see docs/adr/0002-one-repo-two-upstreams.md)
+- Main use: what do you want to do most with MOBS?: ALL the features of OBS and Monologue, made into one big usable project (answered 2026-10-09)
 - Control: how should you start and stop it?: not answered
 
 ## Set-up choices
