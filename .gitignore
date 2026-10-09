@@ -1,0 +1,10 @@
+.env
+.newproject.json
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+.venv/
+dist/
+build/
+.DS_Store
