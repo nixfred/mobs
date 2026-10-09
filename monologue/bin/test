@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+export QT_QPA_PLATFORM=offscreen
+export QT_QPA_PLATFORMTHEME=
+export QT_QUICK_BACKEND=software
+for target in backend ui; do
+  mkdir -p "$ROOT/build/tests-$target"
+  cd "$ROOT/build/tests-$target"
+  qmake6 "$ROOT/tests/${target}_tests.pro"
+  make -j2
+  "./${target}_tests"
+done

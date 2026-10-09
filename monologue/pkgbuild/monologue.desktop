@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Monologue
+Comment=Record your camera with one key
+Exec=monologue
+Icon=monologue
+Terminal=false
+Categories=AudioVideo;Video;Recorder;
+Keywords=webcam;camera;record;video;
+StartupNotify=true

@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Explicit opt-in: this records approximately four seconds from the default or
+# remembered test camera and microphone, with a pause, and retains the clip.
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/camera-check"
+cd "$ROOT/build/camera-check"
+qmake6 "$ROOT/tests/camera_check.pro"
+make -j2
+export QT_QPA_PLATFORM=offscreen
+export QT_QPA_PLATFORMTHEME=
+exec ./camera_check
