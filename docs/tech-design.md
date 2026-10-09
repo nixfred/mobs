@@ -1,6 +1,6 @@
 # MOBS tech design (draft 1, 2026-10-09)
 
-Status: proposed. Written from reading both codebases. Nothing here is built yet.
+Status: approved by Fred 2026-10-09 (ADR 0003). Written from reading both codebases. Nothing here is built yet.
 Inputs: README.md (what was agreed), docs/adr/0002 (one repo, two upstreams).
 
 ## The answer in one paragraph
@@ -87,6 +87,12 @@ sidecar → trim and cut → Save (ffmpeg, atomic, original kept).
   here (we build against installed OBS), but a from-source OBS build would need
   `git submodule update --init`.
 - **Windows and macOS** code stays in `obs/` untouched and unbuilt (README: left out).
+
+## Hotkeys (decided by Fred, 2026-10-09)
+
+- **Start/stop:** physical Alt + Shift + V (Hyprland `SUPER + SHIFT + V`). Pause/resume: physical Ctrl + Alt + Shift + V (`SUPER + CTRL + SHIFT + V`).
+- Alt + Shift + R was Fred's first choice but is taken by "Rename workspace" (`bindings.lua`), so V (video) won. Both V chords were free in the live Hyprland table on 2026-10-09; re-check before binding.
+- Described by physical key labels: Alt sends SUPER on gus, no Windows-logo key needed.
 
 ## Not decided here
 

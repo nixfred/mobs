@@ -1,7 +1,7 @@
 # 3. MOBS is an OBS plugin that reuses Monologue's editor
 
 - Date: 2026-10-09
-- Status: proposed (Larry's draft; Fred has not yet reviewed it)
+- Status: decided (Fred approved, 2026-10-09)
 
 ## Decision
 
