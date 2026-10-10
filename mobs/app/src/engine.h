@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QTimer>
 #include <functional>
+#include <utility>
 
 // MOBS's recording state machine, for QML. It knows nothing about libobs: it drives a RecorderBackend.
 // idle -> starting -> recording <-> paused -> stopping -> idle
@@ -33,6 +34,9 @@ public:
 
     Q_INVOKABLE void start(int pick);     // 2 and 3 need a chosen camera: without one they say so instead of recording nothing
     void setCameraProvider(std::function<CameraSpec()> provider) { m_camera = std::move(provider); }
+    // Where recordings go, and how, asked at every start so a change in the Pro drawer applies to the next recording.
+    void setFolderProvider(std::function<QString()> provider) { m_folderFn = std::move(provider); }
+    void setOptionsProvider(std::function<std::pair<int, bool>()> provider) { m_optionsFn = std::move(provider); }   // {crf, mic}
     // Show what would be recorded. wanted=false, or a camera mode with no usable camera, switches the preview off.
     // Safe to call again whenever the pick, camera or placement changes. Never touches the recording state.
     Q_INVOKABLE void setPreview(bool wanted, int pick);
@@ -60,6 +64,8 @@ private:
     void checkPicture(const QString &path);
     RecorderBackend *m_backend;
     std::function<CameraSpec()> m_camera;
+    std::function<QString()> m_folderFn;
+    std::function<std::pair<int, bool>()> m_optionsFn;
     QString m_dir, m_message, m_lastFile, m_warning;
     QList<double> m_pauseMarks;   // where in the take (seconds of recorded time) the user paused
     State m_state = Idle;

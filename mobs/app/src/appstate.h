@@ -22,6 +22,7 @@ class AppState : public QObject {
     Q_PROPERTY(int corner READ corner NOTIFY cameraChanged)              // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     Q_PROPERTY(int size READ size NOTIFY cameraChanged)                  // 0 small, 1 medium, 2 large
     Q_PROPERTY(bool cameraPanel READ cameraPanel NOTIFY cameraPanelChanged)
+    Q_PROPERTY(bool pro READ pro NOTIFY proChanged)                       // the Pro drawer is open
     Q_PROPERTY(bool preview READ preview NOTIFY previewChanged)          // show what will be recorded (off by default)
 public:
     using CameraScan = std::function<QList<CameraInfo>()>;
@@ -38,6 +39,7 @@ public:
     int size() const { return m_size; }
     bool cameraPanel() const { return m_panel; }
     bool preview() const { return m_preview; }
+    bool pro() const { return m_pro; }
     CameraSpec cameraSpec() const;       // what the recorder needs; invalid when no connected camera is chosen
     Q_INVOKABLE void choose(int pick);   // 1 my screen, 2 screen + me, 3 just my camera
     Q_INVOKABLE void back();             // ready -> choose
@@ -50,12 +52,14 @@ public:
     Q_INVOKABLE QRectF cameraRectNormalized() const;   // 0..1 of the canvas: the SAME rectangle the recording uses
     Q_INVOKABLE void setCameraPanel(bool open);
     Q_INVOKABLE void setPreview(bool on);
+    Q_INVOKABLE void setPro(bool open);
 signals:
     void screenChanged();
     void camerasChanged();
     void cameraChanged();
     void cameraPanelChanged();
     void previewChanged();
+    void proChanged();
     void pickChanged();
 private:
     const CameraInfo *currentCamera() const;
@@ -65,7 +69,7 @@ private:
     QList<CameraInfo> m_cams;
     QString m_camera;
     int m_corner = 3, m_size = 1;
-    bool m_panel = false, m_preview = false;
+    bool m_panel = false, m_preview = false, m_pro = false;
     int m_screen = 1, m_pick = 0;
     bool m_recording = false, m_reviewing = false;
 };

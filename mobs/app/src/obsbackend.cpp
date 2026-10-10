@@ -217,12 +217,13 @@ bool ObsBackend::sourcesReady() const {
 
 // ---------------------------------------------------------------- the recording (mic, encoders, file)
 
-bool ObsBackend::startOutput(const QString &path, QString *error) {
-    m_mic = obs_source_create("pulse_input_capture", "mic", nullptr, nullptr);   // default input device
+bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
+    // The audio track always exists (the file format wants one); with the mic off it is silence.
+    if (spec.mic) m_mic = obs_source_create("pulse_input_capture", "mic", nullptr, nullptr);   // default input device
     if (m_mic) { obs_source_set_audio_mixers(m_mic, 1); obs_set_output_source(1, m_mic); }
 
     obs_data_t *vs = obs_data_create();
-    obs_data_set_string(vs, "rate_control", "CRF"); obs_data_set_int(vs, "crf", 23);
+    obs_data_set_string(vs, "rate_control", "CRF"); obs_data_set_int(vs, "crf", spec.crf);
     m_venc = obs_video_encoder_create("obs_x264", "mobs video", vs, nullptr);
     obs_data_release(vs);
     obs_data_t *as = obs_data_create();
@@ -234,7 +235,7 @@ bool ObsBackend::startOutput(const QString &path, QString *error) {
     obs_encoder_set_audio(m_aenc, obs_get_audio());
 
     obs_data_t *os = obs_data_create();
-    obs_data_set_string(os, "path", path.toUtf8().constData());
+    obs_data_set_string(os, "path", spec.path.toUtf8().constData());
     m_out = obs_output_create("mp4_output", "mobs recording", os, nullptr);
     obs_data_release(os);
     if (!m_out) { *error = "could not create the file output"; return false; }
@@ -277,6 +278,7 @@ void ObsBackend::begin(const RecordSpec &spec) {
         return;
     }
     m_path = spec.path;
+    m_spec = spec;
     m_phase = Waiting;
     m_waited.start();
     m_screenReady.invalidate();
@@ -297,7 +299,7 @@ void ObsBackend::poll() {
                 if (!tok.isEmpty()) writeToken(m_tokenFile, tok);
             }
             QString error;
-            if (!startOutput(m_path, &error)) { fail(error); return; }
+            if (!startOutput(m_spec, &error)) { fail(error); return; }
             m_phase = Running;
             emit started();
         } else if (m_needCamera && !m_testCamera && m_waited.elapsed() > 15000 && (!m_needScreen || (m_screenReady.isValid() && m_screenReady.elapsed() > 15000))) {

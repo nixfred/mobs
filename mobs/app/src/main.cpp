@@ -5,6 +5,7 @@
 #include "palette.h"
 #include "previewmodel.h"
 #include "review.h"
+#include "settings.h"
 #include "thumbprovider.h"
 #include <QDateTime>
 #include <QQmlContext>
@@ -30,6 +31,7 @@ int main(int argc, char *argv[]) {
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
     Palette palette(qEnvironmentVariable("MOBS_THEME_DIR"));
     QSettings settings(qEnvironmentVariable("MOBS_SETTINGS", QSettings().fileName()), QSettings::IniFormat);
+    Settings prefs(&settings);
     // MOBS_FAKE_CAMERAS=1: two sample cameras, for screenshots and tests on a machine without a webcam.
     AppState state(&settings, nullptr, qEnvironmentVariable("MOBS_FAKE_CAMERAS") == "1"
         ? AppState::CameraScan([] { return QList<CameraInfo>{{"fake:brio", "Logitech BRIO", true}, {"fake:hd", "HD Webcam", false}}; })
@@ -42,6 +44,8 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(cfg);
     ObsBackend backend(qEnvironmentVariable("MOBS_TOKEN_FILE", cfg + "/screen-token"));
     Engine recorder(&backend, qEnvironmentVariable("MOBS_REC_DIR", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/mobs"));
+    recorder.setFolderProvider([&] { return prefs.folder(); });
+    recorder.setOptionsProvider([&] { return std::make_pair(Settings::crfFor(prefs.quality()), prefs.micOn()); });
     recorder.setCameraProvider([&] { return state.cameraSpec(); });
     QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); state.setCameraPanel(true); });
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
@@ -52,7 +56,7 @@ int main(int argc, char *argv[]) {
     Review review;
     QObject::connect(&review, &Review::openChanged, &state, [&] { state.setReviewing(review.isOpen()); });
     // After a recording is saved, open it for review. Starting a new recording (e.g. by hotkey) closes the review: the take stays on disk.
-    QObject::connect(&recorder, &Engine::saved, &review, [&](const QString &path) { review.open(path); });
+    QObject::connect(&recorder, &Engine::saved, &review, [&](const QString &path) { if (prefs.reviewAfter()) review.open(path); });
     QObject::connect(&recorder, &Engine::stateChanged, &review, [&] { if (recorder.active() && review.isOpen() && !review.saving()) review.close(); });
     PreviewModel preview;
     QObject::connect(&backend, &RecorderBackend::previewFrame, &preview, &PreviewModel::setFrame);
@@ -66,6 +70,7 @@ int main(int argc, char *argv[]) {
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Omarchy", &palette);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Preview", &preview);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Review", &review);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Prefs", &prefs);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
 
@@ -89,6 +94,7 @@ int main(int argc, char *argv[]) {
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
     //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
     //   grabpreview=/path.png   (save the newest live-preview frame; for checks)
+    //   pro=0/1 | tab=N (drawer)   quality=N | mic=0/1
     //   review=/path.mp4 | split=SECONDS | cut=INDEX | savereview | waitsaved | closereview   (the editor, for checks)
     // e.g. MOBS_SCRIPT=start,waitrec,wait=3,pause,wait=2,resume,wait=2,stop,waitidle,quit   (for tests and checks only)
     if (const QString script = qEnvironmentVariable("MOBS_SCRIPT"); !script.isEmpty()) {
@@ -106,7 +112,7 @@ int main(int argc, char *argv[]) {
             };
             (*poll)();
         };
-        *run = [=, &app, &recorder, &state, &preview, &review]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -121,6 +127,9 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("grabpreview=")) { std::printf("script: grabpreview %d\n", int(preview.image().save(st.mid(12)))); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("pro=")) { state.setPro(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("quality=")) { prefs.setQuality(st.mid(8).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("mic=")) { prefs.setMicOn(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("review=")) { std::printf("script: review %d\n", int(review.open(st.mid(7)))); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("split=")) { review.split(st.mid(6).toDouble()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("cut=")) { review.removeClip(st.mid(4).toInt()); QTimer::singleShot(0, &app, *run); }

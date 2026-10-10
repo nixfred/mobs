@@ -16,7 +16,7 @@ find_package(libobs REQUIRED)
 qt_policy(SET QTP0001 NEW)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
-add_library(mobs-core STATIC src/recorderbackend.h src/palette.cpp src/appstate.cpp src/camera.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
+add_library(mobs-core STATIC src/recorderbackend.h src/palette.cpp src/appstate.cpp src/camera.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
 target_include_directories(mobs-core PUBLIC src ${MONOLOGUE_SRC})
 target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Multimedia OBS::libobs)
 
@@ -28,11 +28,11 @@ qt_add_qml_module(mobs
   VERSION 1.0
   QML_FILES
     qml/Main.qml qml/Txt.qml qml/Glyph.qml qml/Key.qml qml/Chip.qml qml/Card.qml
-    qml/Header.qml qml/Footer.qml qml/ChooseScreen.qml qml/ReadyScreen.qml qml/RecordingScreen.qml qml/CameraPanel.qml qml/PreviewView.qml qml/ReviewScreen.qml qml/Button.qml ${MONOLOGUE_SRC}/EditBar.qml
+    qml/Header.qml qml/Footer.qml qml/ChooseScreen.qml qml/ReadyScreen.qml qml/RecordingScreen.qml qml/CameraPanel.qml qml/PreviewView.qml qml/ReviewScreen.qml qml/Button.qml qml/ProDrawer.qml qml/Toggle.qml ${MONOLOGUE_SRC}/EditBar.qml
 )
 target_link_libraries(mobs PRIVATE mobs-core)
 
-foreach(t palette appstate engine control camera preview review obsbackend)
+foreach(t palette appstate engine control camera preview review settings obsbackend)
   add_executable(tst_${t} tests/tst_${t}.cpp)
   target_link_libraries(tst_${t} PRIVATE mobs-core Qt6::Test)
   # QTest pulls all of QtCore, which trips GCC 16 over Qt's own QBitArray (same flag Monologue uses).

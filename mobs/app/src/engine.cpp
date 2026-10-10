@@ -59,14 +59,20 @@ void Engine::start(int pick) {
         emit cameraNeeded();
         return;
     }
-    QDir().mkpath(m_dir);
-    const QString path = m_dir + "/mobs " + QDateTime::currentDateTime().toString("yyyy-MM-dd HH-mm-ss") + ".mp4";
+    const QString dir = m_folderFn ? m_folderFn() : m_dir;
+    if (!QDir().mkpath(dir) || !QFileInfo(dir).isWritable()) {
+        setMessage("cannot save to " + dir + ": choose another folder in pro > recording");
+        return;
+    }
+    const QString path = dir + "/mobs " + QDateTime::currentDateTime().toString("yyyy-MM-dd HH-mm-ss") + ".mp4";
     m_banked = 0;
     m_clock.invalidate();
     m_pauseMarks.clear();
     setMessage({});
     setState(Starting);
-    m_backend->begin(RecordSpec{pick, path, cam});
+    RecordSpec spec{pick, path, cam};
+    if (m_optionsFn) { const auto o = m_optionsFn(); spec.crf = o.first; spec.mic = o.second; }
+    m_backend->begin(spec);
 }
 
 void Engine::toggle(int pick) {

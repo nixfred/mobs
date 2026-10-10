@@ -139,3 +139,9 @@ void AppState::setPreview(bool on) {
     m_settings->sync();
     emit previewChanged();
 }
+
+void AppState::setPro(bool open) {
+    if (open == m_pro) return;
+    m_pro = open;
+    emit proChanged();
+}

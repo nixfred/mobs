@@ -35,7 +35,7 @@ private:
     bool ensureGraph(const RecordSpec &spec, QString *error);
     void applyPlacement(const RecordSpec &spec);
     void dropGraph();
-    bool startOutput(const QString &path, QString *error);
+    bool startOutput(const RecordSpec &spec, QString *error);
     void stopOutput();
     bool sourcesReady() const;
     void poll();
@@ -47,6 +47,7 @@ private:
     static void rawFrameCb(void *self, video_data *frame);
 
     QString m_tokenFile, m_path;
+    RecordSpec m_spec;                      // the recording being made (quality, microphone)
     bool m_libobsUp = false, m_needScreen = true, m_needCamera = false, m_testScreen = false, m_testCamera = false;
     bool m_graphUp = false, m_previewOn = false, m_previewCb = false;
     int m_graphPick = 0;

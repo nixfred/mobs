@@ -14,6 +14,8 @@ struct RecordSpec {
     int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
     QString path;            // the file to write
     CameraSpec camera;
+    int crf = 23;            // x264 constant rate factor (lower = bigger, better); from the quality setting
+    bool mic = true;         // record the default microphone
 };
 
 // The narrow door between MOBS and whatever actually records. Today the only real implementation is libobs

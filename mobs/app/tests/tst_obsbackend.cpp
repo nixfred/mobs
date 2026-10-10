@@ -250,6 +250,30 @@ private slots:
             QVERIFY(!finished.isEmpty() && QFileInfo(spec.path).size() > 1000);
         }
     }
+    // ---- the quality setting must really change the file ------------------------------------------------------------
+    qint64 recordedSize(const QString &dir, int crf, const QString &clip) {
+        qputenv("MOBS_TEST_CAMERA", ("video:" + clip).toUtf8());
+        ObsBackend b(dir + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.pick = 3; spec.camera.path = "test"; spec.crf = crf; spec.path = dir + QString("/q%1.mp4").arg(crf);
+        b.begin(spec);
+        started.wait(15000);
+        if (started.isEmpty()) return -1;
+        QTest::qWait(2500);
+        b.end();
+        finished.wait(20000);
+        return (finished.isEmpty() || !failed.isEmpty()) ? -1 : QFileInfo(spec.path).size();
+    }
+    void aHigherQualitySettingMakesABiggerFileOfTheSamePicture() {
+        QTemporaryDir d;
+        const QString clip = d.path() + "/busy.mp4";
+        QProcess g; g.start("ffmpeg", {"-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30", "-t", "20", "-pix_fmt", "yuv420p", clip});
+        QVERIFY(g.waitForFinished(30000) && g.exitCode() == 0);
+        const qint64 small = recordedSize(d.path(), 32, clip);                // quality "small"
+        const qint64 large = recordedSize(d.path(), 16, clip);                // quality "high"
+        QVERIFY2(small > 0 && large > 0, "a recording failed");
+        QVERIFY2(large > small * 1.3, qPrintable(QString("high quality %1 bytes is not clearly bigger than small %2").arg(large).arg(small)));
+    }
     void aCameraThatNeverStartsIsReportedAsACameraProblem() {
         qunsetenv("MOBS_TEST_CAMERA");
         QTemporaryDir d;

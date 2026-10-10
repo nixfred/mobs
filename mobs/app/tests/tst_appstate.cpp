@@ -140,6 +140,14 @@ private slots:
         QSettings s2(f, QSettings::IniFormat); AppState b(&s2, nullptr, [] { return QList<CameraInfo>(); });
         QVERIFY(b.preview());
     }
+    void theProDrawerOpensAndClosesAndStartsClosed() {
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
+        QVERIFY(!a.pro());
+        QSignalSpy sp(&a, &AppState::proChanged);
+        a.setPro(true); a.setPro(true); a.setPro(false);
+        QCOMPARE(sp.count(), 2);
+    }
     void panelOpensAndCloses() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
         AppState a(&s, nullptr, [] { return twoCameras(); });

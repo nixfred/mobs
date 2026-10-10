@@ -303,6 +303,48 @@ private slots:
         emit b.finished(d.path() + "/never-existed.mp4");                 // the file is gone: no crash, no stray sidecar
         QVERIFY(!QFileInfo::exists(Review::sidecarPath(d.path() + "/never-existed.mp4")));
     }
+    // ---- recording options from the Pro drawer ------------------------------------------------------------------------
+    void theQualityAndMicSettingsReachTheBackendAtEveryStart() {
+        FakeBackend b; Engine e(&b, dir.path());
+        std::pair<int, bool> opts{28, false};
+        e.setOptionsProvider([&] { return opts; });
+        e.start(1);
+        QCOMPARE(b.lastSpec.crf, 28);
+        QVERIFY(!b.lastSpec.mic);
+        emit b.started(); e.stop(); emit b.finished(QString());
+        opts = {18, true};                                                // changed in the drawer between recordings
+        e.start(1);
+        QCOMPARE(b.lastSpec.crf, 18);
+        QVERIFY(b.lastSpec.mic);
+    }
+    void theFolderSettingDecidesWhereTheFileGoesAtEveryStart() {
+        FakeBackend b; Engine e(&b, dir.path());
+        QTemporaryDir other;
+        QString chosen = other.path() + "/one";
+        e.setFolderProvider([&] { return chosen; });
+        e.start(1);
+        QVERIFY2(b.lastPath.startsWith(chosen + "/mobs "), qPrintable(b.lastPath));
+        QVERIFY(QFileInfo(chosen).isDir());                               // made on demand
+        emit b.started(); e.stop(); emit b.finished(QString());
+        chosen = other.path() + "/two";
+        e.start(1);
+        QVERIFY(b.lastPath.startsWith(other.path() + "/two/mobs "));
+    }
+    void anUnusableFolderExplainsItselfAndRecordsNothing() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setFolderProvider([] { return QString("/proc/not/a/place"); });
+        e.start(1);
+        QCOMPARE(b.began, 0);
+        QCOMPARE(e.state(), QString("idle"));
+        QVERIFY(e.message().contains("cannot save to"));
+        QVERIFY(e.message().contains("pro"));                             // and says where to fix it
+    }
+    void withoutProvidersTheDefaultsApply() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1);
+        QCOMPARE(b.lastSpec.crf, 23);
+        QVERIFY(b.lastSpec.mic);
+    }
     void aLateStartedSignalAfterStopIsIgnored() {
         FakeBackend b; Engine e(&b, dir.path());
         e.start(1); e.stop();
