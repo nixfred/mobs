@@ -92,7 +92,8 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
     m_needScreen = spec.pick != 3;
     m_needCamera = spec.pick != 1;
     m_testScreen = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";    // tests record without the picker
-    m_testCamera = qEnvironmentVariable("MOBS_TEST_CAMERA") == "colour";    // and without a webcam
+    const QString testCam = qEnvironmentVariable("MOBS_TEST_CAMERA");       // "colour" or "video:/path/file.mp4": no webcam needed
+    m_testCamera = testCam == "colour" || testCam.startsWith("video:");
 
     if (m_needScreen) {
         if (m_testScreen) {
@@ -117,7 +118,16 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
     }
 
     if (m_needCamera) {
-        if (m_testCamera) {
+        if (m_testCamera && testCam.startsWith("video:")) {
+            // An ASYNC source like a real webcam: its size is unknown until its first frame arrives. A solid colour source
+            // has its size from the start and hides the bug this exists to catch.
+            obs_data_t *cs = obs_data_create();
+            obs_data_set_bool(cs, "is_local_file", true);
+            obs_data_set_string(cs, "local_file", testCam.mid(6).toUtf8().constData());
+            obs_data_set_bool(cs, "looping", true);
+            m_camera = obs_source_create("ffmpeg_source", "test camera video", cs, nullptr);
+            obs_data_release(cs);
+        } else if (m_testCamera) {
             obs_data_t *cs = obs_data_create();
             obs_data_set_int(cs, "color", qEnvironmentVariable("MOBS_TEST_CAMERA_COLOUR", "FF00C800").toUInt(nullptr, 16));
             obs_data_set_int(cs, "width", 1280); obs_data_set_int(cs, "height", 720);
@@ -129,6 +139,9 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
             if (spec.camera.mjpg720) {                                            // otherwise the camera's own (often slow, small) default
                 obs_data_set_int(cs, "pixelformat", V4L2_PIX_FMT_MJPEG);
                 obs_data_set_int(cs, "resolution", (qint64(1280) << 32) | 720);   // the v4l2 plugin packs width and height like this
+                // Webcam MJPEG is FULL range (0-255). Left at "default" libobs treats it as limited (16-235), which crushes
+                // dark pixels to black: in a dim room most of the picture disappears.
+                obs_data_set_int(cs, "color_range", VIDEO_RANGE_FULL);
             }
             m_camera = obs_source_create("v4l2_input", "camera", cs, nullptr);
             obs_data_release(cs);

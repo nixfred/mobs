@@ -130,6 +130,34 @@ private slots:
         for (QPoint p : {QPoint(100, 100), QPoint(960, 540), QPoint(1820, 980), QPoint(100, 980), QPoint(1820, 100)})
             QVERIFY2(greenAt(f, p.x(), p.y()), qPrintable(QString("not camera at %1,%2").arg(p.x()).arg(p.y())));
     }
+    // A live webcam is an ASYNC source (size known only after its first frame). A solid colour hides scaling bugs, so this
+    // uses a video file as the stand-in: a test pattern that has picture content in every corner of a 1280x720 frame.
+    void anAsyncCameraSourceFillsTheFrameInCameraOnlyMode() {
+        QTemporaryDir d;
+        const QString clip = d.path() + "/pattern.mp4";
+        QProcess g; g.start("ffmpeg", {"-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30", "-t", "20", "-pix_fmt", "yuv420p", clip});
+        QVERIFY(g.waitForFinished(30000) && g.exitCode() == 0);
+        qputenv("MOBS_TEST_CAMERA", ("video:" + clip).toUtf8());
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.pick = 3; spec.path = d.path() + "/fill.mp4"; spec.camera.path = "test";
+        b.begin(spec);
+        started.wait(15000);
+        QVERIFY2(!started.isEmpty(), "never started");
+        QTest::qWait(2500);
+        b.end();
+        finished.wait(20000);
+        QVERIFY(failed.isEmpty() && !finished.isEmpty());
+        const QByteArray f = stillRgb(spec.path);
+        QVERIFY(f.size() == 192 * 108 * 3);
+        // testsrc2 is bright and busy everywhere: every probe point across the 1920x1080 canvas must be non-black
+        int dark = 0;
+        for (QPoint p : {QPoint(60, 60), QPoint(1860, 60), QPoint(60, 1020), QPoint(1860, 1020), QPoint(960, 540), QPoint(480, 270), QPoint(1440, 810)}) {
+            const int i = ((p.y() / 10) * 192 + (p.x() / 10)) * 3;
+            if ((unsigned char)f[i] + (unsigned char)f[i + 1] + (unsigned char)f[i + 2] < 30) ++dark;
+        }
+        QVERIFY2(dark == 0, qPrintable(QString("%1 of 7 probe points are black: the picture does not fill the frame").arg(dark)));
+    }
     void aCameraThatNeverStartsIsReportedAsACameraProblem() {
         qunsetenv("MOBS_TEST_CAMERA");
         QTemporaryDir d;
