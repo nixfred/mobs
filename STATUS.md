@@ -70,3 +70,9 @@ The app ran on gus with real PipeWire capture via its own test script (no synthe
 - New dependency: qt6-websockets (not on gus yet).
 - Not built: the Hyprland bind itself on gus (needs Fred's OK),   the Pro drawer and its tabs,  the recording pill, the first-run permission screen, a real run on gus with a screen/window pick.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).
+
+## Pro drawer (2026-10-10): built, tested, pushed
+
+The header "pro" chip (and the P key on screens 1, 2 and 4; Esc closes) opens a right-hand drawer with four tabs: **recording** (quality small / balanced / high = x264 CRF 28 / 23 / 18, save folder with live validation, open folder, reset, open the editor after recording, live preview), **audio** (microphone on or off), **keys** (the hotkey list) and **about**. Settings persist in MOBS's own settings file and apply to the next recording. An unusable folder stops the recording with "cannot save to ... choose another folder in pro > recording" instead of failing silently. 10 of 10 unit suites pass on gus; the 15 real-libobs tests pass in the VM, including one that checks a higher quality makes a bigger file of the same picture. Render: `docs/app/pro-drawer.png` (offscreen, colour test source, isolated settings; no real screen or camera). NOT yet installed to ~/.local: Fred's own MOBS was still recording from the installed binary, so install waits for it to go idle.
+
+Still to do in Pro: frame rate and resolution (needs obs_reset_video while idle), mic level meter and desktop audio, encoder choice (NVENC), per-source volume.

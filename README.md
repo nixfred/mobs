@@ -62,4 +62,4 @@ Not ruled out, not planned first: live streaming (an OBS feature, so it stays in
 
 ## Status
 
-Shaped (2026-10-09): who it's for, what it must do and what's left out are settled above. The tech design (`docs/tech-design.md`) and the screen design (`docs/screen-design.md`) are drafted and approved in direction. Next: spike 3 (OBS hidden, controlled over websocket), then the build. See STATUS.md.
+Shaped (2026-10-09): who it's for, what it must do and what's left out are settled above. The tech design (`docs/tech-design.md`) and the screen design (`docs/screen-design.md`) are drafted and approved in direction. Since then (2026-10-10) the app is built and records for real: choose and ready screens, screen, webcam and mic capture with libobs in-process, a live preview, the review screen with Monologue's editor, and a Pro drawer. See STATUS.md.

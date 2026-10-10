@@ -91,4 +91,5 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 1. DONE in the VM (2026-10-09): `Engine` + `RecorderBackend` + `ObsBackend`, tests, and a record button that really records. Next: one real run on gus (picker once).
 1b. The Alt+Shift+V hotkey over D-Bus.
 2. DONE: live preview (see Risks).
-3. DONE: the review screen with Monologue's editor (2026-10-10). Next: the Pro drawer (output folder and quality, audio, hotkeys).
+3. DONE: the review screen with Monologue's editor (2026-10-10). Next: the Pro drawer.
+4. DONE: the Pro drawer, first cut (2026-10-10): quality (CRF), save folder, mic on/off, editor-after, keys, about (`mobs/app/src/settings.*`, `qml/ProDrawer.qml`). Next: frame rate and resolution (`obs_reset_video` when idle), mic level meter and desktop audio, encoder choice, then building libobs from the obs/ subtree.

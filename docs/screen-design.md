@@ -73,7 +73,7 @@ Edits never touch the original (Monologue's rule, kept).
 ### 5. Pro drawer
 Tabs: **sources** (display, mic, camera, layout), **audio** (levels, per-source gain, noise tools), **output**
 (format, encoder, quality, frame rate, folder), **keys** (hotkeys). **Open full OBS** sits at the bottom with
-"everything else is there." Only the sources tab is drawn so far.
+"everything else is there." Built 2026-10-10 (see below): recording, audio, keys and about tabs; sources, encoder and frame rate are still to come.
 
 ## How the beginner choices map to OBS
 
@@ -107,3 +107,7 @@ the frame, so it needs no placement. Choosing a camera mode with no camera chose
 Screens: `docs/app/review-r1.png` (just stopped), `review-r2.png` (after cutting the middle out), `review-r3.png` (after saving). Video on top,
 Monologue's timeline underneath (kept clips lit, cut parts dimmed, white marks where you paused), a play button with the time, then
 **save edit** (filled), **done**, and **delete take** (red, asks first). Leaving with unsaved edits asks first ("leave without saving").
+
+## Pro drawer (built 2026-10-10)
+
+Screenshot: `docs/app/pro-drawer.png`. A 420 px drawer slides in on the right; the screen beside it re-centres in the space that is left. Tabs: **recording** (quality small / balanced / high with a plain-language line under it, save-recordings-in folder field that validates as you leave it, open folder, reset, "open the editor after recording", "live preview"), **audio** (record my microphone), **keys** (Alt Shift V, Ctrl Alt Shift V, Space, P, Esc, and the editor keys) and **about**. Opened by the lit-up "pro" chip or P; closed by the chip, P or Esc. P is ignored while recording, so nothing changes under a running take.
