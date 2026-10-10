@@ -1,4 +1,5 @@
 #include "appstate.h"
+#include "control.h"
 #include "engine.h"
 #include "obsbackend.h"
 #include "palette.h"
@@ -34,6 +35,9 @@ int main(int argc, char *argv[]) {
     ObsBackend backend(qEnvironmentVariable("MOBS_TOKEN_FILE", cfg + "/screen-token"));
     Engine recorder(&backend, qEnvironmentVariable("MOBS_REC_DIR", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/mobs"));
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
+
+    Control control(&recorder, &state);
+    if (qEnvironmentVariable("MOBS_NO_HOTKEY") != "1") control.registerOnSessionBus();   // tests that run several copies set MOBS_NO_HOTKEY=1
 
     qmlRegisterSingletonInstance("Mobs", 1, 0, "Omarchy", &palette);
     qmlRegisterSingletonInstance("Mobs", 1, 0, "Engine", &recorder);

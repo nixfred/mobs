@@ -8,13 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 enable_testing()
 
-find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick Test)
+find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick DBus Test)
 find_package(libobs REQUIRED)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
-add_library(mobs-core STATIC src/recorderbackend.h src/palette.cpp src/appstate.cpp src/engine.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp)
+add_library(mobs-core STATIC src/recorderbackend.h src/palette.cpp src/appstate.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp)
 target_include_directories(mobs-core PUBLIC src ${MONOLOGUE_SRC})
-target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick OBS::libobs)
+target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus OBS::libobs)
 
 qt_add_executable(mobs src/main.cpp)
 qt_add_qml_module(mobs
@@ -26,7 +26,7 @@ qt_add_qml_module(mobs
 )
 target_link_libraries(mobs PRIVATE mobs-core)
 
-foreach(t palette appstate engine obsbackend)
+foreach(t palette appstate engine control obsbackend)
   add_executable(tst_${t} tests/tst_${t}.cpp)
   target_link_libraries(tst_${t} PRIVATE mobs-core Qt6::Test)
   # QTest pulls all of QtCore, which trips GCC 16 over Qt's own QBitArray (same flag Monologue uses).

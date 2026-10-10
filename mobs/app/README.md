@@ -8,11 +8,26 @@ theme switches, contrast guard); your pick remembered; the real display name; an
 this process** (ADR 0006): Space or the red button starts, Space pauses and resumes, Enter stops and saves an MP4
 (H.264 + AAC) under `~/Videos/mobs`. The first screen recording opens the system's screen picker once; MOBS saves the
 restore token itself (`~/.config/mobs/screen-token`), so later recordings are silent. **Not wired yet (labelled on screen):**
-the Alt + Shift + V hotkey, camera sources, the review screen, the Pro drawer, a live preview.
+camera sources, the review screen, the Pro drawer, a live preview.
 
 Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a narrow interface: begin, pause, end).
 The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine
 be swapped for another language later (Fred chose C++17 + QML first, 2026-10-09).
+
+## The hotkey (physical Alt + Shift + V)
+
+MOBS exports `org.mobs.Control` on the session bus: `Toggle` (start, or stop and save), `Pause` (pause or resume) and
+`Status`. A Hyprland bind runs one command from any application:
+
+```sh
+busctl --user call org.mobs.Control /org/mobs/Control org.mobs.Control Toggle     # SUPER + SHIFT + V  (physical Alt + Shift + V)
+busctl --user call org.mobs.Control /org/mobs/Control org.mobs.Control Pause      # SUPER + CTRL + SHIFT + V
+```
+
+If MOBS is not running, D-Bus starts it: copy `dist/org.mobs.Control.service` to `~/.local/share/dbus-1/services/`, replace
+`@MOBS_BIN@` with the path of the `mobs` binary, and reload the bus once (or log in again). Proven in the Test Drive VM:
+Toggle, Pause, Pause, Toggle made a valid file with the pause cut out; auto-launch started MOBS in 0.5 s; a second copy does not take
+the hotkey over. (`MOBS_NO_HOTKEY=1` stops a copy from registering.)
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build

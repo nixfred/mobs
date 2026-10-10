@@ -30,6 +30,10 @@ Spike 4b, real gus hardware: in-process PipeWire screen capture works. First run
 
 `Engine` (state machine) + `RecorderBackend` interface + `ObsBackend` (libobs in-process, RAII-ordered teardown, non-blocking start while the picker is open, restore token saved the moment the portal answers). 15 engine tests with a fake backend (a deliberate bug in the pause logic was first NOT caught, so I strengthened the test and re-proved it fails), 3 real-libobs integration tests on Wayland (record + pause with a duration check, record twice in one process, cancel before start). Driven like a user in the VM with real key presses (choose, Space, Space, Space, Enter): a 1920x1080 H.264 + AAC file of 6.40 s from 6.81 s key-timed recording with a 2.24 s pause cut out. Run on gus's real screen through the app on 2026-10-10 (see below).
 
+## Hotkey (2026-10-10): works over real D-Bus in the VM
+
+`org.mobs.Control` (Toggle, Pause, Status) in the app, 6 unit tests, and a real `busctl` run: Toggle, Pause, Pause, Toggle produced a valid file with the pause cut out; D-Bus auto-launch (after a bus config reload) started MOBS in 0.5 s and the next Toggle recorded; a second copy does not steal the name. NOT yet bound on gus: bindings.lua is Fred's locked live config, so the Hyprland bind waits for his OK (SUPER+SHIFT+V and SUPER+CTRL+SHIFT+V, both free).
+
 ## Real run on gus + black-recording warning (2026-10-10)
 
 The app ran on gus with real PipeWire capture via its own test script (no synthetic keys): clean exits, silent second run with the saved token, pause cut 2 s out of a 7 s run. Fred picked a REGION and the video was black, the third run where a region pick did that, so MOBS now checks each saved file and warns in red ("pick a screen or a window"); the picker prompt says the same. 19 engine tests (real ffmpeg black/normal videos); a signed-byte bug in the first version was caught by a test. The leftover "full obs" door was removed (there is no OBS app any more). Still to see: a real run with a screen or window pick through the app (expect real frames).
@@ -44,5 +48,5 @@ The app ran on gus with real PipeWire capture via its own test script (no synthe
 
 - Wayland screen capture is PROVEN end to end on gus (ADR 0005, spike 3b): pre-seeded screen source, hidden OBS, one picker click, real frames, then a silent rerun with the saved restore token. Two cautions: a screen source created live over websocket never opens the picker (load it from a scene collection file instead), and a REGION selection recorded black frames (two runs) while another selection worked. Next to test: loading the collection with SetCurrentSceneCollection.
 - New dependency: qt6-websockets (not on gus yet).
-- Not built: the Alt+Shift+V hotkey (D-Bus), camera sources, the review screen, the Pro drawer and its tabs, a live preview, the recording pill, the first-run permission screen, a real run on gus with a screen/window pick.
+- Not built: the Hyprland bind itself on gus (needs Fred's OK), camera sources, the review screen, the Pro drawer and its tabs, a live preview, the recording pill, the first-run permission screen, a real run on gus with a screen/window pick.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).
