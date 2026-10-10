@@ -33,7 +33,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 12
             Chip { glyph: ""; text: App.displayText; visible: App.pick !== 3 }
-            Chip { glyph: ""; text: "mic: not connected yet"; tint: Omarchy.tertiaryText }
+            Chip { glyph: ""; text: "mic: default input" }
             Chip { glyph: ""; text: App.pick === 1 ? "camera off" : "camera: not connected yet"; tint: Omarchy.tertiaryText }
         }
         Txt {
