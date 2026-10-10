@@ -89,4 +89,5 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 ## Next
 
 1. An `Engine` class in `mobs/app` wrapping spike 4, with tests, and the record button on screen 2 really recording.
+2. A live preview inside the Qt Quick scene.
 3. The review screen with Monologue's editor; then the Pro drawer.
