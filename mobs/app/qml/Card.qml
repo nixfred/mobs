@@ -10,7 +10,9 @@ Rectangle {
     property string keyName
     property bool selected: false
     signal activated()
-    width: 252
+    // The row decides the width (four cards must fit the smallest window); a narrow card uses smaller type.
+    width: parent && parent.cardW ? parent.cardW : 252
+    readonly property bool narrow: width < 230
     height: 306
     radius: Omarchy.rounding
     color: Omarchy.lighterBackground
@@ -18,12 +20,12 @@ Rectangle {
     border.color: selected || hover.hovered ? Omarchy.accent : Omarchy.selection
     Column {
         anchors.fill: parent
-        anchors.margins: 26
-        spacing: 14
-        Glyph { text: root.glyph; font.pixelSize: 54; horizontalAlignment: Text.AlignLeft }
-        Item { width: 1; height: 6 }
-        Txt { text: root.title; font.pixelSize: 22; font.bold: true }
-        Txt { text: root.desc; color: Omarchy.secondaryText; font.pixelSize: 13; width: parent.width; wrapMode: Text.WordWrap }
+        anchors.margins: root.narrow ? 20 : 26
+        spacing: root.narrow ? 10 : 14
+        Glyph { text: root.glyph; font.pixelSize: root.narrow ? 42 : 54; horizontalAlignment: Text.AlignLeft }
+        Item { width: 1; height: root.narrow ? 2 : 6 }
+        Txt { text: root.title; font.pixelSize: root.narrow ? 18 : 22; font.bold: true; width: parent.width; wrapMode: Text.WordWrap }
+        Txt { text: root.desc; color: Omarchy.secondaryText; font.pixelSize: root.narrow ? 12 : 13; width: parent.width; wrapMode: Text.WordWrap }
     }
     Key { text: root.keyName; anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 22 }
     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }

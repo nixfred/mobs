@@ -77,6 +77,35 @@ the microphone, and where recordings go. Every colour comes from the live Omarch
 ![the finished opening screen](../../docs/app/splash-final.png)
 ![on a light, a neon and an orange Omarchy theme](../../docs/app/splash-themes.png)
 
+## The show: your window, a guest and you
+
+A fourth pick on the first screen (key **4**): **the show**, laid out like a video call's gallery. **Your shared window big on the left** (a terminal, say), and on the
+right two tiles, **your guest above and you (your webcam) below**, on a quiet dark backdrop. It exists for live shows and calls: pick it, then go live to X
+(see below) and viewers see exactly this.
+
+- **Where the guest comes from.** X has no native video guests (its Live has one broadcaster; Spaces are audio only), so the guest joins a call in whatever
+  tool you use (Riverside, Meet, Zoom, a browser tab) and MOBS captures **that call window** into the guest tile. That works with any tool.
+- **Two dialogs, one after the other.** The first asks for your main window (the terminal) and the second, only once the first is done, for your guest's window
+  (so two pickers never compete). Each choice is remembered (`~/.config/mobs/screen-token` and `screen-token-guest`), so the next launch asks for neither
+  as long as those windows exist.
+- **Trim what is not the guest.** A call window usually shows you too, so the camera panel (the camera chip) has "trim the guest's window": percent off each
+  edge in 5 % steps (left, top, right, bottom; opposite edges can never take more than 90 % together, and the trim is a percentage so it survives the window being
+  resized). The picture is never stretched: a window that is not 16:9 sits centred in its tile with backdrop beside it. A pop-out that shows only the guest needs no trim.
+- **The guest's voice is desktop sound.** Window capture has no audio, so turn on **desktop sound** (the ready screen's chip goes red and says "guest is silent"
+  while it is off) and **wear headphones**, or the guest comes out of your speakers into your mic.
+- The layout is one definition (`Placement::showLayout`): a 1920x1080 canvas, the right column a quarter wide, tiles 16:9, the guest above you. The live picture,
+  the recording and the broadcast all show it; the camera panel's diagram is drawn from the same rectangles.
+
+![the first screen: four picks](../../docs/app/show-choose.png)
+![the camera panel for the show: layout and trim](../../docs/app/show-panel.png)
+![real libobs and the real screen-share portal in the practice VM: the screen big, a guest window (a second MOBS with its timer running) top right, the webcam stand-in below](../../docs/app/show-real-libobs.png)
+
+Tested: three real-libobs scenarios (`tst_obsbackend`): the layout on the encoded pixels (window red on the left, guest blue top right, you green below,
+backdrop above and below, nothing spilling between tiles) and the trim on a guest video that is half red, half blue (untrimmed: both halves; trimmed: none of the red,
+bars of backdrop either side, not stretched). The two-dialog sequence and the saved tokens were checked in the practice VM against the REAL portal with a scripted
+picker (xdph's `custom_picker_binary` answering the first dialog with the screen and the second with a window): two dialogs, in order, both tokens saved, and a second
+launch asked for none. **Not tested:** a real call with a real guest; the guest window's own audio path; the first live broadcast of the show to X.
+
 ## Going live to X
 
 MOBS can broadcast a take to X (or any RTMP/RTMPS server) while it records. **The saved file is always the full-quality 1080p copy**, whatever happens
@@ -158,6 +187,7 @@ Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "curre
 `MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_WINDOW_SIZE=860x560`, `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`, `MOBS_TEST_CAMERA=colour` (a green stand-in webcam), `MOBS_FAKE_CAMERAS=1` (two sample cameras for screenshots), `MOBS_NO_HOTKEY=1`, `MOBS_VERBOSE=1` (libobs logs warnings and errors only otherwise). Script steps also include `pick=N`, `corner=N`, `size=N`, `panel=0/1`, `preview=0/1`, `grabpreview=`, `review=`, `split=`, `cut=`, `savereview`, `waitsaved`, `closereview`, `pro=0/1`, `tab=0..5`, `checklayout`, `key=P/Space/Esc`, `focusfolder`, `foldertext=`, `applyfolder`, `closewindow`, and `expect=state:idle` (also `pro`, `screen`, `confirmQuit`, `folderDefault`). Script `quit` explicitly exits without asking about unsaved test edits.
 
 Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
+The show: `MOBS_TEST_GUEST=colour` (a blue stand-in) or `video:/path.mp4` (a file) replaces the guest's window dialog in tests; `MOBS_TEST_GUEST_COLOUR` sets the colour. Script step `guestcrop=EDGE:PERCENT` (0 left, 1 top, 2 right, 3 bottom), `click=NAME` also finds items a Repeater made, and `expect=guestCrop:L/T/R/B`.
 Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted runs use a throwaway one). Script steps `arm=0/1`, `streamurl=`, `streamkey=`, `streamquality=N`, and with the fake backend `streamdrop` / `streamretry` / `streamback`; conditions `expect=armed|broadcasting|streamReady:0|1`, `expect=streamState:live` and `expect=streamProblem:text`. EXPERT tab 6 is the live page (`tab=0..6`).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.
 Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=file:/path.wav` and `MOBS_TEST_DESKTOP_AUDIO=file:/path.wav` supply generated sound to native tests. `MOBS_FAKE_BACKEND=1` is accepted only with `MOBS_SCRIPT` and exercises QML without capture. EXPERT tabs are `tab=0..5`; scripts also support `openaudio`, `audiodetails=0/1`, `micdevice=`, `desktop=0/1`, `miccheck=0/1`, `micgain=`, and `hardware=0/1`.

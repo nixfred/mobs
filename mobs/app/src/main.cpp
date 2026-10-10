@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
     }
     // MOBS_SCRIPT drives the app itself, with no synthetic key presses (safe on a live desktop). Steps, comma separated:
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
-    //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
+    //   pick=N | corner=N | size=N | guestcrop=EDGE:PERCENT | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
     //   grabpreview=/path.png   (save the newest live-preview frame; for checks)
     //   pro=0/1 | tab=N (drawer)   quality=N | mic=0/1
     //   arm=0/1 | streamurl=URL | streamkey=KEY | streamquality=N   (going live; with the fake backend: streamdrop | streamretry | streamback)
@@ -235,6 +235,7 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("grab=")) { std::printf("script: grab %d\n", int(window->grabWindow().save(st.mid(5)))); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("pick=")) { state.choose(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("guestcrop=")) { const auto edgeAndPercent = st.mid(10).split(':'); if (edgeAndPercent.size() == 2) state.setGuestCrop(edgeAndPercent[0].toInt(), edgeAndPercent[1].toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("grabpreview=")) { std::printf("script: grabpreview %d\n", int(preview.image().save(st.mid(12)))); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("pro=")) { state.setPro(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
@@ -249,7 +250,7 @@ int main(int argc, char *argv[]) {
             }
             else if (st.startsWith("key=")) {
                 const QString name = st.mid(4);
-                const int key = name == "Space" ? Qt::Key_Space : name == "Esc" ? Qt::Key_Escape : name == "P" ? Qt::Key_P : Qt::Key_unknown;
+                const int key = name == "Space" ? Qt::Key_Space : name == "Esc" ? Qt::Key_Escape : name == "P" ? Qt::Key_P : name == "4" ? Qt::Key_4 : Qt::Key_unknown;
                 QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
                 QCoreApplication::sendEvent(window, &press);
                 QTimer::singleShot(0, &app, *run);
@@ -294,8 +295,18 @@ int main(int argc, char *argv[]) {
                 QTimer::singleShot(0, &app, *run);
             }
             else if (st.startsWith("click=")) {
+                // Items a Repeater makes are not QObject children of the window, so findChild misses them: walk the visual tree too.
+                std::function<QQuickItem *(QQuickItem *, const QString &)> findVisual = [&](QQuickItem *at, const QString &name) -> QQuickItem * {
+                    if (at->objectName() == name) return at;
+                    for (auto *child : at->childItems()) if (auto *hit = findVisual(child, name)) return hit;
+                    return nullptr;
+                };
                 auto *button = window->findChild<QQuickItem *>(st.mid(6));
-                if (!button || !button->isVisible() || !button->isEnabled() || !QMetaObject::invokeMethod(button, "clicked")) { app.exit(4); return; }
+                if (!button) button = findVisual(window->contentItem(), st.mid(6));
+                if (!button || !button->isVisible() || !button->isEnabled() || !QMetaObject::invokeMethod(button, "clicked")) {
+                    std::fprintf(stderr, "script: cannot click %s (found %d, visible %d, enabled %d)\n", qPrintable(st.mid(6)), int(button != nullptr), int(button && button->isVisible()), int(button && button->isEnabled()));
+                    app.exit(4); return;
+                }
                 QTimer::singleShot(0, &app, *run);
             }
             else if (st == "closewindow") { window->close(); QTimer::singleShot(0, &app, *run); }
@@ -325,6 +336,7 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "preview") ok = state.preview() == (condition[1] == "1");
                 else if (ok && condition[0] == "previewing") ok = recorder.previewing() == (condition[1] == "1");
                 else if (ok && condition[0] == "message") ok = recorder.message().contains(condition[1]);
+                else if (ok && condition[0] == "guestCrop") { QStringList have; for (const auto &v : state.guestCrop()) have << QString::number(v.toInt()); ok = have.join('/') == condition[1]; }
                 else if (ok && condition[0] == "armed") ok = recorder.streamArmed() == (condition[1] == "1");
                 else if (ok && condition[0] == "broadcasting") ok = recorder.broadcasting() == (condition[1] == "1");
                 else if (ok && condition[0] == "streamState") ok = recorder.streamState() == condition[1];

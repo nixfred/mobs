@@ -77,6 +77,9 @@ static void obsLogHandler(int level, const char *fmt, va_list args, void *) {
 }
 
 ObsBackend::ObsBackend(QString tokenFile, QObject *parent) : RecorderBackend(parent), m_tokenFile(std::move(tokenFile)) {
+    m_guestTokenFile = m_tokenFile + "-guest";
+    m_graphTick.setInterval(300);
+    connect(&m_graphTick, &QTimer::timeout, this, &ObsBackend::tickGraph);
     m_poll.setInterval(100);
     connect(&m_poll, &QTimer::timeout, this, &ObsBackend::poll);
     m_audioTick.setInterval(100);
@@ -138,8 +141,17 @@ bool ObsBackend::ensureStarted(QString *error) {
     return true;
 }
 
+static bool encoderMissing(obs_encoder_t *encoder) { return !encoder || !obs_encoder_get_codec(encoder); }
+
 static void fillCanvas(obs_scene_item *item) {
     vec2 bounds{float(Placement::kCanvasW), float(Placement::kCanvasH)};
+    obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+    obs_sceneitem_set_bounds(item, &bounds);
+}
+// The picture keeps its shape and is centred in the rectangle (no stretching, no cropping).
+static void fitRect(obs_scene_item *item, const QRect &r) {
+    vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
+    obs_sceneitem_set_pos(item, &pos);
     obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
     obs_sceneitem_set_bounds(item, &bounds);
 }
@@ -147,6 +159,15 @@ static void fillCanvas(obs_scene_item *item) {
 // ---------------------------------------------------------------- the graph (scene and sources)
 
 void ObsBackend::applyPlacement(const RecordSpec &spec) {
+    if (spec.pick == 4) {                        // "the show": fixed tiles, only the guest's crop is adjustable
+        const Placement::ShowLayout layout = Placement::showLayout();
+        if (m_item) fitRect(m_item, layout.main);
+        if (m_guestItem) fitRect(m_guestItem, layout.guest);
+        if (m_camItem) fitRect(m_camItem, layout.me);
+        for (int i = 0; i < 4; ++i) m_cropWish[i] = spec.camera.guestCrop[i];
+        applyCrop();
+        return;
+    }
     if (!m_camItem || spec.pick != 2) return;   // only "screen + me" has a placement
     const QRect r = Placement::cameraRect(spec.camera.corner, spec.camera.size);
     vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
@@ -167,6 +188,16 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
     m_scene = obs_scene_create("mobs");
     m_needScreen = spec.pick != 3;
     m_needCamera = spec.pick != 1;
+    m_needGuest = spec.pick == 4;
+    m_testGuest = false; m_guestTokenSaved = m_mainTokenSaved = false; m_cropApplied[0] = -1; m_cropW = m_cropH = 0;
+    if (m_needGuest) {   // a quiet dark backdrop behind the three pictures, like a call's gallery
+        obs_data_t *bg = obs_data_create();
+        obs_data_set_int(bg, "color", 0xFF201814);   // ABGR: #141820
+        obs_data_set_int(bg, "width", Placement::kCanvasW); obs_data_set_int(bg, "height", Placement::kCanvasH);
+        m_bg = obs_source_create("color_source_v3", "show background", bg, nullptr);
+        obs_data_release(bg);
+        if (m_bg) m_bgItem = obs_scene_add(m_scene, m_bg);   // first in the scene = at the very back
+    }
     m_testScreen = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";    // tests run without the picker
     const QString testCam = qEnvironmentVariable("MOBS_TEST_CAMERA");       // "colour" or "video:/path/file.mp4": no webcam needed
     m_testCamera = testCam == "colour" || testCam.startsWith("video:");
@@ -190,7 +221,7 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
         }
         if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; dropGraph(); return false; }
         m_item = obs_scene_add(m_scene, m_video);   // first in the scene = at the back
-        fillCanvas(m_item);
+        if (spec.pick == 4) fitRect(m_item, Placement::showLayout().main); else fillCanvas(m_item);
     }
 
     if (m_needCamera) {
@@ -231,19 +262,112 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
     m_graphUp = true;
     m_graphPick = spec.pick;
     m_graphCamera = spec.camera.path;
+    if (m_needGuest) {
+        for (int i = 0; i < 4; ++i) m_cropWish[i] = spec.camera.guestCrop[i];
+        m_testGuest = !qEnvironmentVariable("MOBS_TEST_GUEST").isEmpty();
+        m_graphTick.start();   // the guest's window is created (and its picker opened) once the main one is done
+        tickGraph();
+    }
     return true;
+}
+
+// ---------------------------------------------------------------- "the show": the guest's window
+
+bool ObsBackend::createGuest(QString *error) {
+    const QString test = qEnvironmentVariable("MOBS_TEST_GUEST");   // "colour" or "video:/path/file.mp4": no second picker in tests
+    if (test.startsWith("video:")) {
+        obs_data_t *gs = obs_data_create();
+        obs_data_set_bool(gs, "is_local_file", true); obs_data_set_string(gs, "local_file", test.mid(6).toUtf8().constData());
+        obs_data_set_bool(gs, "looping", true);
+        m_guest = obs_source_create("ffmpeg_source", "test guest video", gs, nullptr);
+        obs_data_release(gs);
+    } else if (!test.isEmpty()) {
+        obs_data_t *gs = obs_data_create();
+        obs_data_set_int(gs, "color", qEnvironmentVariable("MOBS_TEST_GUEST_COLOUR", "FFFF8000").toUInt(nullptr, 16));   // ABGR
+        obs_data_set_int(gs, "width", 1280); obs_data_set_int(gs, "height", 720);
+        m_guest = obs_source_create("color_source_v3", "test guest", gs, nullptr);
+        obs_data_release(gs);
+    } else {
+        obs_data_t *ps = obs_data_create();
+        obs_data_set_bool(ps, "ShowCursor", false);   // the guest's tile is a window of someone else's face, not a place to point
+        const QString token = readToken(m_guestTokenFile);
+        if (!token.isEmpty()) obs_data_set_string(ps, "RestoreToken", token.toUtf8().constData());
+        m_guest = obs_source_create("pipewire-screen-capture-source", "guest window", ps, nullptr);
+        obs_data_release(ps);
+        if (token.isEmpty()) emit waitingForUser("now choose your guest's window in the dialog that just opened (the call window, or a pop-out that shows only them)");
+    }
+    if (!m_guest) { *error = "could not create the guest's window source (is the PipeWire plugin installed?)"; return false; }
+    m_guestItem = obs_scene_add(m_scene, m_guest);
+    fitRect(m_guestItem, Placement::showLayout().guest);
+    m_guestWaited.start();
+    return true;
+}
+
+// The guest's window comes up after the main one, a source's size is only known after its first frame, and a window can be resized
+// mid-show: so this small timer keeps the crop (a percentage) right, and saves the guest's own restore token as soon as it is chosen.
+void ObsBackend::tickGraph() {
+    if (!m_graphUp || !m_needGuest) return;
+    // Two dialogs make "choose again next time" twice as annoying, so the main window's token is kept as soon as it is chosen, not only
+    // when a recording starts (a recording that starts later saves it again, harmlessly).
+    if (m_needScreen && !m_testScreen && m_video && !m_mainTokenSaved && obs_source_get_width(m_video) > 0) {
+        m_mainTokenSaved = true;
+        obs_source_save(m_video);
+        obs_data_t *st = obs_source_get_settings(m_video);
+        const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
+        obs_data_release(st);
+        if (!tok.isEmpty()) writeToken(m_tokenFile, tok);
+    }
+    if (!m_guest) {
+        const bool mainUp = !m_needScreen || m_testScreen || (m_video && obs_source_get_width(m_video) > 0);
+        if (!mainUp) return;
+        QString error;
+        if (!createGuest(&error)) {
+            if (m_phase != Off) fail(error); else { m_previewOn = false; removePreviewCallback(); emit previewFailed(error); }
+            return;
+        }
+    }
+    if (obs_source_get_width(m_guest) > 0 && !m_guestTokenSaved && !m_testGuest) {
+        m_guestTokenSaved = true;
+        obs_source_save(m_guest);
+        obs_data_t *st = obs_source_get_settings(m_guest);
+        const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
+        obs_data_release(st);
+        if (!tok.isEmpty()) writeToken(m_guestTokenFile, tok);
+    }
+    applyCrop();
+}
+
+void ObsBackend::applyCrop() {
+    if (!m_guest || !m_guestItem) return;
+    const int w = int(obs_source_get_width(m_guest)), h = int(obs_source_get_height(m_guest));
+    if (w <= 0 || h <= 0) return;
+    bool same = w == m_cropW && h == m_cropH && m_cropApplied[0] >= 0;
+    for (int i = 0; i < 4 && same; ++i) same = m_cropApplied[i] == m_cropWish[i];
+    if (same) return;
+    obs_sceneitem_crop crop{};
+    crop.left = w * m_cropWish[0] / 100; crop.top = h * m_cropWish[1] / 100;
+    crop.right = w * m_cropWish[2] / 100; crop.bottom = h * m_cropWish[3] / 100;
+    obs_sceneitem_set_crop(m_guestItem, &crop);
+    for (int i = 0; i < 4; ++i) m_cropApplied[i] = m_cropWish[i];
+    m_cropW = w; m_cropH = h;
 }
 
 void ObsBackend::dropGraph() {
     // Order matters (spike 4): detach from the output, remove scene items, release sources, then the scene.
-    if (!m_graphUp && !m_scene && !m_video && !m_camera) return;
+    if (!m_graphUp && !m_scene && !m_video && !m_camera && !m_guest) return;
+    m_graphTick.stop();
     if (m_libobsUp) obs_set_output_source(0, nullptr);
+    if (m_guestItem) { obs_sceneitem_remove(m_guestItem); m_guestItem = nullptr; }
+    if (m_bgItem) { obs_sceneitem_remove(m_bgItem); m_bgItem = nullptr; }
     if (m_item) { obs_sceneitem_remove(m_item); m_item = nullptr; }
     if (m_camItem) { obs_sceneitem_remove(m_camItem); m_camItem = nullptr; }
     if (m_camera) { obs_source_release(m_camera); m_camera = nullptr; }
     if (m_video) { obs_source_release(m_video); m_video = nullptr; }
+    if (m_guest) { obs_source_release(m_guest); m_guest = nullptr; }
+    if (m_bg) { obs_source_release(m_bg); m_bg = nullptr; }
     if (m_scene) { obs_scene_release(m_scene); m_scene = nullptr; }
     if (m_libobsUp) obs_wait_for_destroy_queue();
+    m_needGuest = false;
     m_graphUp = false;
     m_graphPick = 0;
     m_graphCamera.clear();
@@ -252,7 +376,8 @@ void ObsBackend::dropGraph() {
 bool ObsBackend::sourcesReady() const {
     const bool screenOk = !m_needScreen || m_testScreen || obs_source_get_width(m_video) > 0;
     const bool cameraOk = !m_needCamera || m_testCamera || obs_source_get_width(m_camera) > 0;
-    return screenOk && cameraOk;
+    const bool guestOk = !m_needGuest || (m_guest && (m_testGuest || obs_source_get_width(m_guest) > 0));
+    return screenOk && cameraOk && guestOk;
 }
 
 // ---------------------------------------------------------------- the recording (mic, encoders, file)
@@ -297,7 +422,8 @@ bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
     obs_data_set_int(as, "bitrate", 160);
     m_aenc = obs_audio_encoder_create("ffmpeg_aac", "mobs audio", as, 0, nullptr);
     obs_data_release(as);
-    if (!m_venc || !m_aenc) { *error = spec.hardware ? "NVIDIA H.264 encoding is unavailable; choose software in EXPERT > hardware" : "no video or audio encoder is available"; return false; }
+    // libobs hands back a placeholder (no codec) for an encoder whose plugin did not load, so a null check alone misses a missing NVIDIA driver.
+    if (encoderMissing(m_venc) || encoderMissing(m_aenc)) { *error = spec.hardware ? "NVIDIA H.264 encoding is unavailable; choose software in EXPERT > hardware" : "no video or audio encoder is available"; return false; }
     obs_encoder_set_video(m_venc, obs_get_video());
     obs_encoder_set_audio(m_aenc, obs_get_audio());
 
@@ -379,7 +505,7 @@ bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
     obs_data_set_int(as, "bitrate", 128);
     m_saenc = obs_audio_encoder_create("ffmpeg_aac", "mobs stream audio", as, 0, nullptr);
     obs_data_release(as);
-    if (!m_svenc || !m_saenc) { *error = spec.hardware ? "NVIDIA H.264 is unavailable for the stream; choose software in EXPERT > hardware" : "no video or audio encoder is available for the stream"; return false; }
+    if (encoderMissing(m_svenc) || encoderMissing(m_saenc)) { *error = spec.hardware ? "NVIDIA H.264 is unavailable for the stream; choose software in EXPERT > hardware" : "no video or audio encoder is available for the stream"; return false; }
     obs_encoder_set_video(m_svenc, obs_get_video());
     if (s.height == 720) obs_encoder_set_scaled_size(m_svenc, 1280, 720);
     obs_encoder_set_audio(m_saenc, obs_get_audio());
@@ -589,8 +715,11 @@ void ObsBackend::poll() {
             if (!startOutput(m_spec, &error)) { fail(error); return; }
             m_phase = Running;
             emit started();
-        } else if (m_needCamera && !m_testCamera && m_waited.elapsed() > 15000 && (!m_needScreen || (m_screenReady.isValid() && m_screenReady.elapsed() > 15000))) {
-            // The picker (if any) is done, so only the camera is missing: say that, not "nothing was chosen".
+        } else if (m_needGuest && m_guest && !m_testGuest && obs_source_get_width(m_guest) == 0 && m_guestWaited.elapsed() > 120000) {
+            fail("nothing was chosen in the guest's window dialog, so recording was cancelled");
+        } else if (m_needCamera && !m_testCamera && m_waited.elapsed() > 15000 && (!m_needScreen || (m_screenReady.isValid() && m_screenReady.elapsed() > 15000))
+                   && (!m_needGuest || (m_guest && (m_testGuest || obs_source_get_width(m_guest) > 0)))) {
+            // Every picker (if any) is done, so only the camera is missing: say that, not "nothing was chosen".
             fail("the camera did not start: is it plugged in and not in use by another program?");
         } else if (m_needScreen && !m_screenReady.isValid() && m_waited.elapsed() > 120000) {
             fail("nothing was chosen in the screen dialog, so recording was cancelled");

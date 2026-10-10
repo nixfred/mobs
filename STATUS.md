@@ -156,3 +156,18 @@ Not verified: a real broadcast to X (needs Fred's account, his stream key and hi
 
 ![ready screen armed to go live](docs/app/golive-ready-armed.png)
 ![live](docs/app/golive-recording.png)
+
+## The show: window, guest and you (2026-10-10)
+
+Fred sent a screenshot of a Riverside call (a shared terminal big, the guest above and himself below) and said: "I want it to look like this with my webcam on one video, someone else from X in the other and sharing my terminal in the main." Research first: X's Live has no native video guests (Spaces are audio only), so the guest has to come from a call window. **A fourth pick, "the show" (key 4)**: the shared window big on the left, the guest's call window above you on the right, on a dark backdrop. Details and screenshots: mobs/app/README.md, "The show".
+
+Built: `Placement::showLayout` (one definition for the recording, the preview, the broadcast and the panel's diagram), a second window-capture source for the guest created only after the main one is chosen (two dialogs in sequence, each with its own restore token), a percentage trim of the guest's window that survives resizing, a dark backdrop, a fourth card (cards now share the row's width so four fit at 860 px), the camera panel's layout diagram and trim steppers, and a red "desktop off: guest is silent" chip.
+
+Verified: unit tests (appstate 5 new, engine 2 new), 12 new UI scenarios, three real-libobs scenarios (layout on encoded pixels, trim on a half-red half-blue guest video), and in the practice VM against the REAL portal with a scripted picker: two dialogs in order, both tokens saved, second launch asked for none, and the composite picture is right (screen left, guest window top right with its timer ticking, camera below).
+
+Caught on the way: the camera panel overflowed 860x560 (diagram and text shrunk), two old tests used pick 4 as their "invalid pick", the click step could not find items a Repeater makes (they are not QObject children of the window), and a test measured a 12 px gap with a 10 px-per-pixel still and got blended colour (it now samples wide backdrop areas).
+
+Not verified: a real call with a real guest, the guest's audio path, and a live broadcast of the show to X (Fred's first real broadcast is his to start). Known limit: window capture has no audio, so the guest's voice is desktop sound (headphones needed).
+
+![the real portal in the practice VM](docs/app/show-real-libobs.png)
+

@@ -64,6 +64,16 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=1,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:0,expect=previewFrame:0,expect=preview:0", fake_backend=True)
     check("a preview that was asked for keeps running after the take",
           "pick=1,preview=1,wait=0.2,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:1,expect=previewFrame:1", fake_backend=True)
+    # The show: a fourth pick (your window big, the guest and you beside it) with the guest's window trimmed.
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the show: camera panel with the layout and the trim fits", "pick=4,panel=1,guestcrop=0:10,guestcrop=1:5,wait=0.1,checklayout", size, True)
+        check("the show: ready screen fits", "pick=4,wait=0.1,checklayout", size, True)
+        check("the show: preview and recording fit", "pick=4,preview=1,wait=0.2,expect=previewFrame:1,checklayout,start,expect=state:recording,wait=0.4,checklayout", size, True)
+    check("the show: the trim buttons change the trim and stay inside the limits",
+          "pick=4,panel=1,wait=0.2,click=cropMore0,click=cropMore0,expect=guestCrop:10/0/0/0,click=cropLess0,expect=guestCrop:5/0/0/0,click=cropLess1,expect=guestCrop:5/0/0/0,"
+          "guestcrop=0:60,click=cropMore2,expect=guestCrop:60/0/5/0,guestcrop=0:60,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,expect=guestCrop:60/0/30/0", fake_backend=True)
+    check("the show: the 4 key on the first screen picks it", "wait=0.1,expect=screen:1,key=4,expect=screen:2,wait=0.1,checklayout", fake_backend=True)
+    check("the show: a silent guest is flagged on the ready screen", "pick=4,wait=0.1,checklayout,desktop=1,wait=0.1,checklayout", "860x560", True)
     # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.
     live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"
     for size in ("860x560", "1024x768", "1180x720"):

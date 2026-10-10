@@ -40,7 +40,7 @@ private slots:
     }
     void ignoresBadPicks() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
-        AppState a(&s); a.choose(0); a.choose(4);
+        AppState a(&s); a.choose(0); a.choose(5); a.choose(-1);   // 4 is the show now
         QCOMPARE(a.screen(), 1); QCOMPARE(a.pick(), 0);
     }
     void recordingShowsScreenThreeThenReturns() {
@@ -121,6 +121,48 @@ private slots:
         const QRectF n = a.cameraRectNormalized();
         QCOMPARE(n.x() * Placement::kCanvasW, double(r.x()));
         QCOMPARE(n.height() * Placement::kCanvasH, double(r.height()));
+    }
+    // ---- the show: a fourth pick, with the guest's window trimmed
+    void theShowIsAFourthPickThatNeedsACameraAndIsRemembered() {
+        QTemporaryDir d; const QString ini = d.path() + "/m.ini";
+        { QSettings s(ini, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+          a.choose(4); QCOMPARE(a.pick(), 4); QCOMPARE(a.pickName(), QString("the show")); QCOMPARE(a.screen(), 2);
+          QVERIFY(a.hasCamera());                                     // like the other camera picks, it never starts with "no camera" when one exists
+          a.choose(5); a.choose(0); QCOMPARE(a.pick(), 4); }
+        QSettings s(ini, QSettings::IniFormat); AppState b(&s, nullptr, [] { return twoCameras(); });
+        QCOMPARE(b.pick(), 4); QCOMPARE(b.screen(), 2);               // a returning user lands on ready, with the show chosen
+    }
+    void theShowLayoutHasThreeTilesInsideTheCanvasAndNothingOverlaps() {
+        const auto l = Placement::showLayout();
+        const QRect canvas(0, 0, Placement::kCanvasW, Placement::kCanvasH);
+        for (const QRect &r : {l.main, l.guest, l.me}) QVERIFY2(canvas.contains(r), qPrintable(QString("%1,%2 %3x%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height())));
+        QVERIFY(!l.main.intersects(l.guest)); QVERIFY(!l.main.intersects(l.me)); QVERIFY(!l.guest.intersects(l.me));
+        QVERIFY(l.main.width() > 2 * l.guest.width());                 // the shared window is the main thing
+        QVERIFY(l.guest.top() < l.me.top());                           // the guest above, you below
+        QCOMPARE(l.guest.size(), l.me.size()); QVERIFY(qAbs(l.guest.width() * 9 - l.guest.height() * 16) < 16);   // 16:9 (integer rounding)
+    }
+    void theGuestCropIsClampedRememberedAndNeverCropsTheGuestAway() {
+        QTemporaryDir d; const QString ini = d.path() + "/m.ini";
+        { QSettings s(ini, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+          QSignalSpy changed(&a, &AppState::cameraChanged);
+          a.setGuestCrop(0, 15); a.setGuestCrop(0, 15); QCOMPARE(changed.count(), 1);   // a repeat is silent
+          a.setGuestCrop(0, 500); QCOMPARE(a.guestCrop()[0].toInt(), 60);
+          a.setGuestCrop(2, 80); QCOMPARE(a.guestCrop()[2].toInt(), 30);                  // left 60 + right 30 = 90: the most the pair may take
+          a.setGuestCrop(1, -5); QCOMPARE(a.guestCrop()[1].toInt(), 0);
+          a.setGuestCrop(9, 10); a.setGuestCrop(-1, 10);                                  // not an edge
+          QCOMPARE(a.cameraSpec().guestCrop[0], 60); QCOMPARE(a.cameraSpec().guestCrop[2], 30); }
+        QSettings s(ini, QSettings::IniFormat); AppState b(&s, nullptr, [] { return twoCameras(); });
+        QCOMPARE(b.guestCrop()[0].toInt(), 60); QCOMPARE(b.guestCrop()[2].toInt(), 30);
+        QSettings bad(d.path() + "/bad.ini", QSettings::IniFormat); bad.setValue("guestCropLeft", 60); bad.setValue("guestCropRight", 60); bad.sync();
+        AppState c(&bad, nullptr, [] { return twoCameras(); });
+        QCOMPARE(c.guestCrop()[0].toInt(), 0); QCOMPARE(c.guestCrop()[2].toInt(), 0);   // a hand-edited file cannot crop the guest away
+    }
+    void thePanelDiagramForTheShowUsesTheRecordingsRectangles() {
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+        const auto l = Placement::showLayout(); const auto n = a.showRectsNormalized();
+        QCOMPARE(n["guest"].toRectF().x() * Placement::kCanvasW, double(l.guest.x()));
+        QCOMPARE(n["me"].toRectF().height() * Placement::kCanvasH, double(l.me.height()));
+        QCOMPARE(n["main"].toRectF().width() * Placement::kCanvasW, double(l.main.width()));
     }
     void reviewShowsScreenFourAndRecordingWinsOverIt() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);

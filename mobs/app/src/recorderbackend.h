@@ -8,6 +8,7 @@ struct CameraSpec {
     bool mjpg720 = false;    // ask the camera for 1280x720 MJPEG
     int corner = 3;          // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right (used by "screen + me")
     int size = 1;            // 0 small, 1 medium, 2 large
+    int guestCrop[4] = {0, 0, 0, 0};   // "the show" only: percent trimmed off the guest's window: left, top, right, bottom
     bool valid() const { return !path.isEmpty(); }
 };
 struct AudioSpec {
@@ -26,7 +27,7 @@ struct StreamSpec {
     int height = 1080;       // 720 or 1080 (16:9); the file is always 1080
 };
 struct RecordSpec {
-    int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
+    int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera, 4 the show (screen + guest's window + me)
     QString path;            // the file to write
     CameraSpec camera;
     int crf = 23;            // x264 CRF / NVIDIA CQP (lower = bigger, better); from the quality setting

@@ -46,6 +46,25 @@ static bool redAt(const QByteArray &f, int cx, int cy) {
     const int r = (unsigned char)f[i], g = (unsigned char)f[i + 1];
     return r > g + 50;
 }
+static bool blueAt(const QByteArray &f, int cx, int cy) {
+    const int i = ((cy / 10) * 192 + (cx / 10)) * 3;
+    if (i + 2 >= f.size()) return false;
+    return (unsigned char)f[i + 2] > (unsigned char)f[i] + 100;
+}
+static bool darkAt(const QByteArray &f, int cx, int cy) {      // the show's backdrop
+    const int i = ((cy / 10) * 192 + (cx / 10)) * 3;
+    if (i + 2 >= f.size()) return false;
+    return (unsigned char)f[i] < 70 && (unsigned char)f[i + 1] < 70 && (unsigned char)f[i + 2] < 70;
+}
+static int pixelsIn(const QByteArray &f, const QRect &canvasRect, bool (*test)(unsigned char, unsigned char, unsigned char)) {   // counts over the 192x108 still
+    int n = 0;
+    for (int y = canvasRect.top() / 10; y < canvasRect.bottom() / 10; ++y)
+        for (int x = canvasRect.left() / 10; x < canvasRect.right() / 10; ++x) {
+            const int i = (y * 192 + x) * 3;
+            if (i + 2 < f.size() && test((unsigned char)f[i], (unsigned char)f[i + 1], (unsigned char)f[i + 2])) ++n;
+        }
+    return n;
+}
 static int greenPixels(const QByteArray &f) {
     int n = 0;
     for (int i = 0; i + 2 < f.size(); i += 3) if ((unsigned char)f[i + 1] > (unsigned char)f[i] + 50) ++n;
@@ -167,7 +186,7 @@ private slots:
         b.begin(spec);
         if (!checked.first()[0].toBool()) {
             QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 15000);
-            QVERIFY(failed.first()[0].toString().contains("NVIDIA")); QVERIFY(started.isEmpty());
+            QVERIFY2(failed.first()[0].toString().contains("NVIDIA"), qPrintable(failed.first()[0].toString())); QVERIFY(started.isEmpty());
             return;
         }
         for (int take = 0; take < 3; ++take) {
@@ -556,6 +575,55 @@ private slots:
         QCOMPARE(probe(d.path() + "/two.flv", {"-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"}), QString("h264"));   // video flows again
         QVERIFY2(durationOf(path) > 6.0, qPrintable(QString("duration %1").arg(durationOf(path))));           // the file ran through the whole outage
         QCOMPARE(statesOf(state).last(), QString("ended"));
+    }
+    // ---- "the show": the shared window big, the guest's window above, you below, on a quiet backdrop
+    QByteArray recordTheShow(const QString &dir, const QString &name, const QList<int> &crop) {
+        ObsBackend b(dir + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.mic = false; spec.pick = 4; spec.path = dir + "/" + name + ".mp4";
+        spec.camera.path = "test"; for (int i = 0; i < 4; ++i) spec.camera.guestCrop[i] = crop.value(i);
+        b.begin(spec); started.wait(20000);
+        if (started.isEmpty()) return {};
+        QTest::qWait(2200);                       // long enough for the trim (applied once the guest's size is known) to be in place
+        b.end(); finished.wait(20000);
+        if (finished.isEmpty() || !failed.isEmpty()) return {};
+        return stillRgb(spec.path);
+    }
+    void theShowPutsTheSharedWindowTheGuestAndMeInTheirTiles() {
+        qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour"); qputenv("MOBS_TEST_GUEST", "colour");   // red window, green you, blue guest
+        QTemporaryDir d; const QList<int> none{0, 0, 0, 0};
+        const QByteArray f = recordTheShow(d.path(), "show", none);
+        QVERIFY(!f.isEmpty());
+        QVERIFY(redAt(f, 726, 540));              // the shared window: big, on the left
+        QVERIFY(blueAt(f, 1680, 406));            // the guest: top right
+        QVERIFY(greenAt(f, 1680, 674));           // you: below the guest
+        QVERIFY(darkAt(f, 700, 60)); QVERIFY(darkAt(f, 700, 1010)); QVERIFY(darkAt(f, 1680, 100)); QVERIFY(darkAt(f, 1680, 950));   // the backdrop above and below the pictures (the gaps between them are narrower than a pixel of this still)
+        QVERIFY(!redAt(f, 1680, 406) && !redAt(f, 1680, 674));                                                                      // nothing spills into the tiles
+        QCOMPARE(probe(d.path() + "/show.mp4", {"-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0"}), QString("1920,1080"));
+    }
+    void theGuestsWindowIsTrimmedByPercentageAndNotStretched() {
+        qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");
+        QTemporaryDir d;
+        // The guest's "call window": its left half red (somebody else), its right half blue (the guest), 1280x720.
+        QProcess make; make.start("ffmpeg", {"-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=640x720:r=15:d=8", "-f", "lavfi", "-i", "color=c=blue:s=640x720:r=15:d=8",
+                                             "-filter_complex", "hstack", "-c:v", "libx264", "-pix_fmt", "yuv420p", d.path() + "/call.mp4"});
+        QVERIFY(make.waitForFinished(20000) && make.exitCode() == 0);
+        qputenv("MOBS_TEST_GUEST", ("video:" + d.path() + "/call.mp4").toUtf8());
+        const QRect tile(1452, 278, 456, 256);
+        const auto isRed = [](unsigned char r, unsigned char g, unsigned char b) { return r > g + 80 && r > b + 80; };
+        const auto isBlue = [](unsigned char r, unsigned char g, unsigned char b) { return b > r + 80 && b > g + 80; };
+        const QList<int> none{0, 0, 0, 0};
+        const QByteArray whole = recordTheShow(d.path(), "whole", none);                        // control: with no trim the tile shows both halves
+        QVERIFY(!whole.isEmpty());
+        QVERIFY2(pixelsIn(whole, tile, isRed) > 100 && pixelsIn(whole, tile, isBlue) > 100, "the untrimmed tile should show both halves");
+        QVERIFY(redAt(whole, 1452 + 100, 406) && blueAt(whole, 1452 + 360, 406));
+        const QList<int> keepRight{50, 0, 0, 0};                                                 // trim the left half away
+        const QByteArray trimmed = recordTheShow(d.path(), "trimmed", keepRight);
+        QVERIFY(!trimmed.isEmpty());
+        QCOMPARE(pixelsIn(trimmed, tile, isRed), 0);                                             // the other person is gone
+        QVERIFY2(pixelsIn(trimmed, tile, isBlue) > 400, qPrintable(QString("blue %1").arg(pixelsIn(trimmed, tile, isBlue))));
+        QVERIFY(blueAt(trimmed, 1680, 406));
+        QVERIFY(darkAt(trimmed, 1452 + 20, 406));                                                // not stretched to fill: bars of backdrop on both sides
     }
     void cancelBeforeStartIsClean() {
         QTemporaryDir d;

@@ -9,9 +9,12 @@ AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObj
     m_corner = qBound(0, m_settings->value("corner", 3).toInt(), 3);
     m_size = qBound(0, m_settings->value("size", 1).toInt(), 2);
     m_preview = m_settings->value("preview", false).toBool();
+    static const char *const cropKeys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
+    for (int i = 0; i < 4; ++i) m_guestCrop[i] = qBound(0, m_settings->value(cropKeys[i], 0).toInt(), 60);
+    for (int i = 0; i < 2; ++i) if (m_guestCrop[i] + m_guestCrop[i + 2] > 90) m_guestCrop[i] = m_guestCrop[i + 2] = 0;   // a hand-edited file must not crop the guest away
     m_cams = m_scan();
     const int saved = m_settings->value("pick", 0).toInt();
-    if (saved >= 1 && saved <= 3) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
+    if (saved >= 1 && saved <= 4) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
 }
 
 QString AppState::pickName() const {
@@ -19,6 +22,7 @@ QString AppState::pickName() const {
     case 1: return "my screen";
     case 2: return "screen + me";
     case 3: return "just my camera";
+    case 4: return "the show";
     default: return {};
     }
 }
@@ -31,7 +35,7 @@ QString AppState::displayText() const {
 }
 
 void AppState::choose(int pick) {
-    if (pick < 1 || pick > 3) return;
+    if (pick < 1 || pick > 4) return;
     if (pick != 1) ensureCamera();                    // a camera pick must not start with "no camera" if one exists
     if (pick != m_pick) { m_pick = pick; m_settings->setValue("pick", pick); m_settings->sync(); emit pickChanged(); }
     if (m_screen != 2) { m_screen = 2; emit screenChanged(); }
@@ -74,6 +78,7 @@ CameraSpec AppState::cameraSpec() const {
     if (const CameraInfo *c = currentCamera()) { spec.path = c->path; spec.mjpg720 = c->mjpg720; }
     spec.corner = m_corner;
     spec.size = m_size;
+    for (int i = 0; i < 4; ++i) spec.guestCrop[i] = m_guestCrop[i];
     return spec;
 }
 
@@ -124,6 +129,29 @@ QRectF AppState::cameraRectNormalized() const {
     const QRect r = Placement::cameraRect(m_corner, m_size);
     return QRectF(double(r.x()) / Placement::kCanvasW, double(r.y()) / Placement::kCanvasH,
                   double(r.width()) / Placement::kCanvasW, double(r.height()) / Placement::kCanvasH);
+}
+
+QVariantMap AppState::showRectsNormalized() const {
+    const auto l = Placement::showLayout();
+    const auto norm = [](const QRect &r) {
+        return QRectF(double(r.x()) / Placement::kCanvasW, double(r.y()) / Placement::kCanvasH,
+                      double(r.width()) / Placement::kCanvasW, double(r.height()) / Placement::kCanvasH);
+    };
+    return {{"main", norm(l.main)}, {"guest", norm(l.guest)}, {"me", norm(l.me)}};
+}
+
+QVariantList AppState::guestCrop() const { return {m_guestCrop[0], m_guestCrop[1], m_guestCrop[2], m_guestCrop[3]}; }
+
+void AppState::setGuestCrop(int edge, int percent) {
+    if (edge < 0 || edge > 3) return;
+    const int opposite = (edge + 2) % 4;
+    percent = qBound(0, percent, qMin(60, 90 - m_guestCrop[opposite]));   // the two opposite edges together may never take more than 90%
+    if (percent == m_guestCrop[edge]) return;
+    static const char *const keys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
+    m_guestCrop[edge] = percent;
+    m_settings->setValue(keys[edge], percent);
+    m_settings->sync();
+    emit cameraChanged();
 }
 
 void AppState::setCameraPanel(bool open) {

@@ -42,10 +42,10 @@ Item {
             Row {
                 spacing: 10
                 Repeater {
-                    model: [["my screen", 1], ["screen + me", 2], ["just my camera", 3]]
+                    model: [["my screen", 1], ["screen + me", 2], ["just my camera", 3], ["the show", 4]]
                     Rectangle {
                         required property var modelData
-                        width: 172; height: 40; radius: 20
+                        width: 132; height: 40; radius: 20
                         color: App.pick === modelData[1] ? Omarchy.accent : "transparent"
                         border.color: App.pick === modelData[1] ? Omarchy.accent : Omarchy.selection
                         border.width: 1
@@ -129,6 +129,77 @@ Item {
                 }
             }
 
+            // 3b. the show: where the three pictures sit, and how much of the guest's window to trim away
+            Row {
+                spacing: 28
+                visible: App.pick === 4
+                Column {
+                    spacing: 8
+                    Txt { text: "the layout"; color: Omarchy.tertiaryText; font.pixelSize: 12 }
+                    Rectangle {
+                        id: showDiagram
+                        objectName: "showDiagram"
+                        width: 224; height: 126; radius: 8
+                        color: Omarchy.darkerBackground; border.color: Omarchy.selection; border.width: 1
+                        readonly property var rects: App.showRectsNormalized()
+                        Rectangle {
+                            x: showDiagram.rects.main.x * showDiagram.width; y: showDiagram.rects.main.y * showDiagram.height
+                            width: showDiagram.rects.main.width * showDiagram.width; height: showDiagram.rects.main.height * showDiagram.height
+                            radius: 3; color: Omarchy.lighterBackground; border.color: Omarchy.selection
+                            Txt { anchors.centerIn: parent; text: "your window"; color: Omarchy.tertiaryText; font.pixelSize: 11 }
+                        }
+                        Rectangle {
+                            x: showDiagram.rects.guest.x * showDiagram.width; y: showDiagram.rects.guest.y * showDiagram.height
+                            width: showDiagram.rects.guest.width * showDiagram.width; height: showDiagram.rects.guest.height * showDiagram.height
+                            radius: 3; color: Omarchy.selection
+                            Txt { anchors.centerIn: parent; text: "guest"; color: Omarchy.foreground; font.pixelSize: 11 }
+                        }
+                        Rectangle {
+                            x: showDiagram.rects.me.x * showDiagram.width; y: showDiagram.rects.me.y * showDiagram.height
+                            width: showDiagram.rects.me.width * showDiagram.width; height: showDiagram.rects.me.height * showDiagram.height
+                            radius: 3; color: Omarchy.accent; opacity: 0.85
+                            Txt { anchors.centerIn: parent; text: "you"; color: Omarchy.accentForeground; font.pixelSize: 11 }
+                        }
+                    }
+                }
+                Column {
+                    spacing: 4
+                    Txt { text: "trim the guest's window (%)"; color: Omarchy.tertiaryText; font.pixelSize: 12; bottomPadding: 2 }
+                    Repeater {
+                        model: [["left", 0], ["top", 1], ["right", 2], ["bottom", 3]]
+                        Row {
+                            required property var modelData
+                            spacing: 8
+                            Txt { width: 52; text: parent.modelData[0]; font.pixelSize: 13; color: Omarchy.secondaryText; anchors.verticalCenter: parent.verticalCenter }
+                            Rectangle {
+                                objectName: "cropLess" + parent.modelData[1]
+                                signal clicked()
+                                width: 24; height: 24; radius: 12; color: "transparent"; border.color: Omarchy.selection
+                                Txt { anchors.centerIn: parent; text: "\u2212"; font.pixelSize: 15 }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: parent.clicked() }
+                                onClicked: App.setGuestCrop(parent.modelData[1], App.guestCrop[parent.modelData[1]] - 5)
+                            }
+                            Txt { width: 36; horizontalAlignment: Text.AlignHCenter; text: App.guestCrop[parent.modelData[1]] + "%"; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
+                            Rectangle {
+                                objectName: "cropMore" + parent.modelData[1]
+                                signal clicked()
+                                width: 24; height: 24; radius: 12; color: "transparent"; border.color: Omarchy.selection
+                                Txt { anchors.centerIn: parent; text: "+"; font.pixelSize: 15 }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: parent.clicked() }
+                                onClicked: App.setGuestCrop(parent.modelData[1], App.guestCrop[parent.modelData[1]] + 5)
+                            }
+                        }
+                    }
+                }
+            }
+            Txt {
+                visible: App.pick === 4
+                width: parent.width; wrapMode: Text.WordWrap
+                text: "Trim away what is not your guest. Turn on desktop sound so they are heard, and wear headphones."
+                color: Omarchy.tertiaryText; font.pixelSize: 12
+            }
             Txt {
                 visible: App.pick === 3
                 text: "just my camera fills the whole frame."
