@@ -19,7 +19,15 @@ preview), keeps running during a recording, and is **off by default and remember
 the screen dialog. Frames come out of libobs as plain pictures (`obs_add_raw_video_callback2`), not a native surface inside the
 window, which is simple, robust on Wayland, and testable by reading pixels.
 
-**Not wired yet (labelled on screen):** the review screen and the Pro drawer.
+**Review (2026-10-10):** when a recording is saved, MOBS opens it for review by itself: watch it (plays only the parts you keep,
+hopping over cuts), and trim and cut on **Monologue's own timeline editor** (`EditBar.qml`, used unmodified from the subtree): drag
+a handle to trim, double-click to split, click x to cut a part out, with a white mark wherever you paused. **save edit** writes
+`<name> (edited).mp4` beside the original (never overwriting, never touching the original; encoded to a hidden partial file and
+renamed into place); **done** leaves (asking first if there are unsaved edits); **delete take** moves it to the trash (asks first).
+Keys: Space play, S split, X cut or restore, Left/Right and Shift/Alt nudges, [ ] jump between marks, Z zoom, Ctrl+Z / Ctrl+Y undo and redo,
+Ctrl+S save, Esc done. The pause marks come from `<take>.mobs.json`, written when you stop recording.
+
+**Not wired yet (labelled on screen):** the Pro drawer.
 
 Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a narrow interface: begin, pause, end).
 The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine
@@ -64,7 +72,7 @@ QT_QPA_PLATFORM=wayland MOBS_LIBOBS_TEST=1 ./build/tst_obsbackend
 ```
 
 Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "current" folder), `MOBS_SETTINGS` (settings file),
-`MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`, `MOBS_TEST_CAMERA=colour` (a green stand-in webcam), `MOBS_FAKE_CAMERAS=1` (two sample cameras for screenshots), `MOBS_NO_HOTKEY=1`. Script steps also include `pick=N`, `corner=N`, `size=N`, `panel=0/1`.
+`MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`, `MOBS_TEST_CAMERA=colour` (a green stand-in webcam), `MOBS_FAKE_CAMERAS=1` (two sample cameras for screenshots), `MOBS_NO_HOTKEY=1`, `MOBS_VERBOSE=1` (libobs logs warnings and errors only otherwise). Script steps also include `pick=N`, `corner=N`, `size=N`, `panel=0/1`, `preview=0/1`, `grabpreview=`, `review=`, `split=`, `cut=`, `savereview`, `waitsaved`, `closereview`.
 
 Layout: `src/palette.*` (theme reader), `src/appstate.*` (screens and pick), `qml/` (components and screens), `tests/`.
 Screens are checked in the Test Drive practice VM, never on a live desktop; see `docs/app/`.

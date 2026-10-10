@@ -101,3 +101,9 @@ The camera chip on the ready screen is a button. It opens a panel (screenshots: 
 webcams found on this machine, by name); and for *screen + me* a mini screen where you tap a corner, plus small, medium
 or large. The mini screen shows exactly where the camera will be in the recording (same rectangle). *Just my camera* fills
 the frame, so it needs no placement. Choosing a camera mode with no camera chosen opens this panel by itself.
+
+## Review screen (built 2026-10-10)
+
+Screens: `docs/app/review-r1.png` (just stopped), `review-r2.png` (after cutting the middle out), `review-r3.png` (after saving). Video on top,
+Monologue's timeline underneath (kept clips lit, cut parts dimmed, white marks where you paused), a play button with the time, then
+**save edit** (filled), **done**, and **delete take** (red, asks first). Leaving with unsaved edits asks first ("leave without saving").

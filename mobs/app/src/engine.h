@@ -61,6 +61,7 @@ private:
     RecorderBackend *m_backend;
     std::function<CameraSpec()> m_camera;
     QString m_dir, m_message, m_lastFile, m_warning;
+    QList<double> m_pauseMarks;   // where in the take (seconds of recorded time) the user paused
     State m_state = Idle;
     bool m_previewing = false;
     QElapsedTimer m_clock;

@@ -1,4 +1,5 @@
 #include "obsbackend.h"
+#include "logfilter.h"
 #include "placement.h"
 #include <obs.h>
 #include <obs-nix-platform.h>
@@ -7,6 +8,8 @@
 #include <QtGui/qguiapplication_platform.h>
 #include <QDebug>
 #include <linux/videodev2.h>
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 
 namespace {
@@ -24,6 +27,16 @@ void writeToken(const QString &file, const QString &token) {
     QFile f(file);
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { f.write(token.toUtf8()); f.write("\n"); f.setPermissions(QFile::ReadOwner | QFile::WriteOwner); }
 }
+}
+
+static_assert(LOG_ERROR == obslog::Error && LOG_WARNING == obslog::Warning && LOG_INFO == obslog::Info && LOG_DEBUG == obslog::Debug,
+              "libobs changed its log levels: update logfilter.h");
+
+static void obsLogHandler(int level, const char *fmt, va_list args, void *) {
+    static const bool verbose = qEnvironmentVariable("MOBS_VERBOSE") == "1";
+    if (!obsLogWanted(level, verbose)) return;
+    vfprintf(stderr, fmt, args);
+    fputc('\n', stderr);
 }
 
 ObsBackend::ObsBackend(QString tokenFile, QObject *parent) : RecorderBackend(parent), m_tokenFile(std::move(tokenFile)) {
@@ -55,6 +68,7 @@ bool ObsBackend::ensureStarted(QString *error) {
         *error = "MOBS records on Wayland only (platform: " + QGuiApplication::platformName() + ")";
         return false;
     }
+    base_set_log_handler(obsLogHandler, nullptr);   // before obs_startup, so even its first lines are filtered
     if (!obs_startup("en-US", nullptr, nullptr)) { *error = "the recording engine would not start"; return false; }
     obs_add_data_path("/usr/share/obs/libobs/");
     obs_add_module_path("/usr/lib/obs-plugins/", "/usr/share/obs/obs-plugins/%module%");

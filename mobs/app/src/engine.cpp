@@ -1,5 +1,6 @@
 #include "engine.h"
 #include <QDateTime>
+#include "review.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -62,6 +63,7 @@ void Engine::start(int pick) {
     const QString path = m_dir + "/mobs " + QDateTime::currentDateTime().toString("yyyy-MM-dd HH-mm-ss") + ".mp4";
     m_banked = 0;
     m_clock.invalidate();
+    m_pauseMarks.clear();
     setMessage({});
     setState(Starting);
     m_backend->begin(RecordSpec{pick, path, cam});
@@ -77,6 +79,7 @@ void Engine::togglePause() {
         m_banked += m_clock.elapsed();
         m_clock.invalidate();
         m_tick.stop();
+        m_pauseMarks.append(m_banked / 1000.0);
         setState(Paused);
         m_backend->pause(true);
     } else if (m_state == Paused) {
@@ -121,6 +124,8 @@ void Engine::onFinished(const QString &path) {
         emit lastFileChanged();
         setMessage("saved " + path);
         if (!m_warning.isEmpty()) { m_warning.clear(); emit warningChanged(); }
+        // The pause points go beside the take so the editor can show them (they are positions in the FINAL file: pauses are cut out).
+        if (!m_pauseMarks.isEmpty() && QFileInfo::exists(path)) Review::writePauses(path, m_pauseMarks);
         emit saved(path);
         checkPicture(path);
     }

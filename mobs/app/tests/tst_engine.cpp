@@ -1,4 +1,6 @@
 #include "engine.h"
+#include "review.h"
+#include <QTemporaryDir>
 #include <QFileInfo>
 #include <QProcess>
 #include <QSignalSpy>
@@ -272,6 +274,34 @@ private slots:
         QCOMPARE(e.state(), QString("recording"));
         e.setPreview(false, 1);
         QCOMPARE(e.state(), QString("recording"));
+    }
+    // ---- pause marks for the editor ----------------------------------------------------------------------------------
+    void pausePointsAreWrittenBesideTheTakeForTheEditor() {
+        QTemporaryDir d;
+        const QString file = d.path() + "/take.mp4";
+        QFile f(file); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("x"); f.close();
+        FakeBackend b; Engine e(&b, d.path());
+        e.start(1); emit b.started();
+        QTest::qWait(300);  e.togglePause();                              // paused at about 0.3 s of recorded time
+        QTest::qWait(200);  e.togglePause();                              // (the 0.2 s while paused is NOT counted)
+        QTest::qWait(300);  e.togglePause();                              // paused again at about 0.6 s
+        e.togglePause();
+        e.stop(); emit b.finished(file);
+        const QList<double> marks = Review::readPauses(file);
+        QCOMPARE(marks.size(), 2);
+        QVERIFY2(marks[0] > 0.2 && marks[0] < 0.5, qPrintable(QString::number(marks[0])));
+        QVERIFY2(marks[1] > marks[0] + 0.2 && marks[1] < 1.0, qPrintable(QString::number(marks[1])));   // positions in the FINAL file
+    }
+    void noPausesMeansNoSidecarAndAMissingFileIsNotFatal() {
+        QTemporaryDir d;
+        const QString file = d.path() + "/clean.mp4";
+        QFile f(file); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("x"); f.close();
+        FakeBackend b; Engine e(&b, d.path());
+        e.start(1); emit b.started(); e.stop(); emit b.finished(file);
+        QVERIFY(!QFileInfo::exists(Review::sidecarPath(file)));
+        e.start(1); emit b.started(); QTest::qWait(100); e.togglePause(); e.togglePause(); e.stop();
+        emit b.finished(d.path() + "/never-existed.mp4");                 // the file is gone: no crash, no stray sidecar
+        QVERIFY(!QFileInfo::exists(Review::sidecarPath(d.path() + "/never-existed.mp4")));
     }
     void aLateStartedSignalAfterStopIsIgnored() {
         FakeBackend b; Engine e(&b, dir.path());

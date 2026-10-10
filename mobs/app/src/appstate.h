@@ -8,7 +8,7 @@
 #include <functional>
 
 // Which screen MOBS shows and what the user picked. Remembered between launches.
-// Screens so far: 1 = choose, 2 = ready, 3 = recording. (Review and the Pro drawer come later.)
+// Screens: 1 = choose, 2 = ready, 3 = recording, 4 = review (the Pro drawer comes later). Recording wins over review.
 class AppState : public QObject {
     Q_OBJECT
     Q_PROPERTY(int screen READ screen NOTIFY screenChanged)
@@ -26,7 +26,7 @@ class AppState : public QObject {
 public:
     using CameraScan = std::function<QList<CameraInfo>()>;
     explicit AppState(QSettings *settings, QObject *parent = nullptr, CameraScan scan = [] { return CameraScanner::scan(); });
-    int screen() const { return m_recording ? 3 : m_screen; }
+    int screen() const { return m_recording ? 3 : m_reviewing ? 4 : m_screen; }
     int pick() const { return m_pick; }
     QString pickName() const;
     QString displayText() const;
@@ -42,6 +42,7 @@ public:
     Q_INVOKABLE void choose(int pick);   // 1 my screen, 2 screen + me, 3 just my camera
     Q_INVOKABLE void back();             // ready -> choose
     void setRecording(bool recording);   // the engine is busy: show the recording screen
+    void setReviewing(bool reviewing);   // a take is open in the editor: show the review screen
     Q_INVOKABLE void refreshCameras();   // look again (a webcam may have been plugged in)
     Q_INVOKABLE void setCamera(const QString &path);
     Q_INVOKABLE void setCorner(int corner);
@@ -66,5 +67,5 @@ private:
     int m_corner = 3, m_size = 1;
     bool m_panel = false, m_preview = false;
     int m_screen = 1, m_pick = 0;
-    bool m_recording = false;
+    bool m_recording = false, m_reviewing = false;
 };

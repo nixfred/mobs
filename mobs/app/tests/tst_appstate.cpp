@@ -114,6 +114,22 @@ private slots:
         QCOMPARE(n.x() * Placement::kCanvasW, double(r.x()));
         QCOMPARE(n.height() * Placement::kCanvasH, double(r.height()));
     }
+    void reviewShowsScreenFourAndRecordingWinsOverIt() {
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
+        a.choose(1);
+        QSignalSpy sc(&a, &AppState::screenChanged);
+        a.setReviewing(true);
+        QCOMPARE(a.screen(), 4);
+        a.setReviewing(true);                                             // no change, no signal
+        QCOMPARE(sc.count(), 1);
+        a.setRecording(true);                                             // a new recording (e.g. the hotkey) takes the screen
+        QCOMPARE(a.screen(), 3);
+        a.setRecording(false);
+        QCOMPARE(a.screen(), 4);                                          // still reviewing if nobody closed it
+        a.setReviewing(false);
+        QCOMPARE(a.screen(), 2);
+    }
     void previewIsOffByDefaultAndRemembered() {
         QTemporaryDir d; const QString f = d.path() + "/m.ini";
         { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });

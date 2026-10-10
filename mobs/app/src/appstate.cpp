@@ -41,6 +41,12 @@ void AppState::back() {
     if (m_screen != 1) { m_screen = 1; emit screenChanged(); }
 }
 
+void AppState::setReviewing(bool reviewing) {
+    if (reviewing == m_reviewing) return;
+    m_reviewing = reviewing;
+    emit screenChanged();
+}
+
 void AppState::setRecording(bool recording) {
     if (recording == m_recording) return;
     m_recording = recording;

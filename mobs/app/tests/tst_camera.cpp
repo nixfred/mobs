@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "logfilter.h"
 #include "placement.h"
 #include <QDir>
 #include <QFile>
@@ -67,6 +68,16 @@ private slots:
                 QVERIFY(QRect(0, 0, 1920, 1080).contains(r));
             }
         }
+    }
+    // ---- libobs log filter ------------------------------------------------------------------------------------------
+    void onlyWarningsAndErrorsAreLoggedByDefault() {
+        QVERIFY(obsLogWanted(obslog::Error, false));
+        QVERIFY(obsLogWanted(obslog::Warning, false));
+        QVERIFY(!obsLogWanted(obslog::Info, false));
+        QVERIFY(!obsLogWanted(obslog::Debug, false));      // the per-frame camera spam
+    }
+    void verboseModeLogsEverything() {
+        for (int level : {obslog::Error, obslog::Warning, obslog::Info, obslog::Debug}) QVERIFY(obsLogWanted(level, true));
     }
     void placementBadInputsFallBackToMedium() {
         QCOMPARE(Placement::cameraRect(3, 9), Placement::cameraRect(3, 1));

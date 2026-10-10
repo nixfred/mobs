@@ -4,7 +4,10 @@
 #include "obsbackend.h"
 #include "palette.h"
 #include "previewmodel.h"
+#include "review.h"
+#include "thumbprovider.h"
 #include <QDateTime>
+#include <QQmlContext>
 #include <QDir>
 #include <QGuiApplication>
 #include <QStandardPaths>
@@ -18,6 +21,7 @@
 #include <QtQml/qqml.h>
 
 int main(int argc, char *argv[]) {
+    qputenv("QT_MEDIA_BACKEND", "ffmpeg");   // Qt's ffmpeg multimedia backend plays the takes in the review screen
     QGuiApplication app(argc, argv);
     app.setApplicationName("mobs");
     app.setOrganizationName("mobs");
@@ -45,6 +49,11 @@ int main(int argc, char *argv[]) {
     Control control(&recorder, &state);
     if (qEnvironmentVariable("MOBS_NO_HOTKEY") != "1") control.registerOnSessionBus();   // tests that run several copies set MOBS_NO_HOTKEY=1
 
+    Review review;
+    QObject::connect(&review, &Review::openChanged, &state, [&] { state.setReviewing(review.isOpen()); });
+    // After a recording is saved, open it for review. Starting a new recording (e.g. by hotkey) closes the review: the take stays on disk.
+    QObject::connect(&recorder, &Engine::saved, &review, [&](const QString &path) { review.open(path); });
+    QObject::connect(&recorder, &Engine::stateChanged, &review, [&] { if (recorder.active() && review.isOpen() && !review.saving()) review.close(); });
     PreviewModel preview;
     QObject::connect(&backend, &RecorderBackend::previewFrame, &preview, &PreviewModel::setFrame);
     QObject::connect(&recorder, &Engine::previewingChanged, &preview, [&] { if (!recorder.previewing()) preview.clear(); });
@@ -56,11 +65,14 @@ int main(int argc, char *argv[]) {
 
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Omarchy", &palette);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Preview", &preview);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Review", &review);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
 
     QQmlApplicationEngine engine;
     engine.addImageProvider("preview", preview.provider());
+    engine.addImageProvider("thumbs", new ThumbProvider(review.thumbs()->store()));   // the timeline filmstrip
+    engine.rootContext()->setContextProperty("backend", &review);                       // the name Monologue's EditBar.qml looks up
     engine.loadFromModule("Mobs", "Main");
     syncPreview();   // a preview left on last time starts with the app
     if (engine.rootObjects().isEmpty()) return 1;
@@ -76,6 +88,8 @@ int main(int argc, char *argv[]) {
     // MOBS_SCRIPT drives the app itself, with no synthetic key presses (safe on a live desktop). Steps, comma separated:
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
     //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
+    //   grabpreview=/path.png   (save the newest live-preview frame; for checks)
+    //   review=/path.mp4 | split=SECONDS | cut=INDEX | savereview | waitsaved | closereview   (the editor, for checks)
     // e.g. MOBS_SCRIPT=start,waitrec,wait=3,pause,wait=2,resume,wait=2,stop,waitidle,quit   (for tests and checks only)
     if (const QString script = qEnvironmentVariable("MOBS_SCRIPT"); !script.isEmpty()) {
         auto steps = std::make_shared<QStringList>(script.split(','));
@@ -92,7 +106,7 @@ int main(int argc, char *argv[]) {
             };
             (*poll)();
         };
-        *run = [=, &app, &recorder, &state]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -106,6 +120,13 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("pick=")) { state.choose(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("grabpreview=")) { std::printf("script: grabpreview %d\n", int(preview.image().save(st.mid(12)))); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("review=")) { std::printf("script: review %d\n", int(review.open(st.mid(7)))); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("split=")) { review.split(st.mid(6).toDouble()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("cut=")) { review.removeClip(st.mid(4).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st == "savereview") { review.save(); QTimer::singleShot(0, &app, *run); }
+            else if (st == "waitsaved") waitFor([&] { return !review.saving(); }, 60000, "the edit to be saved");
+            else if (st == "closereview") { review.close(); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("preview=")) { state.setPreview(st.mid(8) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("panel=")) { state.setCameraPanel(st.mid(6) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st == "quit") app.quit();
