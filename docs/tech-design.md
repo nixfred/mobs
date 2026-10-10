@@ -1,15 +1,36 @@
-# MOBS tech design (draft 1, 2026-10-09)
+# MOBS tech design (draft 2, 2026-10-09)
 
-Status: approved by Fred 2026-10-09 (ADR 0003). Written from reading both codebases. Nothing here is built yet.
-Inputs: README.md (what was agreed), docs/adr/0002 (one repo, two upstreams).
+Status: architecture approved by Fred 2026-10-09 (ADR 0005, which replaces the plugin-in-OBS plan of
+ADR 0003). Draft 1 planned docks inside OBS's window; the spike and Fred's request for an interface
+that does not look like OBS changed that. Inputs: README.md, docs/screen-design.md, ADRs 0002 to 0005.
 
 ## The answer in one paragraph
 
-MOBS is **OBS Studio plus one plugin that lives outside `obs/`**. The plugin adds two
-docks to OBS's window, a record/pause strip and Monologue's trim editor, and answers a
-global hotkey. OBS keeps doing the recording; Monologue's editor does the cutting. The
-result is one window, one process, and neither `obs/` nor `monologue/` has to be edited,
-so upstream pulls stay conflict-free (ADR 0002).
+MOBS is **its own Omarchy-styled Qt Quick app** (`mobs/app/`) that starts OBS Studio hidden and drives
+it over **obs-websocket**. The user only ever sees the MOBS window: a Simple view for beginners and a
+Pro drawer for experts, with "Open full OBS" bringing up the real OBS window. OBS does all recording.
+Monologue's editor, theme watcher and ffmpeg helpers are reused **by path** for the review screen.
+Neither `obs/` nor `monologue/` is edited, so upstream pulls stay conflict-free (ADR 0002).
+
+## Parts
+
+```
+mobs (one launcher, one window)
+  ├─ MOBS app  (Qt Quick, normal OpenGL, mobs/app/)
+  │    ├─ screens        choose · ready · recording · review · Pro drawer   (docs/screen-design.md)
+  │    ├─ ObsLink        obs-websocket v5 client; start/stop/pause, scenes, sources, file path back
+  │    ├─ ObsProcess     starts OBS hidden (Hyprland special workspace), enables websocket on
+  │    │                 localhost with a generated password, quits it with MOBS
+  │    ├─ Review         Monologue's edit.cpp, mediautils.cpp, thumbnails.cpp, EditBar.qml, theme.cpp
+  │    │                 (included by path from ../monologue/src)
+  │    └─ Control        D-Bus org.mobs.Control (Toggle, Pause, Status)
+  └─ OBS Studio (obs/, untouched), running in the background
+
+Hyprland bind  →  busctl --user call org.mobs.Control ... Toggle        (Alt+Shift+V)
+```
+
+Flow: hotkey or button → ObsLink `StartRecord` → OBS records → stop → OBS returns the output path →
+Review opens it → trim and cut → Save (ffmpeg, atomic, original kept).
 
 ## What reading the code showed
 
@@ -18,89 +39,51 @@ so upstream pulls stay conflict-free (ADR 0002).
 | Part of Monologue | Lines | In MOBS |
 |---|---|---|
 | Camera and mic capture (`QMediaCaptureSession`, `audiocapture.cpp`, `writer.cpp`) | about 900 | **Dropped.** OBS records far better (v4l2, PipeWire, hardware encoders). |
-| Editor: clips, split, trim, undo, filmstrip (`edit.cpp`, `EditBar.qml`, edit half of `backend.cpp`) | about 900 | **Kept. This is the part OBS lacks.** |
+| Editor: clips, split, trim, undo, filmstrip (`edit.cpp`, `EditBar.qml`, edit half of `backend.cpp`) | about 900 | **Kept: the review screen.** |
 | ffmpeg probe, thumbnails, atomic save (`mediautils.cpp`, `thumbnails.cpp`) | about 250 | Kept. |
-| Omarchy accent and corner sync (`theme.cpp`) | 82 | Kept. |
+| Omarchy accent and corner sync (`theme.cpp`) | 82 | Kept, and extended to the full palette. |
 | Portal save dialog (`portalfilepicker.cpp`) | 183 | Kept. |
 
-**OBS gives a plugin everything needed, through `obs-frontend-api.h` (installed: OBS 32.2.2, headers in `/usr/include/obs`):**
+`EditBar.qml` depends only on a `backend` object (`duration`, `clips`, `pauses`, `thumbnails`, and
+`split`, `setClip`, `removeClip`, `joinClips`, `beginGesture`, `endGesture`). The prototype runs it
+unmodified over a sample backend. Monologue's own `Backend` mixes capture and editing in one class,
+so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting it would let us drop the duplicate.
 
-- `obs_frontend_add_dock_by_id(id, title, QWidget*)` puts a panel in OBS's window.
-- `obs_frontend_recording_start/stop/pause`, plus `OBS_FRONTEND_EVENT_RECORDING_STARTED/STOPPED/PAUSED/UNPAUSED` events.
-- `obs_frontend_get_last_recording()` says where the finished file is, so the editor can open it on stop.
-- `obs_frontend_recording_add_chapter()` exists too.
+## Decisions
 
-**The tools line up:** OBS is Qt 6 widgets, Monologue is Qt 6 QML. Arch ships one Qt
-(6.11.2) with `QQuickWidget` in `qt6-declarative`, so a QML editor can sit inside an OBS
-dock in the same process.
+1. **Own window, OBS behind it** (ADR 0005). Reasons: it can look like Omarchy, not OBS; it uses Qt's normal
+   OpenGL video output; and an OBS crash cannot take the MOBS window down. The spike showed QML docks inside
+   OBS exit cleanly only about half the time on gus.
+2. **Control over obs-websocket**, which is built into OBS 32 (`/usr/lib/obs-plugins/obs-websocket.so`).
+3. **Hotkey over D-Bus on the MOBS app**, because OBS's own hotkeys do not fire globally on Wayland.
+   **Start/stop: physical Alt + Shift + V** (Hyprland `SUPER + SHIFT + V`). **Pause: Ctrl + Alt + Shift + V.**
+   Alt + Shift + R was Fred's first choice but is "Rename workspace" in `bindings.lua`. Both V chords were
+   free in the live Hyprland table on 2026-10-09; re-check before binding.
+4. **Pause marks from MOBS's own sidecar file**, written when it sends pause and resume, so they work for any format.
+5. **Beginner cards are scenes MOBS creates over websocket**; the Pro drawer edits the same objects.
+6. **Reuse Monologue by path, never copy**, so subtree pulls update the editor for free.
 
-## Parts
+## Evidence so far
 
-```
-OBS Studio (obs/, untouched)
-  └─ loads plugin  mobs/  (new, ours, GPLv2)
-       ├─ RecordDock    big record button, pause, timer, mic meter, hotkey hint
-       ├─ EditDock      QQuickWidget showing Monologue's editor QML
-       ├─ EditorBackend edit + save logic, built from monologue/src/edit.cpp,
-       │                mediautils.cpp, thumbnails.cpp, theme.cpp (included by path, not copied)
-       ├─ PauseLog      writes <take>.pauses.json from pause/resume events
-       └─ Control       D-Bus service  org.mobs.Control  (Toggle, Pause, Status)
+- **Spike 1 and 2** (`mobs/spike/`, ADR 0004): Monologue's real `EditBar.qml` ran inside an OBS dock with
+  Qt Quick's software renderer; video needs `QVideoSink` to `QImage` (16 to 20 ms of CPU per frame at 640 wide).
+  Exit reliability with any QML dock loaded was poor on gus (no plugin 6/6 clean; plugin without a dock 6/6;
+  empty QML dock 4/8 stuck; full dock 3/6). One cause found (OBS's "Closing Dockable Window" dialog), the rest
+  unexplained. This is why the architecture moved out of OBS's window.
+- **Screen prototype** (`mobs/design/`, `docs/design/*.png`): five screens in the live Liftoff theme,
+  rendered in the Test Drive VM with sample data.
 
-Hyprland bind  →  busctl --user call org.mobs.Control ... Toggle
-```
+## Risks and the next test
 
-Flow: hotkey (or button) → OBS records → stop event → file path from
-`obs_frontend_get_last_recording()` → EditDock opens the take with pause marks from the
-sidecar → trim and cut → Save (ffmpeg, atomic, original kept).
-
-## Decisions made in this draft
-
-1. **Plugin, not patching OBS.** MOBS code goes in `mobs/`, built against the installed OBS
-   headers. Only a very small, rebased change may ever touch `obs/` or `monologue/`.
-2. **Reuse Monologue's files by path, do not copy them.** `mobs/CMakeLists.txt` points at
-   `../monologue/src/*.cpp` and the QML files, so a subtree pull updates the editor for free.
-3. **A new `EditorBackend`, not Monologue's `Backend`.** Monologue's `Backend` mixes capture
-   and editing in one 550-line class, and the capture half would drag Qt Multimedia's
-   camera into OBS. MOBS gets an editing-only backend and `monologue/` stays pristine.
-   Later, a PR to omacom/monologue splitting its `Backend` the same way would let us drop
-   the duplicate (we hold clones in `forks/` for exactly that).
-4. **Hotkey over D-Bus, not OBS hotkeys and not obs-websocket.** OBS's own hotkeys do not
-   fire globally on Wayland. A Hyprland `bind` running `busctl --user call` needs no extra
-   program and no websocket password, and Monologue already links QtDBus. The README
-   still says "global hotkey plus buttons", and this is how the hotkey works.
-5. **Pause marks come from our own sidecar file,** written when the pause and resume
-   events fire, not from OBS chapter markers, because it works for any container format.
-6. **Camera and mic are OBS sources.** MOBS ships a default scene collection ("MOBS": screen,
-   camera, mic) and a recording profile (H.264 MP4 and AAC, like Monologue).
-
-## Risks and the first test
-
-- **Was the biggest unknown: a `QQuickWidget` inside an OBS dock on Wayland. Spike 1 answered it (ADR 0004).**
-  The default OpenGL path turned OBS's preview black; forcing Qt Quick's software renderer fixed it,
-  and Monologue's real `EditBar.qml` ran in the dock. Not yet proven on real hardware (the VM is virgl),
-  and video playback inside the dock was not tested.
-- **Qt Multimedia FFmpeg backend inside OBS:** only matters if the editor plays video through
-  `QtMultimedia`. Both link the system ffmpeg on Arch, but check for symbol clashes in the spike.
-- **`obs-websocket` submodule is not checked out** in `obs/plugins/obs-websocket`. Harmless
-  here (we build against installed OBS), but a from-source OBS build would need
-  `git submodule update --init`.
+- **Spike 3, the real unknown now:** MOBS starts OBS hidden, connects over websocket, starts, pauses and stops a
+  recording, and gets the file path back; and Wayland screen capture through the portal works while OBS is not focused.
+- **First-run permissions:** the screen-capture portal prompt must be explained by a MOBS screen, not left to OBS.
+- **Hiding OBS:** a Hyprland special workspace is Omarchy-only, which is fine here, but check that OBS stays alive and keeps capturing while hidden.
+- **`obs-websocket` submodule is not checked out** in `obs/plugins/obs-websocket`. Harmless (we use the installed OBS), but a from-source OBS build needs `git submodule update --init`.
 - **Windows and macOS** code stays in `obs/` untouched and unbuilt (README: left out).
-
-## Hotkeys (decided by Fred, 2026-10-09)
-
-- **Start/stop:** physical Alt + Shift + V (Hyprland `SUPER + SHIFT + V`). Pause/resume: physical Ctrl + Alt + Shift + V (`SUPER + CTRL + SHIFT + V`).
-- Alt + Shift + R was Fred's first choice but is taken by "Rename workspace" (`bindings.lua`), so V (video) won. Both V chords were free in the live Hyprland table on 2026-10-09; re-check before binding.
-- Described by physical key labels: Alt sends SUPER on gus, no Windows-logo key needed.
-
-## Not decided here
-
-- Screen design (layout of the two docks, the first-run flow). Separate step on the Medium track.
-- Whether the default scene collection ships in the plugin or is created on first run.
-- Naming of the D-Bus interface beyond `org.mobs.Control`.
 
 ## Next
 
-1. Practice copy: done (Test Drive VM `test-drive-mobs-spike`).
-2. Dock spike: done, passed with software rendering (ADR 0004, `docs/spike-1-dock-in-obs.png`).
-3. Spike 2: play a recorded take inside the dock (video output without GL), and re-check on real hardware.
-4. Screen design, then the plugin.
+1. Spike 3: OBS hidden plus websocket recording, in the practice VM, then on gus.
+2. Wire the theme reader (`colors.toml`, live) and Hyprland rounding into the prototype.
+3. Build `mobs/app/` screen by screen from the prototype.

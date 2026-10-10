@@ -1,44 +1,53 @@
 import QtQuick
+import QtMultimedia
 
-// Hosts the real, unmodified EditBar.qml (copied next to this file) plus a moving
-// block so the widget has to keep repainting, and logs evidence through the stub.
+// Spike 2: a video player AND Monologue's real EditBar.qml in one OBS dock, software-rendered.
 Rectangle {
     id: top
     color: "#101014"
-    property int frames: 0
+    function shutdown() { player.stop(); player.source = "" }
+
+    MediaPlayer {
+        id: player
+        source: backend.videoPath ? "file://" + backend.videoPath : ""
+        videoOutput: video.sink
+        loops: MediaPlayer.Infinite
+        Component.onCompleted: if (backend.videoPath) play()
+        onErrorOccurred: (error, errorString) => backend.log("video ERROR " + error + ": " + errorString)
+    }
+
+    Image {
+        id: vo
+        anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: 8
+        width: 480; height: 270
+        cache: false
+        asynchronous: false
+        fillMode: Image.PreserveAspectFit
+        source: "image://frames/" + video.serial
+    }
 
     EditBar {
         id: bar
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.left: parent.left; anchors.right: parent.right
         anchors.margins: 8
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.top: vo.bottom; anchors.topMargin: 24
         height: 64
-    }
-
-    Rectangle {
-        id: block
-        y: 6; width: 24; height: 10; radius: 3; color: "#FFD60A"
-        SequentialAnimation on x {
-            loops: Animation.Infinite
-            NumberAnimation { from: 8; to: Math.max(top.width - 40, 9); duration: 1500 }
-            NumberAnimation { from: Math.max(top.width - 40, 9); to: 8; duration: 1500 }
-        }
     }
 
     Text {
         anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 8
         color: "#c8c8cc"; font.pixelSize: 12
-        text: "MOBS spike  clips=" + backend.clips.length + "  frames=" + top.frames
+        text: "MOBS spike 2  clips=" + backend.clips.length + "  video state=" + player.playbackState + " pos=" + player.position + "ms"
     }
 
-    Connections {
-        target: top.Window.window
-        function onFrameSwapped() { top.frames++ }
-    }
     Timer { interval: 2000; running: true; onTriggered: backend.split(30) }
     Timer {
-        interval: 6000; running: true
-        onTriggered: backend.log("after 6s: frames=" + top.frames + " clips=" + backend.clips.length + " (expect >100 and 2)")
+        interval: 3000; running: true
+        onTriggered: backend.log("t=3s video state=" + player.playbackState + " pos=" + player.position + "ms hasVideo=" + player.hasVideo + " clips=" + backend.clips.length + " | " + video.stats())
+    }
+    Timer {
+        interval: 7000; running: true
+        onTriggered: backend.log("t=7s video state=" + player.playbackState + " pos=" + player.position + "ms | " + video.stats())
     }
 }

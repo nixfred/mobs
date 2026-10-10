@@ -32,7 +32,9 @@ From Clarity's Idea Box: control-plane #10 “Go fork https://github.com/omacom/
 
 **What it must do.** The destination is ALL of OBS Studio's features and ALL of Monologue's features (webcam recorder, pause marks, the trim and cut editor) in one app. The first working version is **one combined app from day one**: Monologue's recording and editing living inside the OBS window, not two programs glued together. How exactly (an OBS dock or plugin, or something else) is the tech design step's job.
 
-**How you control it.** One global Hyprland hotkey starts and stops a recording from any app, even when MOBS isn't focused. The window also has record and pause buttons, with Monologue's Space-to-record feel.
+**How you control it.** One global Hyprland hotkey starts and stops a recording from any app, even when MOBS isn't focused: physical **Alt + Shift + V** (pause: Ctrl + Alt + Shift + V). The window also has record and pause buttons, with Monologue's Space-to-record feel.
+
+**What it looks like (Fred, 2026-10-09).** "Super easy for beginners but also satisfy experts. It looks too much like OBS right now. Put some Omarchy feel on it." So MOBS is **its own window in the live Omarchy theme**, with OBS running behind it (ADR 0005). A beginner sees three big cards (my screen, screen + me, just my camera) and then one Record button. Experts press `P` for a Pro drawer in the same look, and "Open full OBS" reaches everything else. Pictures of the five screens: `docs/screen-design.md` (sample-data prototype, not a working recorder).
 
 **What's left out of the first version.**
 
@@ -43,9 +45,9 @@ Not ruled out, not planned first: live streaming (an OBS feature, so it stays in
 
 **Known risks, accepted.**
 
-- Combining the two apps in one window is the biggest of the three options considered. The smaller slice (record with OBS, then open the take in Monologue's editor) was offered and not chosen. If the combined build stalls, that slice is the fallback.
+- "One combined app" now means one MOBS window driving OBS behind it, not OBS's own window with panels added (the spike showed that route exits unreliably on gus). The unproven part is OBS running hidden and controlled over websocket (spike 3). If the full MOBS window stalls, the fallback is still: record with OBS, open the take in Monologue's editor.
 - Keeping OBS and Monologue pulling from their official upstreams (ADR 0002) means MOBS's own code must live outside `obs/` and `monologue/`, and edits inside them stay small.
-- OBS is Qt 6 widgets and Monologue is Qt 6 QML plus C++17. Joining them is the first thing the tech design has to settle.
+- Monologue's editor is reused by path (unmodified) in the review screen; OBS is controlled over obs-websocket. Both upstreams stay untouched.
 
 ## Set-up choices
 
@@ -60,4 +62,4 @@ Not ruled out, not planned first: live streaming (an OBS feature, so it stays in
 
 ## Status
 
-Shaped (2026-10-09): who it's for, what it must do and what's left out are settled above. Next are the screen design and the tech design (Medium track). See STATUS.md.
+Shaped (2026-10-09): who it's for, what it must do and what's left out are settled above. The tech design (`docs/tech-design.md`) and the screen design (`docs/screen-design.md`) are drafted and approved in direction. Next: spike 3 (OBS hidden, controlled over websocket), then the build. See STATUS.md.

@@ -1,7 +1,7 @@
 # 4. QML docks inside OBS use Qt Quick software rendering
 
 - Date: 2026-10-09
-- Status: decided (spike 1 evidence; Fred approved the plugin design in ADR 0003)
+- Status: decided, but only relevant to a dock inside OBS. ADR 0005 moved MOBS out of OBS's window.
 
 ## Decision
 
@@ -32,3 +32,7 @@ preview; software rendering does not. A flat 2D timeline does not need the GPU.
   (`QtMultimedia` video output may want GL; the spike did not play video).
 - `QQuickWindow::setGraphicsApi` is process-wide. OBS has no QML of its own, so this is
   safe today; re-check if OBS ever ships a Qt Quick component.
+- Spike 2 (video): `VideoOutput` draws nothing under the software renderer (measured: 62 colours in
+  the video area), so video went through `QVideoSink` to `QImage` to a QML `Image`: about 30 fps,
+  16 to 20 ms of CPU per frame at 640 wide, on gus and in the VM.
+- Exit reliability on gus is poor with any QML dock loaded; see ADR 0005 for the counts.

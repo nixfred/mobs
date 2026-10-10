@@ -1,17 +1,25 @@
 # mobs: status
 
 - Started: 2026-10-09, from Clarity's Idea Box
-- Stage: shape done 2026-10-09; next is the screen design and the tech design (Medium track)
-- Done 2026-10-09: forked omacom/monologue and obsproject/obs-studio to nixfred; MOBS repo holds both as git subtrees (obs/, monologue/) with full history and the official upstreams as remotes. See docs/adr/0002-one-repo-two-upstreams.md. Merged to main and pushed to origin (github.com/nixfred/mobs).
+- Stage: shape, tech design and screen design drafted 2026-10-09. Next is spike 3, then the build.
+- Repo: github.com/nixfred/mobs (private). OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
 - Finding: Monologue is a webcam recorder with a trim editor (Qt 6 QML, C++), not a voice tool. Voxtype (already on Omarchy) is the dictation tool.
-- Shaped 2026-10-09 (details in README.md):
-  - For: Fred only, on his Omarchy machines (gus, vic).
-  - First version: one combined app from day one, with all of OBS's and Monologue's features as the destination.
-  - Control: global hotkey plus record and pause buttons in the window.
-  - Left out: Windows and macOS, voice dictation and transcripts.
-  - Not ruled out: live streaming (stays in as an OBS feature), packaging (later).
-- Risk: the combined app is the largest option. Fallback if it stalls: record with OBS, open the take in Monologue's editor.
-- Tech design drafted 2026-10-09 (docs/tech-design.md, ADR 0003, decided): MOBS is an OBS plugin in mobs/ with a record dock and an edit dock, reusing Monologue's editor source by path, with the hotkey over D-Bus. OBS does all recording; Monologue's camera capture is dropped. Neither obs/ nor monologue/ is edited.
-- Spike 1 PASSED 2026-10-09 (ADR 0004, mobs/spike/, docs/spike-1-dock-in-obs.png): Monologue's real EditBar.qml runs in an OBS dock on native Wayland. The default OpenGL Qt Quick path turned OBS's preview black; software rendering fixed it (A/B in a Test Drive VM). Not yet proven on real hardware (VM is virgl) or with video playback in the dock.
-- Practice copy: Test Drive VM test-drive-mobs-spike (OBS 32.2.2, Qt 6.11.2, cmake/ninja added; its package DB was stale, refreshed with pacman -Sy).
-- Next: spike 2 (play a take inside the dock without GL, check on gus hardware), then the screen design, then the plugin.
+
+## Decided (Fred, 2026-10-09; details in README.md)
+
+- For: Fred only, on his Omarchy machines (gus, vic).
+- Destination: all of OBS's and Monologue's features in one app. Left out: Windows and macOS, voice dictation and transcripts. Not ruled out: live streaming, packaging.
+- Hotkey: physical Alt + Shift + V starts/stops (pause: Ctrl + Alt + Shift + V). Alt + Shift + R was taken (Rename workspace).
+- Interface: "super easy for beginners, satisfy experts, not too much like OBS, Omarchy feel." MOBS is its own window in the live Omarchy theme; OBS runs behind it, driven over obs-websocket (ADR 0005, replaces ADR 0003). Beginner: three cards then one Record button. Expert: a Pro drawer plus "Open full OBS".
+
+## Evidence
+
+- Spike 1 and 2 (ADR 0004, mobs/spike/): Monologue's real EditBar.qml runs in an OBS dock on native Wayland with Qt Quick software rendering (OpenGL turned OBS's preview black, A/B in the VM); real video plays via QVideoSink to QImage, also on gus's real hardware. But OBS exits cleanly only about half the time with any QML dock loaded on gus (no plugin 6/6, plugin without dock 6/6, empty QML dock 4/8 stuck, full dock 3/6; one cause found, the "Closing Dockable Window" dialog, the rest unexplained). That is why MOBS left OBS's window.
+- Screen prototype (mobs/design/, docs/design/screen-1..5.png, docs/screen-design.md): five screens in the live Liftoff theme, rendered in the Test Drive VM with sample data only. Screen 4 uses Monologue's EditBar.qml unmodified.
+- Practice copy: Test Drive VM test-drive-mobs-spike (OBS 32.2.2, Qt 6.11.2, cmake/ninja; its package DB was stale, refreshed with pacman -Sy). Still running.
+
+## Open
+
+- Spike 3: MOBS starts OBS hidden, connects over obs-websocket, starts, pauses and stops a recording, gets the file path back; Wayland screen-capture portal works while OBS is hidden.
+- Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
+- Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).
