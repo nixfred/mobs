@@ -487,12 +487,14 @@ private slots:
         QTRY_VERIFY2_WITH_TIMEOUT(server.p.state() == QProcess::NotRunning, "the server never saw the broadcast end", 15000);   // not waitForFinished(): it says false for a process that already ended
         QCOMPARE(statesOf(state), (QStringList{"connecting", "live", "ended"}));              // each state announced once, in order
         QVERIFY(stats.count() >= 2); QVERIFY2(stats.last()[0].toInt() > 500, qPrintable(QString("kbps %1").arg(stats.last()[0].toInt())));
-        // what the server received: H.264 + AAC at the size that was asked for, with a keyframe about every 2 s
+        // what the server received: H.264 + AAC at the size that was asked for, with a keyframe about every 3 s (X recommends 3)
         QCOMPARE(probe(recv, {"-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0"}), QString("h264,1280,720"));
         QCOMPARE(probe(recv, {"-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"}), QString("aac"));
+        QCOMPARE(probe(recv, {"-select_streams", "a:0", "-show_entries", "stream=sample_rate,channels", "-of", "csv=p=0"}), QString("44100,2"));   // X recommends 44.1 kHz stereo
+        QCOMPARE(probe(recv, {"-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0"}), QString("30/1"));           // and 30 frames a second
         const QStringList keys = probe(recv, {"-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "csv=p=0"}).split('\n', Qt::SkipEmptyParts);
         QVERIFY2(keys.size() >= 2, qPrintable(keys.join(",")));
-        QVERIFY2(keys.last().toDouble() - keys.first().toDouble() < 2.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
+        QVERIFY2(keys.last().toDouble() - keys.first().toDouble() < 3.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
         QVERIFY2(audioRms(recv) > 0.02, qPrintable(QString("rms %1").arg(audioRms(recv))));   // the tone really went out
         // and the saved copy is the full-quality file, unaffected by the broadcast's 720p
         QCOMPARE(probe(path, {"-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0"}), QString("1920,1080"));
@@ -546,7 +548,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(server.p.state() == QProcess::NotRunning, 15000);
         QCOMPARE(probe(recv, {"-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0"}), QString("h264,1920,1080"));
         const QStringList keys = probe(recv, {"-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "csv=p=0"}).split('\n', Qt::SkipEmptyParts);
-        QVERIFY2(keys.size() >= 2 && keys.last().toDouble() - keys.first().toDouble() < 2.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
+        QVERIFY2(keys.size() >= 2 && keys.last().toDouble() - keys.first().toDouble() < 3.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
         QVERIFY(durationOf(spec.path) > 4.0);
     }
     void aDroppedConnectionReconnectsAndTheFileNeverNoticed() {
@@ -624,6 +626,73 @@ private slots:
         QVERIFY2(pixelsIn(trimmed, tile, isBlue) > 400, qPrintable(QString("blue %1").arg(pixelsIn(trimmed, tile, isBlue))));
         QVERIFY(blueAt(trimmed, 1680, 406));
         QVERIFY(darkAt(trimmed, 1452 + 20, 406));                                                // not stretched to fill: bars of backdrop on both sides
+    }
+    // The live picture must keep flowing while a take is recording, with either encoder: the NVIDIA one reads the scene on the GPU,
+    // the picture is a CPU copy of the same scene, and the two must not starve each other.
+    int previewFramesDuringATake(bool hardware, int pick) {
+        qputenv("MOBS_TEST_CAMERA", "colour");
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");          // ONE backend: libobs cannot be started twice in a process
+        if (hardware) {
+            QSignalSpy checked(&b, &RecorderBackend::hardwareChecked); b.checkHardware();
+            if (checked.isEmpty() || !checked.first()[0].toBool()) return -4;   // no NVIDIA H.264 here
+        }
+        QSignalSpy frames(&b, &RecorderBackend::previewFrame), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.mic = false; spec.pick = pick; spec.path = d.path() + "/t.mp4"; spec.hardware = hardware; spec.camera.path = "test";
+        b.setPreview(true, spec);
+        for (int waited = 0; frames.count() <= 3 && waited < 8000; waited += 100) QTest::qWait(100);
+        if (frames.count() <= 3) return -3;           // the picture never started
+        b.begin(spec); started.wait(20000);
+        if (started.isEmpty()) return -1;
+        QTest::qWait(500); frames.clear();
+        QTest::qWait(3000);                         // 15 fps would give about 45 frames
+        const int during = frames.count();
+        b.end(); finished.wait(20000);
+        return failed.isEmpty() ? during : -2;
+    }
+    void thePictureKeepsFlowingWhileASoftwareTakeRecords() {
+        const int n = previewFramesDuringATake(false, 2);
+        QVERIFY2(n > 25, qPrintable(QString("frames in 3 s: %1").arg(n)));
+    }
+    void thePictureKeepsFlowingWhileAnNvidiaTakeRecords() {
+        const int n = previewFramesDuringATake(true, 2);
+        if (n == -4) QSKIP("no NVIDIA H.264 on this machine");
+        QVERIFY2(n > 25, qPrintable(QString("frames in 3 s with NVIDIA: %1 (-3 = the picture never started, -1 = the take never started)").arg(n)));
+    }
+    // The bitrate X receives must be the one asked for, with either encoder. Busy picture on purpose: a flat one needs almost no bits
+    // whatever the setting says, which is how a wrong bitrate once went unseen.
+    double receivedKbps(bool hardware, int askedKbps, int port) {
+        QTemporaryDir d;
+        QProcess make; make.start("ffmpeg", {"-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=20,noise=alls=40:allf=t+u", "-c:v", "libx264", "-crf", "10", "-pix_fmt", "yuv420p", d.path() + "/busy.mp4"});
+        if (!make.waitForFinished(60000) || make.exitCode() != 0) return -5;
+        qputenv("MOBS_TEST_CAMERA", ("video:" + d.path() + "/busy.mp4").toUtf8());
+        const QString recv = d.path() + "/recv.flv";
+        RtmpReceiver server(recv, port, "test-key-abc");
+        ObsBackend b(d.path() + "/token");
+        if (hardware) {
+            QSignalSpy checked(&b, &RecorderBackend::hardwareChecked); b.checkHardware();
+            if (checked.isEmpty() || !checked.first()[0].toBool()) return -4;
+        }
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed), state(&b, &RecorderBackend::streamState);
+        RecordSpec spec = silentSpec(3, d.path() + "/t.mp4"); spec.hardware = hardware; spec.camera.path = "test";
+        spec.stream.on = true; spec.stream.url = QString("rtmp://127.0.0.1:%1/live").arg(port); spec.stream.key = "test-key-abc"; spec.stream.kbps = askedKbps;
+        b.begin(spec); started.wait(30000);
+        if (started.isEmpty()) return -1;
+        for (int waited = 0; !statesOf(state).contains("live") && waited < 10000; waited += 100) QTest::qWait(100);
+        QTest::qWait(10000);
+        b.end(); finished.wait(25000);
+        for (int waited = 0; server.p.state() != QProcess::NotRunning && waited < 15000; waited += 100) QTest::qWait(100);
+        const double seconds = probe(recv, {"-show_entries", "format=duration", "-of", "csv=p=0"}).toDouble();
+        const double bytes = probe(recv, {"-show_entries", "format=size", "-of", "csv=p=0"}).toDouble();
+        return seconds > 5 ? bytes * 8 / seconds / 1000 : -3;
+    }
+    void theBroadcastHoldsItsBitrateWithSoftwareEncoding() {
+        const double kbps = receivedKbps(false, 3000, 19360);
+        QVERIFY2(kbps > 2300 && kbps < 3800, qPrintable(QString("asked 3000 kbps (+128 audio), the server got %1").arg(kbps)));
+    }
+    void theBroadcastHoldsItsBitrateWithNvidiaEncoding() {
+        const double kbps = receivedKbps(true, 3000, 19361);
+        if (kbps == -4) QSKIP("no NVIDIA H.264 on this machine");
+        QVERIFY2(kbps > 2300 && kbps < 3800, qPrintable(QString("asked 3000 kbps (+128 audio), the server got %1").arg(kbps)));
     }
     void cancelBeforeStartIsClean() {
         QTemporaryDir d;

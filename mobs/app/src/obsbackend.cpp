@@ -127,7 +127,7 @@ bool ObsBackend::ensureStarted(QString *error) {
     ovi.gpu_conversion = true;
     if (obs_reset_video(&ovi) != OBS_VIDEO_SUCCESS) { *error = "the video engine would not start (OpenGL)"; obs_shutdown(); return false; }
     obs_audio_info2 oai{};
-    oai.samples_per_sec = 48000; oai.speakers = SPEAKERS_STEREO;
+    oai.samples_per_sec = 44100; oai.speakers = SPEAKERS_STEREO;   // 44.1 kHz: what X recommends for a stream (the file uses it too)
     if (!obs_reset_audio2(&oai)) { *error = "the audio engine would not start"; obs_shutdown(); return false; }
 
     for (const char *m : kModules) {
@@ -491,7 +491,7 @@ bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
     obs_data_t *vs = obs_data_create();
     obs_data_set_string(vs, "rate_control", "CBR");
     obs_data_set_int(vs, "bitrate", s.kbps);
-    obs_data_set_int(vs, "keyint_sec", 2);
+    obs_data_set_int(vs, "keyint_sec", 3);   // X recommends a keyframe every 3 seconds
     if (spec.hardware) {
         obs_data_set_string(vs, "preset", "p5");
     } else {

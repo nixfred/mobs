@@ -132,7 +132,9 @@ int main(int argc, char *argv[]) {
     QObject::connect(&recorder, &Engine::stateChanged, &preview, dropPictureIfOff);
     // The preview runs when the user turned it on AND a screen other than "choose" is showing; it follows the pick, the
     // camera and the placement. A recording that starts meanwhile reuses the same scene.
-    auto syncPreview = [&] { recorder.setPreview(state.preview() && state.screen() != 1, state.pick()); };
+    // Armed to go live ALWAYS shows it: what is about to be broadcast must be seen first, whatever the preview chip says.
+    auto syncPreview = [&] { recorder.setPreview((state.preview() || recorder.streamArmed()) && state.screen() != 1, state.pick()); };
+    QObject::connect(&recorder, &Engine::streamChanged, &state, [&] { syncPreview(); });
     QObject::connect(backend.get(), &RecorderBackend::previewFailed, &state, [&] { state.setPreview(false); });
     for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged})
         QObject::connect(&state, sig, &state, syncPreview);

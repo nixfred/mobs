@@ -171,3 +171,13 @@ Not verified: a real call with a real guest, the guest's audio path, and a live 
 
 ![the real portal in the practice VM](docs/app/show-real-libobs.png)
 
+## Make the broadcast visible, startable and X-correct (2026-10-10)
+
+Fred, after trying it: "I still dont see what is being recorded. I want to see how it appears on the outstream. Me in the top corner from my webcam and my desktop shared so they can see me work." Then: "When I put in the stream code its unclear how to start it." Then he pasted X Live Studio's encoder panel (recommended vs current) and said "it should auto configure to" those values. He had already saved his stream key (the 12-character key file was there, mode 0600); nothing needed re-entering.
+
+Changed: **the picture is on by default** and **forced on while armed to go live** (what is about to be broadcast is seen first); **the webcam defaults to the top-right corner**; a big red **GO LIVE to X** button beside Record arms and starts in one click (and reads "set up go live" until a key is saved); the live page has a **close EXPERT** button and says what to do next; **X's US East address is the default** (`rtmp://va.pscp.tv:80/x`) so only the key is pasted, the default quality is **X recommended** (1080p30, 9 Mbps, AAC 128 kbps stereo, keyframe every 3 s), and the audio engine now runs at **44.1 kHz** (X's recommendation).
+
+Measured, not assumed: with a busy picture, the server received about the bitrate asked for with both x264 and NVIDIA (asked 3000 kbps, received 2.3 to 3.8 Mbps), and the live picture keeps flowing during software and NVIDIA takes (over 25 frames in 3 s at 15 fps). So the "10,002,726 bps video, 128x128, 60 fps, audio 2,250 bps" in Fred's pasted panel is not what MOBS sends (1080p30, the requested rate, 128 kbps audio); that panel may have been showing a different or earlier signal. After relaunching with this build the two can be compared.
+
+Not verified: a real broadcast to X.
+

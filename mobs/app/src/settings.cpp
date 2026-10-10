@@ -36,7 +36,7 @@ Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
     m_splash = m_settings->value("splash", true).toBool();
     const QString url = m_settings->value("streamUrl").toString().trimmed();
     if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;
-    m_streamQuality = qBound(0, m_settings->value("streamQuality", 1).toInt(), 2);
+    m_streamQuality = qBound(0, m_settings->value("streamQuality", 2).toInt(), 2);
     m_keySaved = !readStreamKey().isEmpty();
 }
 

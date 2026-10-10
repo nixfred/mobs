@@ -25,7 +25,7 @@ class Settings : public QObject {
     Q_PROPERTY(QString streamUrl READ streamUrl NOTIFY changed)       // where a live take is also sent (rtmp:// or rtmps://)
     Q_PROPERTY(bool streamKeySaved READ streamKeySaved NOTIFY changed)   // a stream key is on disk; QML can never read it back
     Q_PROPERTY(bool streamReady READ streamReady NOTIFY changed)       // both the address and the key are set
-    Q_PROPERTY(int streamQuality READ streamQuality NOTIFY changed)    // 0 light 720p 3 Mbps, 1 standard 1080p 6 Mbps, 2 high 1080p 9 Mbps
+    Q_PROPERTY(int streamQuality READ streamQuality NOTIFY changed)    // 0 light 720p 3 Mbps, 1 standard 1080p 6 Mbps, 2 X recommended 1080p30 9 Mbps (the default)
     Q_PROPERTY(QString aboutText READ aboutText CONSTANT)
 public:
     // streamKeyFile is where the stream key is kept (owner-only). Empty = nowhere, so a test can never write into a real config.
@@ -65,6 +65,8 @@ public:
     Q_INVOKABLE void clearStreamKey();
     Q_INVOKABLE void setStreamQuality(int quality);
     static QString streamUrlProblem(const QString &url);
+    // X's Live Studio, US East (N. Virginia): what it shows for a new RTMP livestream. The default, so only the stream key has to be pasted.
+    static inline const QString kXUsEast = QStringLiteral("rtmp://va.pscp.tv:80/x");
     static QString defaultFolder();
     static int crfFor(int quality);       // x264 constant rate factor: lower = bigger and better
     Q_INVOKABLE void setQuality(int quality);
@@ -89,8 +91,8 @@ private:
     AudioSpec m_audio;
     bool m_hardware = false;
     bool m_mic = true, m_review = true, m_splash = true;
-    QString m_streamUrl, m_streamKeyFile;
+    QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
-    int m_streamQuality = 1;
+    int m_streamQuality = 2;
     QString readStreamKey() const;
 };

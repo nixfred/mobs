@@ -21,16 +21,19 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         env.pop(key, None)
     case_count = 0
 
-    def check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra=""):
+    def check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra="", default_preview=False):
         global case_count
         if case_filter and case_filter not in name:
             return
         case_count += 1
         case_env = env | {"MOBS_SETTINGS": str(root / f"{case_count}.ini"), "MOBS_STREAM_KEY_FILE": str(root / f"{case_count}.key"),
                           "MOBS_SCRIPT": steps + ",quit", "MOBS_WINDOW_SIZE": size}
+        # The preview is ON by default now (it lights the camera and may open the screen dialog), so scenarios that mean "preview off" say so.
+        base_ini = "" if default_preview else "preview=false\n"
+        Path(case_env["MOBS_SETTINGS"]).write_text(f"[General]\n{base_ini}")
         if fake_backend:
             case_env["MOBS_FAKE_BACKEND"] = "1"
-            Path(case_env["MOBS_SETTINGS"]).write_text(f"[General]\nfolder={folder_override or root / 'takes'}\nreviewAfter=false\n{ini_extra}")
+            Path(case_env["MOBS_SETTINGS"]).write_text(f"[General]\nfolder={folder_override or root / 'takes'}\nreviewAfter=false\n{base_ini}{ini_extra}")
         case_env.update(extra_env or {})
         result = subprocess.run([binary], env=case_env, capture_output=True, text=True, timeout=15)
         output = result.stdout + result.stderr
@@ -97,6 +100,14 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=pro:1,expect=audioTab:6,wait=0.1,checklayout", fake_backend=True)
     check("the go live chip opens the setup when nothing is saved, and arms once it is",
           "pick=1,click=liveChip,expect=pro:1,expect=audioTab:6,expect=armed:0,pro=0," + live_setup + "click=liveChip,expect=armed:1,click=liveChip,expect=armed:0", fake_backend=True)
+    # The picture is on by default, and the broadcast has its own button beside Record.
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the ready screen shows the picture by default and fits with the GO LIVE button", "pick=2,wait=0.4,expect=preview:1,expect=previewing:1,expect=previewFrame:1,checklayout", size, True, default_preview=True)
+        check("the ready screen with the picture, a saved key and the GO LIVE button fits", live_setup + "pick=2,wait=0.4,expect=previewFrame:1,checklayout", size, True, default_preview=True)
+    check("the GO LIVE button arms and starts a broadcast in one click", live_setup + "pick=1,click=goLiveButton,expect=state:recording,expect=broadcasting:1,expect=armed:0,wait=0.8,expect=streamState:live", fake_backend=True)
+    check("the GO LIVE button without a saved address and key opens the setup page", "pick=1,click=goLiveButton,expect=state:idle,expect=pro:1,expect=audioTab:6,wait=0.1,checklayout", fake_backend=True)
+    check("arming to go live always shows the picture, even with the preview chip off", "pick=1,expect=previewing:0,arm=1,expect=previewing:1,expect=previewFrame:1,arm=0,expect=previewing:0", fake_backend=True)
+    check("the close EXPERT button on the live page leaves EXPERT", live_setup + "pro=1,tab=6,wait=0.1,click=closeLive,expect=pro:0", fake_backend=True)
     check("a take that is not live shows no broadcast", "pick=1,start,expect=state:recording,wait=0.6,expect=broadcasting:0,expect=streamState:off,checklayout", fake_backend=True)
     check("audio shortcut opens inputs", "pick=1,openaudio,expect=pro:1,expect=audioTab:2")
     check("invalid folder preserves saved destination", "pro=1,foldertext=relative/path,applyfolder,expect=folderDefault:1,wait=0.1,checklayout")

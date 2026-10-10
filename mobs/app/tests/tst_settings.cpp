@@ -126,18 +126,18 @@ private slots:
     void theStreamAddressMustBeRtmpAndIsRemembered() {
         QTemporaryDir d; const QString ini = d.path() + "/s.ini";
         { QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
-          QVERIFY(c.streamUrl().isEmpty());
+          QCOMPARE(c.streamUrl(), Settings::kXUsEast);                          // X's US East address is filled in: only the key is left to paste
           QVERIFY(!c.setStreamUrl("").isEmpty());
           QVERIFY(c.setStreamUrl("https://x.com/live").contains("rtmp://"));
           QVERIFY(!c.setStreamUrl("rtmp://").isEmpty());
           QVERIFY(!c.setStreamUrl("rtmp://has space/x").isEmpty());
-          QVERIFY(c.streamUrl().isEmpty());                                     // nothing bad was kept
+          QCOMPARE(c.streamUrl(), Settings::kXUsEast);                          // nothing bad was kept
           QVERIFY(c.setStreamUrl("  rtmps://live.example:443/x ").isEmpty());
           QCOMPARE(c.streamUrl(), QString("rtmps://live.example:443/x")); }
         QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
         QCOMPARE(c.streamUrl(), QString("rtmps://live.example:443/x"));
         QSettings bad(d.path() + "/bad.ini", QSettings::IniFormat); bad.setValue("streamUrl", "javascript:alert(1)"); bad.sync();
-        QVERIFY(Settings(&bad, nullptr, d.path() + "/key").streamUrl().isEmpty());   // a hand-edited bad value is ignored
+        QCOMPARE(Settings(&bad, nullptr, d.path() + "/key").streamUrl(), Settings::kXUsEast);   // a hand-edited bad value is ignored
     }
     void theStreamKeyLivesInAPrivateFileNeverInTheSettings() {
         QTemporaryDir d; const QString ini = d.path() + "/s.ini", keyFile = d.path() + "/sub/key";
@@ -168,11 +168,14 @@ private slots:
     void streamQualityPicksTheBitrateAndSize() {
         QTemporaryDir d; const QString ini = d.path() + "/s.ini";
         { QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
-          QCOMPARE(c.streamQuality(), 1); QCOMPARE(c.streamSpec().kbps, 6000); QCOMPARE(c.streamSpec().height, 1080);
+          QCOMPARE(c.streamQuality(), 2); QCOMPARE(c.streamSpec().kbps, 9000); QCOMPARE(c.streamSpec().height, 1080);   // X's recommendation is the default
+          c.setStreamQuality(1); QCOMPARE(c.streamSpec().kbps, 6000); QCOMPARE(c.streamSpec().height, 1080);
           c.setStreamQuality(0); QCOMPARE(c.streamSpec().kbps, 3000); QCOMPARE(c.streamSpec().height, 720);
           c.setStreamQuality(2); QCOMPARE(c.streamSpec().kbps, 9000); QCOMPARE(c.streamSpec().height, 1080);
           c.setStreamQuality(7); QCOMPARE(c.streamQuality(), 2); }
         QSettings s(ini, QSettings::IniFormat); QCOMPARE(Settings(&s, nullptr, d.path() + "/key").streamQuality(), 2);
+        { QSettings low(d.path() + "/low.ini", QSettings::IniFormat); Settings c(&low, nullptr, d.path() + "/key"); c.setStreamQuality(0); }
+        QSettings low2(d.path() + "/low.ini", QSettings::IniFormat); QCOMPARE(Settings(&low2, nullptr, d.path() + "/key").streamQuality(), 0);   // a lower choice is remembered
     }
     void aboutNamesTheEngineAndTheLicence() {
         QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat);

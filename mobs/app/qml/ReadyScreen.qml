@@ -23,17 +23,43 @@ Item {
                 + readyColumn.spacing * (3 + extraRows) + 12
             previewWidth: Math.min(480, Math.max(160, (root.height - reservedHeight - captionHeight) * 16 / 9))
         }
-        Item {
-            id: recordButton
-            objectName: "recordButton"
-            enabled: !Review.loading
-            opacity: Review.loading ? 0.4 : 1
-            width: showPreview && Engine.micChecking ? 96 : showPreview || Engine.micChecking ? 112 : root.height < 500 ? 144 : 190; height: width
+        Row {
+            id: startRow
             anchors.horizontalCenter: parent.horizontalCenter
-            Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: showPreview ? 3 : 4 }
-            Rectangle { anchors.centerIn: parent; width: parent.width * 0.67; height: width; radius: width / 2; color: Omarchy.red }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Engine.start(App.pick) }
+            spacing: 28
+            Item {
+                id: recordButton
+                objectName: "recordButton"
+                enabled: !Review.loading
+                opacity: Review.loading ? 0.4 : 1
+                width: showPreview && Engine.micChecking ? 96 : showPreview || Engine.micChecking ? 112 : root.height < 500 ? 144 : 190; height: width
+                Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: showPreview ? 3 : 4 }
+                Rectangle { anchors.centerIn: parent; width: parent.width * 0.67; height: width; radius: width / 2; color: Omarchy.red }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: Engine.start(App.pick) }
+            }
+            // The broadcast has its own plain button beside Record: one click arms it and starts it. (The chip below arms it for Record or the
+            // hotkey instead.) Without an address and key yet, it takes you to the page that asks for them.
+            Rectangle {
+                id: goLive
+                objectName: "goLiveButton"
+                signal clicked()
+                enabled: !Review.loading
+                y: (recordButton.height - height) / 2
+                width: goLiveLabel.implicitWidth + 40; height: 46; radius: 23
+                color: Prefs.streamReady ? Omarchy.red : "transparent"
+                border.width: 2; border.color: Prefs.streamReady ? Omarchy.red : Omarchy.selection
+                Txt {
+                    id: goLiveLabel
+                    anchors.centerIn: parent
+                    font.pixelSize: 15; font.bold: true
+                    text: Prefs.streamReady ? "GO LIVE to X" : "set up go live"
+                    color: Prefs.streamReady ? Omarchy.accentForeground : Omarchy.secondaryText
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: goLive.clicked() }
+                onClicked: { if (Prefs.streamReady) { Engine.setStreamArmed(true); Engine.start(App.pick) } else App.openLive() }
+            }
         }
         Column {
             id: summary

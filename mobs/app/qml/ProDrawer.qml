@@ -164,7 +164,7 @@ Rectangle {
                 Column {
                     width: (parent.width - parent.spacing) / 2; spacing: 10
                     Txt { text: "go live to X"; font.pixelSize: 16; font.bold: true }
-                    Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "On X: studio.x.com/live, New livestream, RTMP. Copy its server address and stream key here. X may need Premium; Live Studio is in beta." }
+                    Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "X US East is already filled in. Paste just the stream key from studio.x.com/live (New livestream, RTMP), then save. X may need Premium; Live Studio is in beta." }
                     Rectangle {
                         width: parent.width; height: 40; radius: 10; color: Omarchy.lighterBackground
                         border.color: liveProblem.text !== "" ? Omarchy.red : Omarchy.selection
@@ -224,12 +224,13 @@ Rectangle {
                             }
                         }
                         Button { text: "forget key"; enabled: Prefs.streamKeySaved; onClicked: { Prefs.clearStreamKey(); keyInput.text = "" } }
+                        Button { objectName: "closeLive"; text: "close EXPERT"; primary: Prefs.streamReady; onClicked: App.setPro(false) }
                     }
                     Txt { id: liveProblem; width: parent.width; wrapMode: Text.WordWrap; text: ""; color: Omarchy.red; font.pixelSize: 13; visible: text !== "" }
                     Txt {
                         width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13
                         color: Prefs.streamReady ? Omarchy.green : Omarchy.secondaryText
-                        text: Prefs.streamReady ? "ready: on the ready screen, click go live, then Record." : "not set up yet: both boxes are needed."
+                        text: Prefs.streamReady ? "saved. Next: close EXPERT and press the red GO LIVE button beside Record." : "not set up yet: both boxes are needed, then save."
                     }
                 }
                 Column {
@@ -238,7 +239,7 @@ Rectangle {
                     Flow {
                         width: parent.width; spacing: 8
                         Repeater {
-                            model: [["light", 0], ["standard", 1], ["high", 2]]
+                            model: [["light", 0], ["standard", 1], ["X recommended", 2]]
                             Button {
                                 required property var modelData
                                 text: modelData[0]; primary: Prefs.streamQuality === modelData[1]
@@ -248,7 +249,7 @@ Rectangle {
                     }
                     Txt {
                         width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13; color: Omarchy.secondaryText
-                        text: ["720p, 3 Mbps: for a slow connection.", "1080p, 6 Mbps: needs about 8 Mbps of upload.", "1080p, 9 Mbps: X's recommended rate; needs about 12 Mbps upload."][Prefs.streamQuality]
+                        text: ["720p, 3 Mbps: for a slow connection.", "1080p, 6 Mbps: needs about 8 Mbps of upload.", "1080p, 30 fps, 9 Mbps, AAC 128 kbps, keyframe every 3 s: exactly what X recommends. Needs about 12 Mbps of upload."][Prefs.streamQuality]
                     }
                     Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "You click go live before each broadcast; it never stays on. A full-quality copy is always saved too, and if the connection drops it keeps going. Pause is off while live." }
                 }

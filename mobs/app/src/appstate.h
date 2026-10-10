@@ -76,9 +76,9 @@ private:
     CameraScan m_scan;
     QList<CameraInfo> m_cams;
     QString m_camera;
-    int m_corner = 3, m_size = 1;
+    int m_corner = 1, m_size = 1;
     int m_guestCrop[4] = {0, 0, 0, 0};
-    bool m_panel = false, m_preview = false, m_pro = false;
+    bool m_panel = false, m_preview = true, m_pro = false;
     int m_expertTab = 0;
     int m_screen = 1, m_pick = 0;
     bool m_recording = false, m_reviewing = false;

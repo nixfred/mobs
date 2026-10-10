@@ -90,7 +90,7 @@ private slots:
         AppState a(&s, nullptr, [] { return twoCameras(); });
         a.choose(2);
         a.setCamera("/dev/video99"); QCOMPARE(a.cameraName(), QString("Logitech BRIO"));
-        a.setCorner(7); a.setCorner(-1); QCOMPARE(a.corner(), 3);
+        a.setCorner(7); a.setCorner(-1); QCOMPARE(a.corner(), 1);   // the default is top-right
         a.setSize(5); QCOMPARE(a.size(), 1);
     }
     void aChosenCameraThatWasUnpluggedIsNotUsed() {
@@ -180,15 +180,15 @@ private slots:
         a.setReviewing(false);
         QCOMPARE(a.screen(), 2);
     }
-    void previewIsOffByDefaultAndRemembered() {
+    void previewIsOnByDefaultAndTheChoiceToTurnItOffIsRemembered() {
         QTemporaryDir d; const QString f = d.path() + "/m.ini";
         { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
-          QVERIFY(!a.preview());                 // off by default: it lights the camera and may open the screen dialog
+          QVERIFY(a.preview());                  // on by default (Fred, 2026-10-10: "I still dont see what is being recorded"); the chip turns it off
           QSignalSpy sp(&a, &AppState::previewChanged);
-          a.setPreview(true); a.setPreview(true);
+          a.setPreview(false); a.setPreview(false);
           QCOMPARE(sp.count(), 1); }
         QSettings s2(f, QSettings::IniFormat); AppState b(&s2, nullptr, [] { return QList<CameraInfo>(); });
-        QVERIFY(b.preview());
+        QVERIFY(!b.preview());
     }
     void theProDrawerOpensAndClosesAndStartsClosed() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);

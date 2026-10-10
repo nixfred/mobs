@@ -41,8 +41,10 @@ be swapped for another language later (Fred chose C++17 + QML first, 2026-10-09)
 
 ## Seeing what is being recorded
 
-While a take is recording or paused, the recording screen shows **the live picture MOBS is saving**, whether or not the ready screen's
-"preview" chip was on. It is the same scene the encoder reads (screen, plus your camera in its corner, or just the camera), at 15 frames a
+**The picture is on by default** (the "preview" chip turns it off, and it is remembered), so the ready screen already shows what a take, or a
+broadcast, will look like before you press anything. **Arming to go live always turns it on**, whatever the chip says: what is about to be broadcast is
+seen first. While a take is recording or paused, the recording screen shows **the live picture MOBS is saving**, whether or not the ready screen's
+"preview" chip was on. The webcam sits in the **top-right** corner by default (tap a corner in the camera panel to move it). It is the same scene the encoder reads (screen, plus your camera in its corner, or just the camera), at 15 frames a
 second. A red outline and the line "recording: this is what is being saved" tell you it is live; **pause** dims it and says "paused: nothing is being
 saved"; while the file is finished it stays, dimmed, under "saving...". Wide windows put the picture beside the timer and buttons, tall
 ones put it above them; nothing scrolls (Law 17).
@@ -111,12 +113,16 @@ launch asked for none. **Not tested:** a real call with a real guest; the guest 
 MOBS can broadcast a take to X (or any RTMP/RTMPS server) while it records. **The saved file is always the full-quality 1080p copy**, whatever happens
 to the broadcast; the stream is a second, constant-bitrate encode of the same picture and sound.
 
-**Set it up once** (EXPERT > live): the server address and the stream key X gives you (studio.x.com/live > New livestream > RTMP; X may need Premium
-and Live Studio is in beta, so check X's page), and a stream quality: light (720p, 3 Mbps), standard (1080p, 6 Mbps, the default) or high (1080p, 9 Mbps).
+**Set it up once** (EXPERT > live): **the address is already filled in** (`rtmp://va.pscp.tv:80/x`, what X's Live Studio shows for US East; change it for another
+region or `rtmps://va.pscp.tv:443/x` for encryption), so **only the stream key has to be pasted** (studio.x.com/live > New livestream > RTMP; X may need Premium and
+Live Studio is in beta, so check X's page). The quality defaults to **X recommended**, the "recommended" column of X's own encoder panel: **H.264, 1920x1080, 30 fps,
+9 Mbps, AAC 128 kbps stereo at 44.1 kHz, a keyframe every 3 seconds**. Lighter choices: light (720p, 3 Mbps) and standard (1080p, 6 Mbps).
 **The stream key is a password.** It is kept in its own owner-only file (`~/.config/mobs/stream-key`, mode 0600), never in the settings file, never shown
-again after saving, never printed, and scrubbed out of any error text. QML has no way to read it back.
+again after saving, never printed, and scrubbed out of any error text. QML has no way to read it back. Once saved, the page says so and has a **close EXPERT** button.
 
-**Going live is a deliberate step every time.** On the ready screen click the **go live** chip (it opens the setup page if nothing is saved yet). It turns red
+**To start:** on the ready screen press the red **GO LIVE to X** button beside the Record circle. One click arms the broadcast and starts the take (with no key saved yet
+the same button reads "set up go live" and opens EXPERT > live). **Going live is a deliberate step every time**; the other way is the **go live** chip, which arms it for
+Record or the hotkey instead. It turns red
 ("LIVE: armed"), the title reads "ready to go LIVE" and a red line says "Record BROADCASTS to X: this screen is public until you stop." Then Record. Arming is
 never remembered: it clears when the take ends, when MOBS restarts, and by itself after 15 minutes if no take starts.
 
@@ -129,8 +135,8 @@ header says LIVE. **Pause is off while you broadcast**: viewers would keep watch
 - A stream that cannot even start (no encoder) stops the take before it begins, with the reason, instead of a take that quietly never went live.
 - The broadcast uses its own registered stream target (`mobs_rtmp` in `obsbackend.cpp`) and not OBS's `rtmp-services` module, because that module asks
   obsproject.com for a service list every time it loads. MOBS never phones home.
-- The stream encoder is x264 (veryfast, constant bitrate, keyframe every 2 s) or NVIDIA H.264 when the hardware page says so, plus AAC at 128 kbps: the settings X
-  documents for Live Studio (H.264 + AAC-LC, at most 12 Mbps, 1080p30 or 720p60, keyframe at most 3 s apart).
+- The stream encoder is x264 (veryfast, constant bitrate, keyframe every 3 s) or NVIDIA H.264 when the hardware page says so, plus AAC at 128 kbps: the settings X
+  recommends in Live Studio (H.264 + AAC-LC at 44.1 kHz, 9 Mbps, 1080p30, keyframe every 3 s). MOBS now runs its audio engine at 44.1 kHz for that.
 - Quitting the window while live stops the take, and with it the broadcast, the same as Stop.
 
 ![ready screen armed to go live](../../docs/app/golive-ready-armed.png)

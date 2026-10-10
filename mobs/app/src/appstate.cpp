@@ -6,9 +6,9 @@
 
 AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObject(parent), m_settings(settings), m_scan(std::move(scan)) {
     m_camera = m_settings->value("camera").toString();
-    m_corner = qBound(0, m_settings->value("corner", 3).toInt(), 3);
+    m_corner = qBound(0, m_settings->value("corner", 1).toInt(), 3);   // top-right: where Fred wants his face on a stream
     m_size = qBound(0, m_settings->value("size", 1).toInt(), 2);
-    m_preview = m_settings->value("preview", false).toBool();
+    m_preview = m_settings->value("preview", true).toBool();   // on: a recorder (above all a broadcaster) that cannot be seen is one you cannot trust
     static const char *const cropKeys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
     for (int i = 0; i < 4; ++i) m_guestCrop[i] = qBound(0, m_settings->value(cropKeys[i], 0).toInt(), 60);
     for (int i = 0; i < 2; ++i) if (m_guestCrop[i] + m_guestCrop[i + 2] > 90) m_guestCrop[i] = m_guestCrop[i + 2] = 0;   // a hand-edited file must not crop the guest away
