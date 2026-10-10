@@ -55,6 +55,11 @@ public:
     Q_INVOKABLE void setCorner(int corner);
     Q_INVOKABLE void setSize(int size);
     Q_INVOKABLE QRectF cameraRectNormalized() const;   // 0..1 of the canvas: the SAME rectangle the recording uses
+    // Drag the webcam: nx, ny = where its top-left should be, 0..1 of the canvas. It stays inside the picture. Applied live, even in a broadcast;
+    // done=true (button released) also remembers it. Tapping a corner in the camera panel puts it back on a corner.
+    Q_INVOKABLE void moveCamera(double nx, double ny, bool done);
+    int cameraX() const { return m_camX; }
+    int cameraY() const { return m_camY; }
     Q_INVOKABLE QVariantMap showRectsNormalized() const;   // {main, guest, me} for "the show", 0..1 of the canvas
     QVariantList guestCrop() const;
     Q_INVOKABLE void setGuestCrop(int edge, int percent);  // edge 0 left, 1 top, 2 right, 3 bottom; 0..60, and opposite edges never meet
@@ -78,6 +83,7 @@ private:
     QString m_camera;
     int m_corner = 1, m_size = 1;
     int m_guestCrop[4] = {0, 0, 0, 0};
+    int m_camX = -1, m_camY = -1;           // a dragged position (canvas pixels); -1 = the chosen corner
     bool m_panel = false, m_preview = true, m_pro = false;
     int m_expertTab = 0;
     int m_screen = 1, m_pick = 0;

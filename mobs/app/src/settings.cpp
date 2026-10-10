@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "mobslog.h"
 #include <QDesktopServices>
 #include <QDir>
 #include <QRegularExpression>
@@ -49,8 +50,9 @@ int Settings::crfFor(int quality) {
 }
 
 QString Settings::aboutText() const {
-    return QString("MOBS 0.1 (alpha)\nrecording engine: libobs %1\ninterface: Qt %2\nthe timeline editor is Monologue's (MIT)\nGPLv2, like OBS Studio")
-        .arg(QString::fromUtf8(obs_get_version_string()), QString::fromUtf8(qVersion()));
+    const QString log = MobsLog::path();
+    return QString("MOBS 0.1 (alpha)\nrecording engine: libobs %1\ninterface: Qt %2\nthe timeline editor is Monologue's (MIT)\nGPLv2, like OBS Studio\nlog: %3")
+        .arg(QString::fromUtf8(obs_get_version_string()), QString::fromUtf8(qVersion()), log.isEmpty() ? QString("not available") : log);
 }
 
 QString Settings::problemWith(const QString &folder) {

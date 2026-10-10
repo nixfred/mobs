@@ -16,6 +16,12 @@ inline QRect cameraRect(int corner, int size, int canvasW = kCanvasW, int canvas
     return QRect(right ? canvasW - w - margin : margin, bottom ? canvasH - h - margin : margin, w, h);
 }
 
+// A webcam dragged to a place of the user's choosing: x, y is its top-left corner on the canvas, kept fully inside it.
+inline QRect cameraRectAt(int x, int y, int size, int canvasW = kCanvasW, int canvasH = kCanvasH) {
+    const QRect corner = cameraRect(0, size, canvasW, canvasH);          // for the size only
+    return QRect(qBound(0, x, canvasW - corner.width()), qBound(0, y, canvasH - corner.height()), corner.width(), corner.height());
+}
+
 // "The show": the shared window big on the left, two tiles stacked on the right (your guest above, you below), the way a video
 // call's gallery looks. ONE definition for the recording and for the diagram in the camera panel, like cameraRect above.
 struct ShowLayout { QRect main, guest, me; };

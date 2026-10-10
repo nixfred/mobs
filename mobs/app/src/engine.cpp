@@ -1,6 +1,8 @@
 #include "engine.h"
 #include <QDateTime>
 #include "review.h"
+#include "mobslog.h"
+#include <QUrl>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -30,6 +32,8 @@ Engine::Engine(RecorderBackend *backend, QString recordingDir, QObject *parent)
     connect(backend, &RecorderBackend::streamState, this, &Engine::onStreamState);
     connect(backend, &RecorderBackend::streamStats, this, [this](int kbps, int dropped) {
         if (!m_takeStreams || (kbps == m_streamKbps && dropped == m_streamDropped)) return;
+        static qint64 lastLogged = 0; const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - lastLogged > 10000 || dropped != m_streamDropped) { lastLogged = now; MobsLog::write("stream", QString("sending %1 kbps, %2 frames dropped").arg(kbps).arg(dropped)); }
         m_streamKbps = kbps; m_streamDropped = dropped; emit streamStatsChanged();
     });
     m_armTimer.setSingleShot(true);
@@ -69,7 +73,9 @@ void Engine::setState(State s) {
     if (s == m_state) return;
     const auto live = [](State x) { return x == Recording || x == Paused; };
     const bool livenessChanged = live(s) != live(m_state);
+    const QString from = state();
     m_state = s;
+    MobsLog::write("engine", QString("state %1 -> %2").arg(from, state()));
     emit stateChanged();
     emit elapsedChanged();
     // Only on a CHANGE, so the backend is not nagged on every pause/resume. Never while starting: the scene may still be
@@ -80,6 +86,7 @@ void Engine::setState(State s) {
 void Engine::setMessage(const QString &m) {
     if (m == m_message) return;
     m_message = m;
+    if (!m.isEmpty()) MobsLog::write("engine", "message: " + m);
     emit messageChanged();
 }
 
@@ -140,6 +147,9 @@ void Engine::start(int pick) {
     m_currentFolder = dir;
     m_currentMic = spec.mic;
     m_recPick = pick;
+    MobsLog::write("engine", QString("start pick=%1 camera=%2 hardware=%3 crf=%4 mic=%5 desktop=%6 live=%7 folder=%8")
+        .arg(pick).arg(cam.valid() ? cam.path : "none").arg(spec.hardware).arg(spec.crf).arg(spec.mic).arg(spec.audio.desktop)
+        .arg(stream.on ? QString("yes(%1 %2 kbps %3p)").arg(QUrl(stream.url).host()).arg(stream.kbps).arg(stream.height) : "no", dir));
     setState(Starting);
     m_backend->begin(spec);
 }
@@ -184,7 +194,14 @@ void Engine::onStarted() {
     setState(Recording);
 }
 
+void Engine::forgetScreen() {
+    if (active()) return;
+    MobsLog::write("engine", "change screen: forgetting the chosen screen and guest window");
+    m_backend->forgetCapture();
+}
+
 void Engine::onFailed(const QString &why) {
+    MobsLog::write("engine", "failed: " + why);
     if (m_state == Recording && m_clock.isValid()) m_banked += m_clock.elapsed();
     m_tick.stop();
     m_clock.invalidate();
@@ -196,6 +213,7 @@ void Engine::onFinished(const QString &path) {
     if (m_state == Recording && m_clock.isValid()) m_banked += m_clock.elapsed();
     m_tick.stop();
     m_clock.invalidate();
+    MobsLog::write("engine", path.isEmpty() ? QString("finished: cancelled, nothing recorded") : "finished: saved " + path);
     if (path.isEmpty()) {
         setMessage("cancelled: nothing was recorded");
     } else {
@@ -281,6 +299,7 @@ void Engine::checkMic(bool on) {
 void Engine::setStreamArmed(bool armed) {
     if (m_state != Idle) armed = false;   // a take in progress is what it is; arming is for the next one
     if (armed == m_streamArmed) return;
+    MobsLog::write("stream", armed ? "armed to go live" : "disarmed");
     m_streamArmed = armed;
     if (armed) m_armTimer.start(m_armTimeoutMs); else m_armTimer.stop();
     emit streamChanged();
@@ -290,6 +309,7 @@ void Engine::onStreamState(const QString &state, const QString &detail) {
     if (!m_takeStreams) return;   // a late word from a broadcast that is already over
     const QString problem = (state == "failed" || state == "reconnecting") ? detail : QString();
     if (state == m_streamState && problem == m_streamProblem) return;
+    MobsLog::write("stream", QString("state %1 -> %2 %3").arg(m_streamState, state, detail));
     m_streamState = state; m_streamProblem = problem;
     if (state != "live") { m_streamKbps = 0; emit streamStatsChanged(); }
     emit streamChanged();

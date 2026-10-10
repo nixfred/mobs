@@ -181,3 +181,15 @@ Measured, not assumed: with a busy picture, the server received about the bitrat
 
 Not verified: a real broadcast to X.
 
+## Screen and me, simply; a draggable webcam; and a log (2026-10-10)
+
+Fred, from vic: his preview showed half a screen with black beside it (and a "set up go live" button he could not find); "All I want is screen and me", "the entire desktop so I can change workspaces", "make it simple", "I want to be able to drag the webcam around while I'm in the stream so I can move it if I need to show something under it", and "Check the logs... if you aren't keeping logs turn it on."
+
+Findings: the picture in his screenshot was a window/region capture (the portal let him pick one), pillarboxed into the frame; and on vic the GO LIVE button was the dim "set up go live" pill because the stream key is per machine. The journal had no libobs errors but no information either, since MOBS dropped everything below warning level and wrote no file.
+
+Changed: new users land straight on "screen + me"; "my screen" and "screen + me" capture a WHOLE SCREEN only (monitor-only portal source, separate remembered choice, a "change" on the screen chip); the webcam can be dragged over the live picture and moves in the broadcast live (the backend now applies placement mid-take); GO LIVE to X is always bold red; MOBS keeps a log at ~/.local/state/mobs/mobs.log with the stream key scrubbed.
+
+Verified: unit tests (log 8 new, appstate and engine updated), UI scenarios for dragging at three sizes and while recording, all 34 real-libobs scenarios in the practice VM including **a webcam moved mid-recording shows top-left at 1 s and bottom-right at 5 s in the SAME saved file**, and a VM run through the real portal with a whole-screen request: one dialog, "screen source is 1280x800 (whole screen)", the broadcast's states, and the key absent from the log.
+
+Not verified: a real broadcast to X; the whole-screen capture on Fred's own vic and gus compositors with a real picker (the VM used a scripted one).
+

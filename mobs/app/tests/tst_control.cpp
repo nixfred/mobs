@@ -27,13 +27,20 @@ private slots:
         QCOMPARE(b.began, 1);
         QCOMPARE(e.state(), QString("starting"));
     }
-    void toggleOnAFreshInstallRecordsTheScreen() {
-        QSettings s(dir.path() + "/b.ini", QSettings::IniFormat); AppState st(&s);
-        QCOMPARE(st.pick(), 0);
+    void toggleOnAFreshInstallWithoutACameraRecordsTheScreen() {
+        QSettings s(dir.path() + "/b.ini", QSettings::IniFormat); AppState st(&s, nullptr, [] { return QList<CameraInfo>(); });
+        QCOMPARE(st.pick(), 1);          // a first run is never "nothing picked": the hotkey must always have something to do
         FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);
         c.Toggle();
-        QCOMPARE(st.pick(), 1);          // the hotkey chose "my screen" instead of doing nothing
-        QCOMPARE(b.lastPick, 1);
+        QCOMPARE(b.began, 1); QCOMPARE(b.lastPick, 1);
+    }
+    void toggleOnAFreshInstallWithACameraRecordsScreenPlusMe() {
+        QSettings s(dir.path() + "/b2.ini", QSettings::IniFormat);
+        AppState st(&s, nullptr, [] { return QList<CameraInfo>{{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}}; });
+        QCOMPARE(st.pick(), 2);          // "All I want is screen and me"
+        FakeBackend b; Engine e(&b, dir.path()); e.setCameraProvider([&] { return st.cameraSpec(); }); Control c(&e, &st);
+        c.Toggle();
+        QCOMPARE(b.began, 1); QCOMPARE(b.lastPick, 2);
     }
     void secondToggleStops() {
         QSettings s(dir.path() + "/c.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);

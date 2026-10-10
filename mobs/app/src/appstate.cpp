@@ -1,13 +1,18 @@
 #include "appstate.h"
+#include "mobslog.h"
 #include <QGuiApplication>
 #include "placement.h"
 #include <QScreen>
+#include <cmath>
 #include <QVariantMap>
 
 AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObject(parent), m_settings(settings), m_scan(std::move(scan)) {
     m_camera = m_settings->value("camera").toString();
     m_corner = qBound(0, m_settings->value("corner", 1).toInt(), 3);   // top-right: where Fred wants his face on a stream
     m_size = qBound(0, m_settings->value("size", 1).toInt(), 2);
+    bool xOk = false, yOk = false;
+    const int cx = m_settings->value("camX", -1).toInt(&xOk), cy = m_settings->value("camY", -1).toInt(&yOk);
+    if (xOk && yOk && cx >= 0 && cy >= 0 && cx < Placement::kCanvasW && cy < Placement::kCanvasH) { m_camX = cx; m_camY = cy; }
     m_preview = m_settings->value("preview", true).toBool();   // on: a recorder (above all a broadcaster) that cannot be seen is one you cannot trust
     static const char *const cropKeys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
     for (int i = 0; i < 4; ++i) m_guestCrop[i] = qBound(0, m_settings->value(cropKeys[i], 0).toInt(), 60);
@@ -15,6 +20,10 @@ AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObj
     m_cams = m_scan();
     const int saved = m_settings->value("pick", 0).toInt();
     if (saved >= 1 && saved <= 4) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
+    else {                                  // first run: no four cards to puzzle over. The whole screen and your camera in a corner is what most people want.
+        m_pick = m_cams.isEmpty() ? 1 : 2; m_screen = 2;
+        if (m_pick != 1) ensureCamera();
+    }
 }
 
 QString AppState::pickName() const {
@@ -37,6 +46,7 @@ QString AppState::displayText() const {
 void AppState::choose(int pick) {
     if (pick < 1 || pick > 4) return;
     if (pick != 1) ensureCamera();                    // a camera pick must not start with "no camera" if one exists
+    if (pick != m_pick) MobsLog::write("app", QString("pick -> %1").arg(pick));
     if (pick != m_pick) { m_pick = pick; m_settings->setValue("pick", pick); m_settings->sync(); emit pickChanged(); }
     if (m_screen != 2) { m_screen = 2; emit screenChanged(); }
 }
@@ -78,6 +88,7 @@ CameraSpec AppState::cameraSpec() const {
     if (const CameraInfo *c = currentCamera()) { spec.path = c->path; spec.mjpg720 = c->mjpg720; }
     spec.corner = m_corner;
     spec.size = m_size;
+    spec.x = m_camX; spec.y = m_camY;
     for (int i = 0; i < 4; ++i) spec.guestCrop[i] = m_guestCrop[i];
     return spec;
 }
@@ -103,6 +114,7 @@ void AppState::setCamera(const QString &path) {
     bool known = false;
     for (const CameraInfo &c : m_cams) known = known || c.path == path;
     if (!known || path == m_camera) return;
+    MobsLog::write("app", "camera -> " + path);
     m_camera = path;
     m_settings->setValue("camera", path);
     m_settings->sync();
@@ -110,9 +122,12 @@ void AppState::setCamera(const QString &path) {
 }
 
 void AppState::setCorner(int corner) {
-    if (corner < 0 || corner > 3 || corner == m_corner) return;
+    if (corner < 0 || corner > 3 || (corner == m_corner && m_camX < 0)) return;
+    MobsLog::write("app", QString("webcam corner -> %1").arg(corner));
     m_corner = corner;
+    m_camX = m_camY = -1;                            // a corner tap puts a dragged webcam back on that corner
     m_settings->setValue("corner", corner);
+    m_settings->remove("camX"); m_settings->remove("camY");
     m_settings->sync();
     emit cameraChanged();
 }
@@ -125,8 +140,19 @@ void AppState::setSize(int size) {
     emit cameraChanged();
 }
 
+void AppState::moveCamera(double nx, double ny, bool done) {
+    const QRect size = Placement::cameraRect(0, m_size);
+    const int x = qBound(0, int(std::lround(nx * Placement::kCanvasW)), Placement::kCanvasW - size.width());
+    const int y = qBound(0, int(std::lround(ny * Placement::kCanvasH)), Placement::kCanvasH - size.height());
+    const bool moved = x != m_camX || y != m_camY;
+    m_camX = x; m_camY = y;
+    if (done) MobsLog::write("app", QString("webcam dragged to %1,%2").arg(x).arg(y));
+    if (done) { m_settings->setValue("camX", x); m_settings->setValue("camY", y); m_settings->sync(); }
+    if (moved) emit cameraChanged();
+}
+
 QRectF AppState::cameraRectNormalized() const {
-    const QRect r = Placement::cameraRect(m_corner, m_size);
+    const QRect r = m_camX >= 0 ? Placement::cameraRectAt(m_camX, m_camY, m_size) : Placement::cameraRect(m_corner, m_size);
     return QRectF(double(r.x()) / Placement::kCanvasW, double(r.y()) / Placement::kCanvasH,
                   double(r.width()) / Placement::kCanvasW, double(r.height()) / Placement::kCanvasH);
 }
@@ -162,6 +188,7 @@ void AppState::setCameraPanel(bool open) {
 
 void AppState::setPreview(bool on) {
     if (on == m_preview) return;
+    MobsLog::write("app", QString("preview chip -> %1").arg(on ? "on" : "off"));
     m_preview = on;
     m_settings->setValue("preview", on);
     m_settings->sync();

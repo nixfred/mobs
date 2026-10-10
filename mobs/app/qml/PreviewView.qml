@@ -10,6 +10,7 @@ Item {
     property string overlay: ""                             // a word over a dimmed picture ("paused", "saving..."); empty = none
     property color frameColor: Omarchy.selection            // the picture's outline (red while a take is being saved)
     property color dotColor: Omarchy.green
+    property bool draggable: true                           // "screen + me": the webcam in the picture can be dragged, mid-broadcast too
     readonly property real captionHeight: 20
     width: previewWidth
     height: picture.height + captionHeight
@@ -56,6 +57,35 @@ Item {
             anchors.fill: parent; radius: parent.radius; color: "transparent"
             border.color: root.frameColor; border.width: root.frameColor === Omarchy.selection ? 1 : 2
         }
+        // Drag the webcam to move it. This is the same picture the audience gets, so what moves here moves there (App.moveCamera applies it
+        // live, even in a broadcast): uncover whatever was under it, then put it back, or drop it on another corner.
+        Item {
+            id: camHandle
+            objectName: "webcamHandle"
+            visible: root.draggable && App.pick === 2 && Preview.hasFrame
+            readonly property rect r: { App.camera; App.size; App.corner; return App.cameraRectNormalized() }
+            x: 1 + r.x * (picture.width - 2); y: 1 + r.y * (picture.height - 2)
+            width: r.width * (picture.width - 2); height: r.height * (picture.height - 2)
+            Rectangle {
+                anchors.fill: parent; color: "transparent"; radius: 2
+                border.width: grab.pressed ? 2 : 1
+                border.color: grab.pressed || grab.containsMouse ? Omarchy.accent : Qt.alpha(Omarchy.foreground, 0.45)
+            }
+            MouseArea {
+                id: grab
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                property real offX: 0; property real offY: 0
+                function nxy(mouse, done) {   // the pointer in the PICTURE's own coordinates: the handle itself moves under it
+                    const p = mapToItem(picture, mouse.x, mouse.y)
+                    App.moveCamera((p.x - offX - 1) / (picture.width - 2), (p.y - offY - 1) / (picture.height - 2), done)
+                }
+                onPressed: (mouse) => { const p = mapToItem(picture, mouse.x, mouse.y); offX = p.x - camHandle.x; offY = p.y - camHandle.y }
+                onPositionChanged: (mouse) => { if (pressed) nxy(mouse, false) }
+                onReleased: (mouse) => nxy(mouse, true)
+            }
+        }
         Txt {
             anchors.centerIn: parent
             width: parent.width - 40
@@ -71,6 +101,6 @@ Item {
         spacing: 6
         visible: Preview.hasFrame
         Rectangle { width: 8; height: 8; radius: 4; color: root.dotColor; anchors.verticalCenter: parent.verticalCenter }
-        Txt { text: root.caption; font.pixelSize: 11; color: Omarchy.secondaryText }
+        Txt { text: root.caption + (camHandle.visible ? "  ·  drag your webcam to move it" : ""); font.pixelSize: 11; color: Omarchy.secondaryText }
     }
 }

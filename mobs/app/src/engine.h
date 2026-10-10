@@ -64,6 +64,7 @@ public:
     QString hardwareMessage() const { return m_hardwareMessage; }
     Q_INVOKABLE void checkMic(bool on);
     Q_INVOKABLE void checkHardware() { m_backend->checkHardware(); }
+    Q_INVOKABLE void forgetScreen();   // "change screen": ask again which one to share
     void setAudioProvider(std::function<AudioSpec()> provider) { m_audioFn = std::move(provider); }
     void setHardwareProvider(std::function<bool()> provider) { m_hardwareFn = std::move(provider); }
     void setMicGuard(std::function<QString()> guard) { m_micGuard = std::move(guard); }

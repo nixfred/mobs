@@ -79,6 +79,28 @@ the microphone, and where recordings go. Every colour comes from the live Omarch
 ![the finished opening screen](../../docs/app/splash-final.png)
 ![on a light, a neon and an orange Omarchy theme](../../docs/app/splash-themes.png)
 
+## Screen and me: the simple way
+
+**The first run goes straight to "screen + me"** (or "my screen" when no camera is found): no four cards to puzzle over. The picks are one tap away (the "change" pill on
+the ready screen).
+
+- **It shares a whole screen, never a window or a dragged region.** "My screen" and "screen + me" ask the portal for monitors only (OBS's `pipewire-desktop-capture-source`),
+  so you can **change workspaces and the stream follows**. A window or a region was what once made half a picture and a black rest. Only "the show" may pick a window.
+  The choice is remembered (`~/.config/mobs/screen-token-desktop`); **the screen chip on the ready screen ("eDP-1 1920x1080 (change)")** forgets it and asks again.
+- **Drag your webcam, even while you are live.** Over the live picture, press on the webcam and drag it anywhere inside the frame; it moves in the broadcast as you move it,
+  so you can uncover whatever was under it and put it back (or tap a corner in the camera panel to snap it there). Releasing remembers the place. The default is the **top-right** corner.
+  Dragging is applied by the backend in the middle of a take (`ObsBackend::applyPlacement` no longer waits for the take to end); it is only for "screen + me".
+- **GO LIVE to X is always a bold red button** beside Record, whether or not a stream key is saved: without one it opens EXPERT > live (the key is per machine).
+
+## The log
+
+MOBS now **always keeps a log**: `~/.local/state/mobs/mobs.log` (`MOBS_LOG_FILE` overrides; EXPERT > about shows the path). It is the first thing to read when something looks wrong.
+It keeps what the journal throws away: libobs's informational lines (never its per-frame debug ones), Qt's own warnings, what MOBS found at start (monitors with sizes and
+positions, cameras, settings), **the size of every picture it captures** ("screen source is 1920x1080 (whole screen)", "camera source is 1280x720"), every recorder state,
+every stream state with its reason, the stream's bitrate and dropped frames every 10 s, picks, the webcam being dragged, hotkey presses, and each take's start line.
+**The stream key is never written**: it is registered as a secret the moment a broadcast starts and replaced by `***` in every line, whoever prints it (Qt, libobs, MOBS).
+Mode 0600; at 4 MB it rotates to `mobs.log.1` and `.2`.
+
 ## The show: your window, a guest and you
 
 A fourth pick on the first screen (key **4**): **the show**, laid out like a video call's gallery. **Your shared window big on the left** (a terminal, say), and on the
@@ -195,6 +217,7 @@ Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "curre
 
 Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
 The show: `MOBS_TEST_GUEST=colour` (a blue stand-in) or `video:/path.mp4` (a file) replaces the guest's window dialog in tests; `MOBS_TEST_GUEST_COLOUR` sets the colour. Script step `guestcrop=EDGE:PERCENT` (0 left, 1 top, 2 right, 3 bottom), `click=NAME` also finds items a Repeater made, and `expect=guestCrop:L/T/R/B`.
+Logging: `MOBS_LOG_FILE=/path` (tests use a throwaway one). Dragging: script steps `dragcam=DX:DY` (a real press, move and release on the webcam handle), `movecam=X:Y` (0..1), and `expect=camMoved:0|1`.
 Mock-ups: `MOBS_FAKE_PREVIEW=/path.png` (fake backend only) serves that picture in the live preview, so the REAL window can be drawn with a stand-in picture inside it (see `docs/app/mockup-golive-board.png`: stand-in desktop and webcam, real layout, corner and windows).
 Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted runs use a throwaway one). Script steps `arm=0/1`, `streamurl=`, `streamkey=`, `streamquality=N`, and with the fake backend `streamdrop` / `streamretry` / `streamback`; conditions `expect=armed|broadcasting|streamReady:0|1`, `expect=streamState:live` and `expect=streamProblem:text`. EXPERT tab 6 is the live page (`tab=0..6`).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.

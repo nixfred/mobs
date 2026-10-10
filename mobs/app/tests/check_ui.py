@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         if case_filter and case_filter not in name:
             return
         case_count += 1
-        case_env = env | {"MOBS_SETTINGS": str(root / f"{case_count}.ini"), "MOBS_STREAM_KEY_FILE": str(root / f"{case_count}.key"),
+        case_env = env | {"MOBS_SETTINGS": str(root / f"{case_count}.ini"), "MOBS_STREAM_KEY_FILE": str(root / f"{case_count}.key"), "MOBS_LOG_FILE": str(root / f"{case_count}.log"),
                           "MOBS_SCRIPT": steps + ",quit", "MOBS_WINDOW_SIZE": size}
         # The preview is ON by default now (it lights the camera and may open the screen dialog), so scenarios that mean "preview off" say so.
         base_ini = "" if default_preview else "preview=false\n"
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         print(f"PASS {name} ({size})", flush=True)
 
     for size in ("860x560", "1024x768", "1180x720"):
-        check("choose", "wait=0.1,checklayout", size)
+        check("choose", "wait=0.1,checklayout", size, extra_env={"MOBS_SCREEN": "1"})
         check("ready mic off", "pick=1,mic=0,wait=0.1,checklayout", size)
         for tab in range(7):
             check(f"expert page {tab}", f"pro=1,tab={tab},wait=0.1,checklayout", size)
@@ -75,7 +75,13 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the show: the trim buttons change the trim and stay inside the limits",
           "pick=4,panel=1,wait=0.2,click=cropMore0,click=cropMore0,expect=guestCrop:10/0/0/0,click=cropLess0,expect=guestCrop:5/0/0/0,click=cropLess1,expect=guestCrop:5/0/0/0,"
           "guestcrop=0:60,click=cropMore2,expect=guestCrop:60/0/5/0,guestcrop=0:60,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,click=cropMore2,expect=guestCrop:60/0/30/0", fake_backend=True)
-    check("the show: the 4 key on the first screen picks it", "wait=0.1,expect=screen:1,key=4,expect=screen:2,wait=0.1,checklayout", fake_backend=True)
+    check("the show: the 4 key on the pick screen picks it", "wait=0.1,expect=screen:1,key=4,expect=screen:2,wait=0.1,checklayout", fake_backend=True, extra_env={"MOBS_SCREEN": "1"})
+    # "All I want is screen and me": a new user lands on ready with the whole screen and the webcam, and the webcam can be dragged.
+    check("a new user lands on ready with screen + me", "wait=0.3,expect=screen:2,expect=previewing:1,expect=previewFrame:1,checklayout", fake_backend=True, default_preview=True)
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("dragging the webcam in the preview moves it and the layout still fits", "pick=2,preview=1,wait=0.4,expect=camMoved:0,dragcam=-40:30,expect=camMoved:1,wait=0.2,checklayout", size, True)
+    check("the webcam can be dragged while recording", "pick=2,start,expect=state:recording,wait=0.5,dragcam=-60:40,expect=camMoved:1,expect=state:recording,wait=0.2,checklayout", fake_backend=True)
+    check("there is no webcam to drag in the other picks", "pick=1,wait=0.3,expect=camMoved:0,checklayout", fake_backend=True)
     check("the show: a silent guest is flagged on the ready screen", "pick=4,wait=0.1,checklayout,desktop=1,wait=0.1,checklayout", "860x560", True)
     # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.
     live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"

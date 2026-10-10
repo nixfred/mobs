@@ -1,5 +1,6 @@
 #include "obsbackend.h"
 #include "logfilter.h"
+#include "mobslog.h"
 #include "placement.h"
 #include <obs.h>
 #include <obs-nix-platform.h>
@@ -71,7 +72,12 @@ static_assert(LOG_ERROR == obslog::Error && LOG_WARNING == obslog::Warning && LO
 
 static void obsLogHandler(int level, const char *fmt, va_list args, void *) {
     static const bool verbose = qEnvironmentVariable("MOBS_VERBOSE") == "1";
-    if (!obsLogWanted(level, verbose)) return;
+    if (level <= obslog::Info) {                       // the log FILE keeps libobs's informational lines (never its per-frame debug ones)
+        va_list copy; va_copy(copy, args);
+        char line[2048]; vsnprintf(line, sizeof line, fmt, copy); va_end(copy);
+        MobsLog::write(level <= obslog::Error ? "libobs-error" : level <= obslog::Warning ? "libobs-warn" : "libobs", QString::fromUtf8(line));
+    }
+    if (!obsLogWanted(level, verbose)) return;         // the journal still only gets warnings and errors
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
 }
@@ -169,7 +175,7 @@ void ObsBackend::applyPlacement(const RecordSpec &spec) {
         return;
     }
     if (!m_camItem || spec.pick != 2) return;   // only "screen + me" has a placement
-    const QRect r = Placement::cameraRect(spec.camera.corner, spec.camera.size);
+    const QRect r = spec.camera.x >= 0 ? Placement::cameraRectAt(spec.camera.x, spec.camera.y, spec.camera.size) : Placement::cameraRect(spec.camera.corner, spec.camera.size);
     vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
     obs_sceneitem_set_pos(m_camItem, &pos);
     obs_sceneitem_set_bounds_type(m_camItem, OBS_BOUNDS_SCALE_INNER);
@@ -178,7 +184,7 @@ void ObsBackend::applyPlacement(const RecordSpec &spec) {
 
 bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
     if (m_graphUp && spec.pick == m_graphPick && spec.camera.path == m_graphCamera) {
-        if (m_phase == Off) applyPlacement(spec);      // moving the webcam does not need a new scene (nor a new picker)
+        applyPlacement(spec);                          // moving the webcam needs no new scene (nor a new picker), so it may happen mid-take or mid-broadcast
         return true;
     }
     if (m_graphUp) {
@@ -213,11 +219,16 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
             // Created here, on the Qt main thread: the portal's reply is handled where the source was made (spike 3b/4b).
             obs_data_t *ps = obs_data_create();
             obs_data_set_bool(ps, "ShowCursor", true);
-            const QString token = readToken(m_tokenFile);
+            const QString token = readToken(screenTokenFile());
             if (!token.isEmpty()) obs_data_set_string(ps, "RestoreToken", token.toUtf8().constData());
-            m_video = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);
+            // "My screen" and "screen + me" share a whole SCREEN, never a window or a dragged region: that is what lets you change
+            // workspaces while sharing, and a window or region is what made half a picture and a black rest. Only "the show" may pick a window.
+            const bool wholeScreen = spec.pick != 4;
+            m_video = obs_source_create(wholeScreen ? "pipewire-desktop-capture-source" : "pipewire-screen-capture-source", "my screen", ps, nullptr);
+            if (!m_video && wholeScreen) m_video = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);   // an OBS without the screen-only source
             obs_data_release(ps);
-            if (token.isEmpty()) emit waitingForUser("choose a screen or a window in the dialog that just opened (a dragged region can record black)");
+            MobsLog::write("capture", QString("screen source created (%1 capture), %2").arg(wholeScreen ? "whole-screen" : "screen or window", token.isEmpty() ? "no saved choice: the picker opens" : "restoring the saved choice"));
+            if (token.isEmpty()) emit waitingForUser(wholeScreen ? "choose the screen to share in the dialog that just opened: the whole screen, so you can change workspaces" : "choose a screen or a window in the dialog that just opened (a dragged region can record black)");
         }
         if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; dropGraph(); return false; }
         m_item = obs_scene_add(m_scene, m_video);   // first in the scene = at the back
@@ -262,12 +273,14 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
     m_graphUp = true;
     m_graphPick = spec.pick;
     m_graphCamera = spec.camera.path;
+    MobsLog::write("capture", QString("scene built: pick=%1 camera=%2").arg(spec.pick).arg(spec.camera.valid() ? spec.camera.path : "none"));
+    m_loggedScreen = m_loggedCamera = m_loggedGuest = false;
     if (m_needGuest) {
         for (int i = 0; i < 4; ++i) m_cropWish[i] = spec.camera.guestCrop[i];
         m_testGuest = !qEnvironmentVariable("MOBS_TEST_GUEST").isEmpty();
-        m_graphTick.start();   // the guest's window is created (and its picker opened) once the main one is done
-        tickGraph();
     }
+    m_graphTick.start();   // the sizes of what is captured are logged once known; and, for the show, the guest's window is created once the main one is done
+    tickGraph();
     return true;
 }
 
@@ -306,7 +319,21 @@ bool ObsBackend::createGuest(QString *error) {
 // The guest's window comes up after the main one, a source's size is only known after its first frame, and a window can be resized
 // mid-show: so this small timer keeps the crop (a percentage) right, and saves the guest's own restore token as soon as it is chosen.
 void ObsBackend::tickGraph() {
-    if (!m_graphUp || !m_needGuest) return;
+    if (!m_graphUp) return;
+    // A source's size is only known after its first frame. Logged once each: what MOBS really captured is the first thing to look at when a picture is wrong.
+    if (m_video && !m_loggedScreen && obs_source_get_width(m_video) > 0) {
+        m_loggedScreen = true;
+        MobsLog::write("capture", QString("screen source is %1x%2 (%3)").arg(obs_source_get_width(m_video)).arg(obs_source_get_height(m_video)).arg(m_testScreen ? "test colour" : m_needGuest ? "screen or window" : "whole screen"));
+    }
+    if (m_camera && !m_loggedCamera && obs_source_get_width(m_camera) > 0) {
+        m_loggedCamera = true;
+        MobsLog::write("capture", QString("camera source is %1x%2").arg(obs_source_get_width(m_camera)).arg(obs_source_get_height(m_camera)));
+    }
+    if (m_guest && !m_loggedGuest && obs_source_get_width(m_guest) > 0) {
+        m_loggedGuest = true;
+        MobsLog::write("capture", QString("guest window source is %1x%2").arg(obs_source_get_width(m_guest)).arg(obs_source_get_height(m_guest)));
+    }
+    if (!m_needGuest) return;
     // Two dialogs make "choose again next time" twice as annoying, so the main window's token is kept as soon as it is chosen, not only
     // when a recording starts (a recording that starts later saves it again, harmlessly).
     if (m_needScreen && !m_testScreen && m_video && !m_mainTokenSaved && obs_source_get_width(m_video) > 0) {
@@ -315,7 +342,7 @@ void ObsBackend::tickGraph() {
         obs_data_t *st = obs_source_get_settings(m_video);
         const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
         obs_data_release(st);
-        if (!tok.isEmpty()) writeToken(m_tokenFile, tok);
+        if (!tok.isEmpty()) writeToken(screenTokenFile(), tok);
     }
     if (!m_guest) {
         const bool mainUp = !m_needScreen || m_testScreen || (m_video && obs_source_get_width(m_video) > 0);
@@ -335,6 +362,20 @@ void ObsBackend::tickGraph() {
         if (!tok.isEmpty()) writeToken(m_guestTokenFile, tok);
     }
     applyCrop();
+}
+
+// "My screen" and "screen + me" remember their screen apart from "the show"'s window: a token for one kind of choice must not be fed to the other.
+QString ObsBackend::screenTokenFile() const { return m_needGuest ? m_tokenFile : m_tokenFile + "-desktop"; }
+
+void ObsBackend::forgetCapture() {
+    QFile::remove(m_tokenFile); QFile::remove(m_tokenFile + "-desktop"); QFile::remove(m_guestTokenFile);
+    if (m_phase != Off) return;                     // a take keeps the picture it has; the next one asks
+    const bool wasPreviewing = m_previewOn;
+    if (m_graphUp) dropGraph();
+    if (wasPreviewing) {                            // the picture is on: rebuild it now, which opens the dialog
+        QString error;
+        if (!ensureStarted(&error) || !ensureGraph(m_previewSpec, &error)) { m_previewOn = false; removePreviewCallback(); emit previewFailed(error); }
+    }
 }
 
 void ObsBackend::applyCrop() {
@@ -478,6 +519,8 @@ void ObsBackend::streamStopped(void *self, calldata *data) { static_cast<ObsBack
 bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
     const StreamSpec &s = spec.stream;
     m_streamKey = s.key;
+    MobsLog::secret(s.key);                                              // from here on the key can never reach the log, whatever prints it
+    MobsLog::write("stream", QString("starting: server %1, %2 kbps, %3p, %4").arg(s.url).arg(s.kbps).arg(s.height).arg(spec.hardware ? "NVIDIA" : "x264"));
     m_streamStop = 1; m_streamUp = false; m_streamRetrying = false; m_streamAsked = false; m_streamShown.clear();
 
     obs_data_t *target = obs_data_create();
@@ -549,6 +592,7 @@ void ObsBackend::stopStream() {
     if (m_saenc) { obs_encoder_release(m_saenc); m_saenc = nullptr; }
     if (m_service) { obs_service_release(m_service); m_service = nullptr; }
     m_streamKey.clear();
+    MobsLog::secret({});
     m_spec.stream.key.clear();   // the password is forgotten as soon as the broadcast is over
 }
 
@@ -709,7 +753,7 @@ void ObsBackend::poll() {
                 obs_data_t *st = obs_source_get_settings(m_video);
                 const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
                 obs_data_release(st);
-                if (!tok.isEmpty()) writeToken(m_tokenFile, tok);
+                if (!tok.isEmpty()) writeToken(screenTokenFile(), tok);
             }
             QString error;
             if (!startOutput(m_spec, &error)) { fail(error); return; }
@@ -766,6 +810,7 @@ void ObsBackend::end() {
 
 void ObsBackend::setPreview(bool on, const RecordSpec &spec) {
     if (!on) {
+        if (m_previewOn) MobsLog::write("capture", "preview off");
         m_previewOn = false;
         removePreviewCallback();
         if (m_phase == Off) dropGraph();
@@ -773,12 +818,15 @@ void ObsBackend::setPreview(bool on, const RecordSpec &spec) {
     }
     QString error;
     if (!ensureStarted(&error) || !ensureGraph(spec, &error)) {
+        MobsLog::write("capture", "preview failed: " + error);
         m_previewOn = false;
         removePreviewCallback();
         emit previewFailed(error);
         return;
     }
+    if (!m_previewOn) MobsLog::write("capture", QString("preview on (pick %1)").arg(spec.pick));
     m_previewOn = true;
+    m_previewSpec = spec;
     addPreviewCallback();
 }
 

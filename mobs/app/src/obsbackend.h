@@ -32,6 +32,7 @@ public:
     void pause(bool paused) override;
     void end() override;
     void setPreview(bool on, const RecordSpec &spec) override;
+    void forgetCapture() override;
     void setMicCheck(bool on, const AudioSpec &audio) override;
     void checkHardware() override;
 private:
@@ -39,6 +40,7 @@ private:
     bool ensureStarted(QString *error);
     bool ensureGraph(const RecordSpec &spec, QString *error);
     void applyPlacement(const RecordSpec &spec);
+    QString screenTokenFile() const;
     void applyCrop();
     bool createGuest(QString *error);
     void tickGraph();
@@ -76,6 +78,7 @@ private:
     // "the show" (pick 4): a background, the guest's window in a tile, and the webcam in the other. The guest's window is chosen in a
     // SECOND screen-share dialog, opened only once the first is done, so two pickers never compete.
     bool m_needGuest = false, m_testGuest = false, m_guestTokenSaved = false, m_mainTokenSaved = false;
+    bool m_loggedScreen = false, m_loggedCamera = false, m_loggedGuest = false;
     QString m_guestTokenFile;
     int m_cropWish[4] = {0, 0, 0, 0}, m_cropApplied[4] = {-1, 0, 0, 0}, m_cropW = 0, m_cropH = 0;
     QTimer m_graphTick;
@@ -84,6 +87,7 @@ private:
     obs_scene_item *m_guestItem = nullptr, *m_bgItem = nullptr;
     int m_graphPick = 0;
     QString m_graphCamera;
+    RecordSpec m_previewSpec;               // the last picture asked for, so "change screen" can rebuild it
     Phase m_phase = Off;
     QTimer m_poll, m_audioTick;
     obs_source *m_desktop = nullptr;

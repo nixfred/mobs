@@ -2,6 +2,7 @@
 #include "audiodevices.h"
 #include "control.h"
 #include "engine.h"
+#include "mobslog.h"
 #include "obsbackend.h"
 #include "palette.h"
 #include "previewmodel.h"
@@ -49,7 +50,8 @@ public:
     void setPreview(bool on, const RecordSpec &) override {
         if (!on) return;
         // MOBS_FAKE_PREVIEW=/path.png serves that picture instead of the flat colour, so the real window can be drawn with a mock-up picture inside.
-        QImage frame(qEnvironmentVariable("MOBS_FAKE_PREVIEW"));
+        const QString fakePicture = qEnvironmentVariable("MOBS_FAKE_PREVIEW");
+        QImage frame = fakePicture.isEmpty() ? QImage() : QImage(fakePicture);
         if (frame.isNull()) { frame = QImage(640, 360, QImage::Format_RGB32); frame.fill(QColor("#3050f0")); }
         else frame = frame.scaled(640, 360, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
         emit previewFrame(frame);
@@ -62,6 +64,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("mobs");
     app.setOrganizationName("mobs");
     app.setDesktopFileName("mobs");
+    MobsLog::init();   // first, so Qt's own warnings and everything below land in ~/.local/state/mobs/mobs.log
 
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
     Palette palette(qEnvironmentVariable("MOBS_THEME_DIR"));
@@ -81,6 +84,16 @@ int main(int argc, char *argv[]) {
             return cameras;
         })
         : AppState::CameraScan([] { return CameraScanner::scan(); }));
+    {   // what a log reader needs first: what this is running on, and what MOBS found there
+        QStringList screens, cameras;
+        for (QScreen *sc : app.screens()) screens << QString("%1 %2x%3 at %4,%5 scale %6").arg(sc->name()).arg(sc->geometry().width()).arg(sc->geometry().height()).arg(sc->geometry().x()).arg(sc->geometry().y()).arg(sc->devicePixelRatio());
+        for (const QVariant &c : state.cameras()) cameras << c.toMap().value("name").toString();
+        MobsLog::write("start", QString("%1 | platform %2 | session %3").arg(prefs.aboutText().replace('\n', " | "), QGuiApplication::platformName(), qEnvironmentVariable("XDG_SESSION_TYPE", "?")));
+        MobsLog::write("start", "screens: " + (screens.isEmpty() ? QString("none") : screens.join("; ")));
+        MobsLog::write("start", "cameras: " + (cameras.isEmpty() ? QString("none") : cameras.join("; ")));
+        MobsLog::write("start", QString("settings: pick=%1 preview=%2 hardware=%3 desktopSound=%4 mic=%5 streamReady=%6 streamQuality=%7 folder=%8")
+            .arg(state.pick()).arg(state.preview()).arg(prefs.hardware()).arg(prefs.desktopOn()).arg(prefs.micOn()).arg(prefs.streamReady()).arg(prefs.streamQuality()).arg(prefs.folder()));
+    }
     if (const int s = qEnvironmentVariableIntValue("MOBS_PICK"); s >= 1 && s <= 3 && state.screen() == 1) state.choose(s);
     if (qEnvironmentVariableIntValue("MOBS_SCREEN") == 1) state.back();
 
@@ -242,6 +255,27 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("grab=")) { std::printf("script: grab %d\n", int(window->grabWindow().save(st.mid(5)))); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("pick=")) { state.choose(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("movecam=")) { const auto xy = st.mid(8).split(':'); if (xy.size() == 2) state.moveCamera(xy[0].toDouble(), xy[1].toDouble(), true); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("dragcam=")) {   // press on the real handle, move by DX:DY window pixels, release: what a hand does
+                const auto d = st.mid(8).split(':');
+                // The ready screen and the recording screen each have a picture with a handle: take the one that is showing.
+                std::function<QQuickItem *(QQuickItem *)> find = [&](QQuickItem *at) -> QQuickItem * {
+                    if (at->objectName() == "webcamHandle" && at->isVisible()) return at;
+                    for (auto *child : at->childItems()) if (auto *hit = find(child)) return hit;
+                    return nullptr;
+                };
+                auto *handle = find(window->contentItem());
+                if (!handle || !handle->isVisible() || d.size() != 2) { std::fprintf(stderr, "script: no webcam handle to drag\n"); app.exit(4); return; }
+                const QPointF start = handle->mapToScene(QPointF(handle->width() / 2, handle->height() / 2)), end = start + QPointF(d[0].toDouble(), d[1].toDouble());
+                const auto send = [&](QEvent::Type type, QPointF at, Qt::MouseButtons buttons) {
+                    QMouseEvent e(type, at, window->mapToGlobal(at), type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton, buttons, Qt::NoModifier);
+                    QCoreApplication::sendEvent(window, &e);
+                };
+                send(QEvent::MouseButtonPress, start, Qt::LeftButton);
+                for (int i = 1; i <= 6; ++i) send(QEvent::MouseMove, start + (end - start) * (i / 6.0), Qt::LeftButton);
+                send(QEvent::MouseButtonRelease, end, Qt::NoButton);
+                QTimer::singleShot(0, &app, *run);
+            }
             else if (st.startsWith("guestcrop=")) { const auto edgeAndPercent = st.mid(10).split(':'); if (edgeAndPercent.size() == 2) state.setGuestCrop(edgeAndPercent[0].toInt(), edgeAndPercent[1].toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("grabpreview=")) { std::printf("script: grabpreview %d\n", int(preview.image().save(st.mid(12)))); QTimer::singleShot(0, &app, *run); }
@@ -343,6 +377,7 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "preview") ok = state.preview() == (condition[1] == "1");
                 else if (ok && condition[0] == "previewing") ok = recorder.previewing() == (condition[1] == "1");
                 else if (ok && condition[0] == "message") ok = recorder.message().contains(condition[1]);
+                else if (ok && condition[0] == "camMoved") ok = (state.cameraX() >= 0) == (condition[1] == "1");
                 else if (ok && condition[0] == "guestCrop") { QStringList have; for (const auto &v : state.guestCrop()) have << QString::number(v.toInt()); ok = have.join('/') == condition[1]; }
                 else if (ok && condition[0] == "armed") ok = recorder.streamArmed() == (condition[1] == "1");
                 else if (ok && condition[0] == "broadcasting") ok = recorder.broadcasting() == (condition[1] == "1");
@@ -416,5 +451,7 @@ int main(int argc, char *argv[]) {
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [run] { *run = {}; });
         QTimer::singleShot(1500, &app, *run);   // let the window appear first
     }
-    return app.exec();
+    const int code = app.exec();
+    MobsLog::write("start", QString("exit %1").arg(code));
+    return code;
 }

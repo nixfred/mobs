@@ -8,6 +8,7 @@ struct CameraSpec {
     bool mjpg720 = false;    // ask the camera for 1280x720 MJPEG
     int corner = 3;          // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right (used by "screen + me")
     int size = 1;            // 0 small, 1 medium, 2 large
+    int x = -1, y = -1;      // the webcam dragged to a free place: its top-left on the 1920x1080 canvas. -1 = use the corner above
     int guestCrop[4] = {0, 0, 0, 0};   // "the show" only: percent trimmed off the guest's window: left, top, right, bottom
     bool valid() const { return !path.isEmpty(); }
 };
@@ -51,6 +52,8 @@ public:
     // Show what would be recorded, without recording. Call again with a new spec when the pick, camera or placement
     // changes. A recording that starts afterwards reuses the same scene (no second screen-share dialog).
     virtual void setPreview(bool on, const RecordSpec &spec) { Q_UNUSED(on); Q_UNUSED(spec); }
+    // Forget which screen (and guest window) was chosen, so the next time MOBS asks again. Never touches a take in progress.
+    virtual void forgetCapture() {}
     virtual void setMicCheck(bool on, const AudioSpec &audio) { Q_UNUSED(on); Q_UNUSED(audio); }
     virtual void checkHardware() { emit hardwareChecked(false, "hardware detection is not supported by this backend"); }
 signals:

@@ -499,6 +499,18 @@ private slots:
         QCOMPARE(b.lastSpec.crf, 23);
         QVERIFY(b.lastSpec.mic);
     }
+    // ---- dragging the webcam
+    void theWebcamKeepsMovingEvenWhileRecording() {
+        FakeBackend b; Engine e(&b, dir.path()); CameraSpec c; c.path = "cam";
+        e.setCameraProvider([&] { return c; });
+        e.start(2); emit b.started();
+        const int calls = b.previewCalls;
+        c.x = 400; c.y = 300;
+        e.setPreview(false, 2);                       // what the app does each time the camera changes, whatever the preview chip says
+        QVERIFY(b.previewCalls > calls); QVERIFY(b.previewOn);
+        QCOMPARE(b.previewSpec.camera.x, 400); QCOMPARE(b.previewSpec.camera.y, 300);   // the backend is told the new place mid-take
+        QCOMPARE(e.state(), QString("recording"));    // and the take itself is untouched
+    }
     // ---- the show (pick 4)
     void theShowNeedsACameraLikeTheOtherCameraPicks() {
         FakeBackend b; Engine e(&b, dir.path()); QSignalSpy needed(&e, &Engine::cameraNeeded);

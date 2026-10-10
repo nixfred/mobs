@@ -15,15 +15,24 @@ private slots:
         a.setPro(true); QCOMPARE(a.expertTab(), 0);
         a.openAudio(); QCOMPARE(a.expertTab(), 2);
     }
-    void newUserStartsOnChoose() {
+    static QList<CameraInfo> oneCamera() { return {{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}}; }
+    void aNewUserWithACameraLandsOnScreenPlusMeWithNothingToChoose() {
+        // Fred, 2026-10-10: "All I want is screen and me." No four cards to puzzle over on the first run.
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
-        AppState a(&s);
-        QCOMPARE(a.screen(), 1);
-        QCOMPARE(a.pick(), 0);
+        AppState a(&s, nullptr, [] { return oneCamera(); });
+        QCOMPARE(a.screen(), 2); QCOMPARE(a.pick(), 2); QCOMPARE(a.pickName(), QString("screen + me"));
+        QVERIFY(a.hasCamera()); QVERIFY(a.cameraSpec().valid());
+        a.back(); QCOMPARE(a.screen(), 1);             // the picks are still one tap away
+    }
+    void aNewUserWithoutACameraLandsOnMyScreen() {
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
+        QCOMPARE(a.screen(), 2); QCOMPARE(a.pick(), 1);
     }
     void choosingMovesToReadyAndIsRemembered() {
         QTemporaryDir d; const QString f = d.path() + "/m.ini";
-        { QSettings s(f, QSettings::IniFormat); AppState a(&s);
+        { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return oneCamera(); });
+          a.back();                                      // a new user starts on ready: go to the picks first
           QSignalSpy sc(&a, &AppState::screenChanged);
           a.choose(2);
           QCOMPARE(a.screen(), 2); QCOMPARE(a.pick(), 2); QCOMPARE(a.pickName(), QString("screen + me"));
@@ -40,8 +49,8 @@ private slots:
     }
     void ignoresBadPicks() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
-        AppState a(&s); a.choose(0); a.choose(5); a.choose(-1);   // 4 is the show now
-        QCOMPARE(a.screen(), 1); QCOMPARE(a.pick(), 0);
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); }); a.back(); a.choose(0); a.choose(5); a.choose(-1);   // 4 is the show now
+        QCOMPARE(a.screen(), 1); QCOMPARE(a.pick(), 1);   // nothing changed: still the first-run default
     }
     void recordingShowsScreenThreeThenReturns() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
@@ -60,7 +69,7 @@ private slots:
         return {{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}, {"/dev/v4l/by-id/usb-hd-video-index0", "HD Webcam", false}};
     }
     void aCameraPickChoosesTheFirstCameraAutomatically() {
-        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); s.setValue("pick", 1);   // a returning "my screen" user, no camera chosen yet
         AppState a(&s, nullptr, [] { return twoCameras(); });
         QVERIFY(!a.hasCamera());
         a.choose(2);
@@ -70,7 +79,7 @@ private slots:
         QVERIFY(a.cameraSpec().mjpg720);
     }
     void thePlainScreenPickLeavesTheCameraAlone() {
-        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); s.setValue("pick", 1);
         AppState a(&s, nullptr, [] { return twoCameras(); });
         a.choose(1);
         QVERIFY(!a.hasCamera());
@@ -121,6 +130,40 @@ private slots:
         const QRectF n = a.cameraRectNormalized();
         QCOMPARE(n.x() * Placement::kCanvasW, double(r.x()));
         QCOMPARE(n.height() * Placement::kCanvasH, double(r.height()));
+    }
+    // ---- dragging the webcam
+    void theWebcamCanBeDraggedAnywhereInsideThePictureAndOnlyReleaseRemembersIt() {
+        QTemporaryDir d; const QString f = d.path() + "/m.ini";
+        { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+          QSignalSpy changed(&a, &AppState::cameraChanged);
+          QCOMPARE(a.cameraSpec().x, -1);                                   // not dragged: the corner decides
+          a.moveCamera(0.30, 0.40, false);
+          QCOMPARE(a.cameraX(), int(std::lround(0.30 * Placement::kCanvasW))); QCOMPARE(a.cameraSpec().y, int(std::lround(0.40 * Placement::kCanvasH)));
+          QCOMPARE(changed.count(), 1);
+          QVERIFY(!QSettings(f, QSettings::IniFormat).contains("camX"));    // a drag in progress is not written to disk on every move
+          a.moveCamera(0.30, 0.40, false); QCOMPARE(changed.count(), 1);    // the same place: silent
+          a.moveCamera(-5, 9, false);                                       // far outside: it stays fully inside the picture
+          const QRect r = Placement::cameraRectAt(a.cameraX(), a.cameraY(), 1);
+          QCOMPARE(a.cameraX(), 0); QCOMPARE(a.cameraY() + r.height(), Placement::kCanvasH);
+          a.moveCamera(0.25, 0.10, true);
+          const QRectF n = a.cameraRectNormalized(); const QRect want = Placement::cameraRectAt(a.cameraX(), a.cameraY(), 1);
+          QCOMPARE(n.x() * Placement::kCanvasW, double(want.x())); QCOMPARE(n.height() * Placement::kCanvasH, double(want.height())); }
+        QSettings s(f, QSettings::IniFormat); AppState b(&s, nullptr, [] { return twoCameras(); });
+        QCOMPARE(b.cameraX(), int(std::lround(0.25 * Placement::kCanvasW)));  // remembered after the release
+    }
+    void tappingACornerPutsADraggedWebcamBackOnIt() {
+        QTemporaryDir d; const QString f = d.path() + "/m.ini";
+        { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+          a.setCorner(1); a.moveCamera(0.5, 0.5, true); QVERIFY(a.cameraX() >= 0);
+          a.setCorner(1);                                                   // the SAME corner it was on: still a way back
+          QCOMPARE(a.cameraX(), -1); QCOMPARE(a.cameraSpec().corner, 1);
+          const QRect corner = Placement::cameraRect(1, 1); QCOMPARE(a.cameraRectNormalized().x() * Placement::kCanvasW, double(corner.x())); }
+        QSettings s(f, QSettings::IniFormat); QVERIFY(!s.contains("camX"));
+        AppState b(&s, nullptr, [] { return twoCameras(); }); QCOMPARE(b.cameraX(), -1);
+    }
+    void aHandEditedWebcamPositionOutsideThePictureIsIgnored() {
+        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); s.setValue("camX", 99999); s.setValue("camY", 5); s.sync();
+        AppState a(&s, nullptr, [] { return twoCameras(); }); QCOMPARE(a.cameraX(), -1);
     }
     // ---- the show: a fourth pick, with the guest's window trimmed
     void theShowIsAFourthPickThatNeedsACameraAndIsRemembered() {

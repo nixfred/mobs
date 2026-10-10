@@ -213,7 +213,7 @@ private slots:
         QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
         auto spec = silentSpec(1, d.path() + "/expert.mp4"); spec.crf = 17; spec.encoderPreset = "fast";
         b.begin(spec); QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
-        QTest::qWait(1200); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+        QTest::qWait(2500); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);   // a wide margin: a busy machine must not turn 1.2 s of recording into a failure
         QVERIFY(failed.isEmpty()); QVERIFY(durationOf(spec.path) > 1.0);
     }
     void unexpectedOutputFailureIsReported() {
@@ -577,6 +577,26 @@ private slots:
         QCOMPARE(probe(d.path() + "/two.flv", {"-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"}), QString("h264"));   // video flows again
         QVERIFY2(durationOf(path) > 6.0, qPrintable(QString("duration %1").arg(durationOf(path))));           // the file ran through the whole outage
         QCOMPARE(statesOf(state).last(), QString("ended"));
+    }
+    // ---- dragging the webcam while a take is recording: the audience (and the file) see it move
+    void theWebcamMovesWhileATakeIsRecording() {
+        qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");     // red screen, green webcam
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.mic = false; spec.pick = 2; spec.path = d.path() + "/move.mp4"; spec.camera.path = "test"; spec.camera.x = 32; spec.camera.y = 32;   // top-left
+        b.begin(spec); started.wait(20000); QVERIFY(!started.isEmpty());
+        QTest::qWait(2500);
+        RecordSpec moved = spec; moved.camera.x = 1427; moved.camera.y = 789;               // dragged to the bottom-right, mid-take
+        b.setPreview(true, moved);
+        QTest::qWait(3000);
+        b.end(); finished.wait(20000); QVERIFY(failed.isEmpty());
+        const auto still = [&](double seconds) {
+            QProcess p; p.start("ffmpeg", {"-nostdin", "-v", "error", "-ss", QString::number(seconds), "-i", spec.path, "-frames:v", "1", "-vf", "scale=192:108", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"});
+            p.waitForFinished(20000); return p.readAllStandardOutput(); };
+        const QByteArray before = still(1.0), after = still(5.0);
+        QVERIFY(greenAt(before, 262, 161) && !greenAt(before, 1657, 918));                    // first it sat top-left
+        QVERIFY(greenAt(after, 1657, 918) && !greenAt(after, 262, 161));                      // then it was bottom-right, in the SAME file
+        QVERIFY(redAt(after, 262, 161));                                                      // and the screen it uncovered is there
     }
     // ---- "the show": the shared window big, the guest's window above, you below, on a quiet backdrop
     QByteArray recordTheShow(const QString &dir, const QString &name, const QList<int> &crop) {

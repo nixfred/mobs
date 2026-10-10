@@ -1,6 +1,7 @@
 #include "control.h"
 #include "appstate.h"
 #include "engine.h"
+#include "mobslog.h"
 #include <QDBusConnection>
 #include <QDBusError>
 #include <QDebug>
@@ -18,11 +19,12 @@ bool Control::registerOnSessionBus() {
 }
 
 void Control::Toggle() {
+    MobsLog::write("control", "hotkey: toggle");
     if (!m_engine->active() && m_state->pick() == 0) m_state->choose(1);   // hotkey on a fresh install: my screen
     m_engine->toggle(m_state->pick());
 }
 
-void Control::Pause() { m_engine->togglePause(); }
+void Control::Pause() { MobsLog::write("control", "hotkey: pause"); m_engine->togglePause(); }
 
 QString Control::Status() {
     const QString s = m_engine->state();

@@ -183,6 +183,7 @@ private slots:
         QVERIFY(c.aboutText().contains("libobs"));
         QVERIFY(c.aboutText().contains("GPLv2"));
         QVERIFY(c.aboutText().contains("Monologue"));
+        QVERIFY(c.aboutText().contains("log:"));                           // says where the log is
     }
 };
 QTEST_MAIN(SettingsTests)

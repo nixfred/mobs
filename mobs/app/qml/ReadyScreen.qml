@@ -47,14 +47,14 @@ Item {
                 enabled: !Review.loading
                 y: (recordButton.height - height) / 2
                 width: goLiveLabel.implicitWidth + 40; height: 46; radius: 23
-                color: Prefs.streamReady ? Omarchy.red : "transparent"
-                border.width: 2; border.color: Prefs.streamReady ? Omarchy.red : Omarchy.selection
+                color: Omarchy.red   // always bold red, set up or not: it must be the first thing the eye finds. Without a key it opens the page that asks for one.
+                border.width: 2; border.color: Omarchy.red
                 Txt {
                     id: goLiveLabel
                     anchors.centerIn: parent
                     font.pixelSize: 15; font.bold: true
-                    text: Prefs.streamReady ? "GO LIVE to X" : "set up go live"
-                    color: Prefs.streamReady ? Omarchy.accentForeground : Omarchy.secondaryText
+                    text: "GO LIVE to X"
+                    color: Omarchy.accentForeground
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: goLive.clicked() }
@@ -108,7 +108,7 @@ Item {
             width: Math.min(root.width - 48, 820)
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 12
-            Chip { glyph: ""; text: App.displayText; visible: App.pick !== 3 }
+            Chip { glyph: ""; text: App.displayText + "  (change)"; clickable: true; onClicked: Engine.forgetScreen(); visible: App.pick !== 3 }
             Chip { glyph: ""; text: Prefs.micOn ? "mic on" : "mic off"; tint: Prefs.micOn ? Omarchy.accent : Omarchy.tertiaryText; clickable: true; onClicked: Prefs.setMicOn(!Prefs.micOn) }
             Chip { glyph: ""; text: "EXPERT audio"; clickable: true; onClicked: App.openAudio() }
             Chip { glyph: ""; text: Prefs.desktopOn ? "desktop on" : (App.pick === 4 ? "desktop off: guest is silent" : "desktop off"); tint: App.pick === 4 && !Prefs.desktopOn ? Omarchy.red : Omarchy.accent; clickable: true; onClicked: Prefs.setDesktopOn(!Prefs.desktopOn) }
