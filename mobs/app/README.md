@@ -139,6 +139,7 @@ header says LIVE. **Pause is off while you broadcast**: viewers would keep watch
   recommends in Live Studio (H.264 + AAC-LC at 44.1 kHz, 9 Mbps, 1080p30, keyframe every 3 s). MOBS now runs its audio engine at 44.1 kHz for that.
 - Quitting the window while live stops the take, and with it the broadcast, the same as Stop.
 
+![MOCKUP of the outstream and the two MOBS windows: stand-in pictures, real layout](../../docs/app/mockup-golive-board.png)
 ![ready screen armed to go live](../../docs/app/golive-ready-armed.png)
 ![live](../../docs/app/golive-recording.png)
 ![the connection was lost: not live, still recording](../../docs/app/golive-not-live.png)
@@ -194,6 +195,7 @@ Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "curre
 
 Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
 The show: `MOBS_TEST_GUEST=colour` (a blue stand-in) or `video:/path.mp4` (a file) replaces the guest's window dialog in tests; `MOBS_TEST_GUEST_COLOUR` sets the colour. Script step `guestcrop=EDGE:PERCENT` (0 left, 1 top, 2 right, 3 bottom), `click=NAME` also finds items a Repeater made, and `expect=guestCrop:L/T/R/B`.
+Mock-ups: `MOBS_FAKE_PREVIEW=/path.png` (fake backend only) serves that picture in the live preview, so the REAL window can be drawn with a stand-in picture inside it (see `docs/app/mockup-golive-board.png`: stand-in desktop and webcam, real layout, corner and windows).
 Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted runs use a throwaway one). Script steps `arm=0/1`, `streamurl=`, `streamkey=`, `streamquality=N`, and with the fake backend `streamdrop` / `streamretry` / `streamback`; conditions `expect=armed|broadcasting|streamReady:0|1`, `expect=streamState:live` and `expect=streamProblem:text`. EXPERT tab 6 is the live page (`tab=0..6`).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.
 Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=file:/path.wav` and `MOBS_TEST_DESKTOP_AUDIO=file:/path.wav` supply generated sound to native tests. `MOBS_FAKE_BACKEND=1` is accepted only with `MOBS_SCRIPT` and exercises QML without capture. EXPERT tabs are `tab=0..5`; scripts also support `openaudio`, `audiodetails=0/1`, `micdevice=`, `desktop=0/1`, `miccheck=0/1`, `micgain=`, and `hardware=0/1`.

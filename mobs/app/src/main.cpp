@@ -35,7 +35,7 @@ public:
         emit started(); emit audioLevels(-18, -24, spec.mic, spec.audio.desktop, QString());
         if (m_streams) {   // a pretend broadcast: connecting first, live a moment later (the steps below then break it on purpose)
             emit streamState("connecting", QString());
-            QTimer::singleShot(400, this, [this] { if (m_streams) { emit streamState("live", QString()); emit streamStats(5800, 0); } });
+            QTimer::singleShot(400, this, [this] { if (m_streams) { emit streamState("live", QString()); emit streamStats(9000, 0); } });
         }
     }
     void pause(bool) override {}
@@ -47,7 +47,12 @@ public:
     bool m_streams = false;
     void setMicCheck(bool on, const AudioSpec &) override { emit audioLevels(on ? -18 : -60, -60, on, false, QString()); }
     void setPreview(bool on, const RecordSpec &) override {
-        if (on) { QImage frame(640, 360, QImage::Format_RGB32); frame.fill(QColor("#3050f0")); emit previewFrame(frame); }
+        if (!on) return;
+        // MOBS_FAKE_PREVIEW=/path.png serves that picture instead of the flat colour, so the real window can be drawn with a mock-up picture inside.
+        QImage frame(qEnvironmentVariable("MOBS_FAKE_PREVIEW"));
+        if (frame.isNull()) { frame = QImage(640, 360, QImage::Format_RGB32); frame.fill(QColor("#3050f0")); }
+        else frame = frame.scaled(640, 360, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
+        emit previewFrame(frame);
     }
 };
 
