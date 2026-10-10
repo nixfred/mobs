@@ -1,5 +1,7 @@
 # MOBS screen design (draft 1, 2026-10-09)
 
+> Update 2026-10-10: the "full obs" door in the header is gone (ADR 0006: there is no separate OBS app; the Pro drawer must grow to cover it). The ready screen now also shows a red warning under a recording that came out black.
+
 Status: approved direction (Fred, 2026-10-09). The pictures are real renders of a prototype
 (`mobs/design/`, built and run in the Test Drive practice VM) using **sample data only**: it
 records nothing and talks to nothing. They show the design, not a working recorder.

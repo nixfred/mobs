@@ -37,6 +37,16 @@ Item {
             Chip { glyph: ""; text: App.pick === 1 ? "camera off" : "camera: not connected yet"; tint: Omarchy.tertiaryText }
         }
         Txt {
+            text: Engine.warning
+            visible: Engine.warning !== ""
+            color: Omarchy.red
+            font.pixelSize: 13
+            width: 640
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            anchors.horizontalCenter: parent.horizontalCenter
+        }
+        Txt {
             text: Engine.message
             visible: Engine.message !== ""
             width: 640

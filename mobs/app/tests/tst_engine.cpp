@@ -1,5 +1,8 @@
 #include "engine.h"
+#include <QFileInfo>
+#include <QProcess>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -124,6 +127,59 @@ private slots:
         QCOMPARE(Engine::formatElapsed(0), QString("00:00:00"));
         QCOMPARE(Engine::formatElapsed(59.9), QString("00:00:59"));
         QCOMPARE(Engine::formatElapsed(3725), QString("01:02:05"));
+    }
+    // ---- the black-recording check (needs ffmpeg; skipped without it) -----------------------------------------------
+    static bool makeVideo(const QString &file, const QString &source) {
+        QProcess p;
+        p.start("ffmpeg", {"-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", source, "-t", "2", "-pix_fmt", "yuv420p", file});
+        return p.waitForFinished(20000) && p.exitCode() == 0;
+    }
+    void looksBlackJudgesTheStill() {
+        QVERIFY(Engine::looksBlack(QByteArray(576, '\0')));
+        QVERIFY(Engine::looksBlack(QByteArray(576, '\2')));
+        QVERIFY(!Engine::looksBlack(QByteArray(576, '\x30')));
+        QByteArray one(576, '\0'); one[100] = '\xff';
+        QVERIFY(!Engine::looksBlack(one));              // a single bright pixel is content, not black
+        QByteArray mixed(576, '\0'); for (int i = 0; i < 576; i += 2) mixed[i] = char(0xE0);
+        QVERIFY(!Engine::looksBlack(mixed));            // bright and black pixels together: content
+        QVERIFY(!Engine::looksBlack(QByteArray()));     // no data: never warn
+    }
+    void aBlackRecordingGetsAWarning() {
+        if (QStandardPaths::findExecutable("ffmpeg").isEmpty()) QSKIP("ffmpeg not installed");
+        const QString f = dir.path() + "/black.mp4";
+        QVERIFY(makeVideo(f, "color=c=black:s=320x180:r=10"));
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy checked(&e, &Engine::checkedFile);
+        e.start(1); emit b.started(); e.stop(); emit b.finished(f);
+        QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 1, 15000);
+        QVERIFY(checked.first().at(1).toBool());
+        QVERIFY(e.warning().contains("black"));
+        QVERIFY(e.warning().contains("region"));
+    }
+    void aNormalRecordingGetsNoWarning() {
+        if (QStandardPaths::findExecutable("ffmpeg").isEmpty()) QSKIP("ffmpeg not installed");
+        const QString f = dir.path() + "/real.mp4";
+        QVERIFY(makeVideo(f, "testsrc2=s=320x180:r=10"));
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy checked(&e, &Engine::checkedFile);
+        e.start(1); emit b.started(); e.stop(); emit b.finished(f);
+        QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 1, 15000);
+        QVERIFY(!checked.first().at(1).toBool());
+        QVERIFY(e.warning().isEmpty());
+    }
+    void startingAgainClearsTheOldWarning() {
+        if (QStandardPaths::findExecutable("ffmpeg").isEmpty()) QSKIP("ffmpeg not installed");
+        const QString f = dir.path() + "/black2.mp4";
+        QVERIFY(makeVideo(f, "color=c=black:s=320x180:r=10"));
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy checked(&e, &Engine::checkedFile);
+        e.start(1); emit b.started(); e.stop(); emit b.finished(f);
+        QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 1, 15000);
+        QVERIFY(!e.warning().isEmpty());
+        const QString g = dir.path() + "/real2.mp4";
+        QVERIFY(makeVideo(g, "testsrc2=s=320x180:r=10"));
+        e.start(1); emit b.started(); e.stop(); emit b.finished(g);
+        QTRY_VERIFY_WITH_TIMEOUT(e.warning().isEmpty(), 5000);   // a good recording must not inherit the last warning
     }
     void aLateStartedSignalAfterStopIsIgnored() {
         FakeBackend b; Engine e(&b, dir.path());

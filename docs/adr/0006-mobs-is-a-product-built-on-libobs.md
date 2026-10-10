@@ -52,3 +52,14 @@ with pause and resume (4.8 s file from 3 s + 2 s paused + 2 s), exit code 0 in 1
   own settings. The prototype's screens and the live Omarchy palette are reused as they are.
 - Packaging: MOBS ships its own libobs build (GPLv2, like OBS). Development uses the system libobs 32.2.2 until
   the subtree build is wired up.
+
+## First real run of the MOBS app on gus (2026-10-10, 00:0x)
+
+Driven by the app's own test script (`MOBS_SCRIPT`, no synthetic key presses), real libobs, real PipeWire capture:
+exit code 0 in both runs; run 1 opened the picker once and saved the token, run 2 needed no picker; the files were
+5.20 s and 5.00 s (3 s + 2 s recorded, the 2 s pause cut out), 1920x1080 H.264 + AAC. **The video was black**, because
+Fred picked a **region** (confirmed): that makes three independent runs (OBS-driven and MOBS) where a region pick records
+black while a screen or window pick records real frames. MOBS now inspects every saved recording (a still from 1 s in,
+32x18 grey, via ffmpeg) and shows a red warning that names the likely cause; the picker prompt tells people to choose a
+screen or window. Found by a test while writing it: QByteArray chars are signed, so 255 read as -1 and a mixed
+black-and-bright frame could have been called black.

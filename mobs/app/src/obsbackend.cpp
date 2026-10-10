@@ -84,7 +84,7 @@ bool ObsBackend::buildGraph(const QString &path, QString *error) {
     const bool testColour = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";   // lets tests record without the picker
     if (testColour) {
         obs_data_t *cs = obs_data_create();
-        obs_data_set_int(cs, "color", 0xFF3050F0); obs_data_set_int(cs, "width", 1920); obs_data_set_int(cs, "height", 1080);
+        obs_data_set_int(cs, "color", qEnvironmentVariable("MOBS_TEST_COLOUR", "FF3050F0").toUInt(nullptr, 16));   // ABGR; tests only obs_data_set_int(cs, "width", 1920); obs_data_set_int(cs, "height", 1080);
         m_video = obs_source_create("color_source_v3", "test colour", cs, nullptr);
         obs_data_release(cs);
     } else {
@@ -95,7 +95,7 @@ bool ObsBackend::buildGraph(const QString &path, QString *error) {
         if (!token.isEmpty()) obs_data_set_string(ps, "RestoreToken", token.toUtf8().constData());
         m_video = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);
         obs_data_release(ps);
-        if (token.isEmpty()) emit waitingForUser("choose what to record in the dialog that just opened");
+        if (token.isEmpty()) emit waitingForUser("choose a screen or a window in the dialog that just opened (a dragged region can record black)");
     }
     if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; return false; }
     m_item = obs_scene_add(m_scene, m_video);

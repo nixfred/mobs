@@ -1,6 +1,9 @@
 #include "engine.h"
 #include <QDateTime>
 #include <QDir>
+#include <QFileInfo>
+#include <QStandardPaths>
+#include <algorithm>
 
 Engine::Engine(RecorderBackend *backend, QString recordingDir, QObject *parent)
     : QObject(parent), m_backend(backend), m_dir(std::move(recordingDir)) {
@@ -114,7 +117,36 @@ void Engine::onFinished(const QString &path) {
         m_lastFile = path;
         emit lastFileChanged();
         setMessage("saved " + path);
+        if (!m_warning.isEmpty()) { m_warning.clear(); emit warningChanged(); }
         emit saved(path);
+        checkPicture(path);
     }
     setState(Idle);
+}
+
+bool Engine::looksBlack(const QByteArray &g) {
+    if (g.isEmpty()) return false;               // nothing to judge: never cry wolf
+    unsigned char mx = 0;
+    for (char c : g) mx = std::max(mx, static_cast<unsigned char>(c));   // QByteArray chars are SIGNED: 255 reads as -1
+    return mx < 4;                                                        // every pixel is (almost) 0
+}
+
+// Some portal picks (a dragged REGION, on gus) record a valid file full of black frames. Say so instead of
+// leaving the user to find out later. A still from 1 s in, shrunk to 32x18 grey, is plenty to tell black from a screen.
+void Engine::checkPicture(const QString &path) {
+    const QString ffmpeg = QStandardPaths::findExecutable("ffmpeg");
+    if (ffmpeg.isEmpty() || !QFileInfo::exists(path)) return;
+    auto *p = new QProcess(this);
+    connect(p, &QProcess::finished, this, [this, p, path](int code, QProcess::ExitStatus st) {
+        const QByteArray bytes = p->readAllStandardOutput();
+        p->deleteLater();
+        if (code != 0 || st != QProcess::NormalExit || bytes.size() < 32 * 18) return;
+        const bool black = looksBlack(bytes.left(32 * 18));
+        if (black && m_lastFile == path) {
+            m_warning = "the picture in this recording is black. Choosing a region can record black here: pick a screen or a window.";
+            emit warningChanged();
+        }
+        emit checkedFile(path, black);
+    });
+    p->start(ffmpeg, {"-nostdin", "-v", "error", "-ss", "1", "-i", path, "-frames:v", "1", "-vf", "scale=32:18,format=gray", "-f", "rawvideo", "-"});
 }
