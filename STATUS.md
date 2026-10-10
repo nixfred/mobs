@@ -123,3 +123,19 @@ Verified: 12 of 12 CTest suites on gus, 78 UI scenarios (72 before, 6 new). New:
 Not verified: the splash has not been drawn on gus's own NVIDIA/Intel GPU path, because opening a window there would have landed on Fred's desktop in the middle of his recording. Software render (offscreen) and the VM's GL path both look right; the first launch from the launcher is the first look on gus.
 
 ![the opening screen, six moments](docs/app/splash-sequence.png)
+
+## The recording screen shows what is being recorded (2026-10-10)
+
+Fred, looking at a recording window that was only a timer: "When it's recording, can it show what it's recording in this window? I need to see what is being recorded."
+
+The live preview already existed but was opt-in (a chip on the ready screen) and the recording screen had nowhere to draw it. Now **a take that is recording or paused always shows its picture**, whatever the chip says (`Engine::applyPreview`, README "Seeing what is being recorded"). Wide windows: picture left, timer and buttons right. Tall windows (his was about 1200 x 2000): picture above, up to 960 px wide. Red outline and "recording: this is what is being saved" while live; **paused** dims it and says nothing is being saved; it stays, dimmed, under "saving...". The ready screen's own choice is untouched.
+
+Why it is in `Engine` and not a QML tweak: the preview shares the recording's scene, and turning it on or off at the wrong moment can leak the scene (camera left on) or open a second screen-share dialog. Rule: applied only on the change to or from recording, never while still waiting for the picker; the backend is told to stop BEFORE the take is finalised so `finishAttempt` can release the scene.
+
+Verified: 12 of 12 CTest suites, 5 new engine tests (49 engine tests) and 12 new UI scenarios at five window sizes including 900x1600 and 1206x2000 (the checker flags any text or the picture leaving the screen). Mutation-tested: removing the rule fails 4 engine tests; letting "starting" count as live (the picker race) fails 1, which my first mutation attempt wrongly passed because it did not touch the trigger, so I redid it. **Real libobs in the Test Drive VM**, preview never turned on: pick "screen + me", record, pause, resume, stop. Exit 0, the script's own `expect=previewing:0` and `expect=previewFrame:0` after stop passed, the take is a valid 1920x1080 H.264 + AAC file of 15.1 s with the pause mark at 14.1 s, the preview frames are real scene frames (screen colour plus the camera box in the corner, 5.6% of the frame), and the window grab shows that picture beside the timer (docs/app/recording-preview-real-libobs.png).
+
+Caught on the way: my first rewrite of RecordingScreen.qml silently dropped the pause/play/stop icons, because they are Nerd Font private-use characters (U+F04B, U+F04C, U+F04D) that do not show up when the file is read or written as plain text. Found by comparing codepoints against HEAD, restored, and verified identical. The picture's square corners poked past the rounded outline; fixed with four corner masks and the outline drawn on top.
+
+Not verified: a real screen or webcam on gus (the VM uses test sources, and opening a capture on Fred's desktop needs his OK), and CPU cost of the 15 fps copy during a long take on real hardware. Known limit, by nature: recording a screen that shows MOBS makes a tunnel (documented in the README).
+
+![the real libobs backend in the practice VM](docs/app/recording-preview-real-libobs.png)

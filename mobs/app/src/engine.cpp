@@ -56,9 +56,14 @@ QString Engine::elapsedText() const { return formatElapsed(elapsedSeconds()); }
 
 void Engine::setState(State s) {
     if (s == m_state) return;
+    const auto live = [](State x) { return x == Recording || x == Paused; };
+    const bool livenessChanged = live(s) != live(m_state);
     m_state = s;
     emit stateChanged();
     emit elapsedChanged();
+    // Only on a CHANGE, so the backend is not nagged on every pause/resume. Never while starting: the scene may still be
+    // waiting for the screen picker, and a second build of it must not race the recording's own.
+    if (livenessChanged) applyPreview();
 }
 void Engine::setMessage(const QString &m) {
     if (m == m_message) return;
@@ -106,6 +111,7 @@ void Engine::start(int pick) {
     m_currentAudio = spec.audio;
     m_currentFolder = dir;
     m_currentMic = spec.mic;
+    m_recPick = pick;
     setState(Starting);
     m_backend->begin(spec);
 }
@@ -206,9 +212,18 @@ void Engine::checkPicture(const QString &path) {
 }
 
 void Engine::setPreview(bool wanted, int pick) {
+    m_previewWish = wanted;
+    m_previewPick = pick;
+    applyPreview();
+}
+
+// The preview follows the ready screen's choice, plus a take in progress (recording or paused) always shows itself.
+void Engine::applyPreview() {
+    const bool live = m_state == Recording || m_state == Paused;
+    const int pick = live ? m_recPick : m_previewPick;
     const CameraSpec cam = m_camera ? m_camera() : CameraSpec{};
     const bool usable = pick >= 1 && pick <= 3 && (pick == 1 || cam.valid());
-    const bool on = wanted && usable;
+    const bool on = (m_previewWish || live) && usable;
     const bool wasOn = m_previewing;
     if (on != m_previewing) { m_previewing = on; emit previewingChanged(); }
     if (on || wasOn) m_backend->setPreview(on, RecordSpec{pick, QString(), cam});

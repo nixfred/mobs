@@ -116,7 +116,10 @@ int main(int argc, char *argv[]) {
     QObject::connect(&recorder, &Engine::stateChanged, &review, [&] { if (recorder.active() && review.isOpen() && !review.saving()) review.close(); });
     PreviewModel preview;
     QObject::connect(backend.get(), &RecorderBackend::previewFrame, &preview, &PreviewModel::setFrame);
-    QObject::connect(&recorder, &Engine::previewingChanged, &preview, [&] { if (!recorder.previewing()) preview.clear(); });
+    // The last picture stays while a take is being saved (the recording screen dims it under "saving..."); it is dropped once idle.
+    auto dropPictureIfOff = [&] { if (!recorder.previewing() && recorder.state() != "stopping") preview.clear(); };
+    QObject::connect(&recorder, &Engine::previewingChanged, &preview, dropPictureIfOff);
+    QObject::connect(&recorder, &Engine::stateChanged, &preview, dropPictureIfOff);
     // The preview runs when the user turned it on AND a screen other than "choose" is showing; it follows the pick, the
     // camera and the placement. A recording that starts meanwhile reuses the same scene.
     auto syncPreview = [&] { recorder.setPreview(state.preview() && state.screen() != 1, state.pick()); };
@@ -309,6 +312,7 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "reviewNotice") { auto *notice = window->findChild<QObject *>("reviewNotice"); ok = notice && notice->property("text").toString().contains(condition[1]); }
                 else if (ok && condition[0] == "previewFrame") ok = preview.hasFrame() == (condition[1] == "1");
                 else if (ok && condition[0] == "preview") ok = state.preview() == (condition[1] == "1");
+                else if (ok && condition[0] == "previewing") ok = recorder.previewing() == (condition[1] == "1");
                 else if (ok && condition[0] == "message") ok = recorder.message().contains(condition[1]);
                 else if (ok && condition[0] == "messageEmpty") ok = recorder.message().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "audioTab") ok = window->findChild<QObject *>("expertPanel")->property("tab").toInt() == condition[1].toInt();
@@ -332,7 +336,7 @@ int main(int argc, char *argv[]) {
                         if (button && button->isVisible() && item->mapRectToItem(window->contentItem(), item->boundingRect()).intersects(button->mapRectToItem(window->contentItem(), button->boundingRect())))
                             problems.append("live preview overlaps Record");
                     }
-                    if ((!text.isEmpty() && !item->inherits("QQuickTextInput")) || item->objectName() == "recordButton" || item->objectName() == "readyPreview") {
+                    if ((!text.isEmpty() && !item->inherits("QQuickTextInput")) || item->objectName() == "recordButton" || item->objectName() == "readyPreview" || item->objectName() == "recordingPreview") {
                         const QRectF box = item->mapRectToItem(window->contentItem(), QRectF(0, 0, item->width(), item->height()));
                         if (box.left() < area.left() - 1 || box.top() < area.top() - 1 || box.right() > area.right() + 1 || box.bottom() > area.bottom() + 1)
                             problems.append(text.isEmpty() ? item->objectName() : text.left(100));

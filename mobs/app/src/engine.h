@@ -74,6 +74,7 @@ public:
     void setFolderProvider(std::function<QString()> provider) { m_folderFn = std::move(provider); }
     void setOptionsProvider(std::function<std::pair<int, bool>()> provider) { m_optionsFn = std::move(provider); }   // {crf, mic}
     // Show what would be recorded. wanted=false, or a camera mode with no usable camera, switches the preview off.
+    // A take that is recording or paused ALWAYS shows its preview, whatever was asked: a recorder you cannot see is one you cannot trust.
     // Safe to call again whenever the pick, camera or placement changes. Never touches the recording state.
     Q_INVOKABLE void setPreview(bool wanted, int pick);
     Q_INVOKABLE void toggle(int pick);    // start when idle, stop when recording (the Alt+Shift+V behaviour)
@@ -122,6 +123,9 @@ private:
     QList<double> m_pauseMarks;   // where in the take (seconds of recorded time) the user paused
     State m_state = Idle;
     bool m_previewing = false;
+    bool m_previewWish = false;                  // what the ready screen asked for
+    int m_previewPick = 0, m_recPick = 0;        // the pick that wish was made for, and the pick of the take in progress
+    void applyPreview();
     QElapsedTimer m_clock;
     qint64 m_banked = 0;   // ms recorded before the current running stretch
     QTimer m_tick;

@@ -363,6 +363,55 @@ private slots:
         e.setPreview(false, 1); e.setPreview(false, 1);
         QCOMPARE(b.previewCalls, 0);
     }
+    void aTakeAlwaysShowsItsPreviewEvenWhenNoneWasAskedFor() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(false, 1);                          // the ready screen's preview is off
+        e.start(1);
+        QVERIFY(!e.previewing());                        // still waiting for the screen picker: nothing may race the recording's own scene
+        QCOMPARE(b.previewCalls, 0);
+        emit b.started();
+        QCOMPARE(e.state(), QString("recording"));
+        QVERIFY(e.previewing());                         // recording: you can see what is being recorded
+        QVERIFY(b.previewOn);
+        QCOMPARE(b.previewSpec.pick, 1);
+    }
+    void thePreviewSurvivesPauseAndResumeWithoutNaggingTheBackend() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); emit b.started();
+        const int calls = b.previewCalls;
+        e.togglePause(); QCOMPARE(e.state(), QString("paused"));
+        QVERIFY(e.previewing()); QVERIFY(b.previewOn);   // paused still shows the live picture
+        e.togglePause(); QCOMPARE(e.state(), QString("recording"));
+        QVERIFY(e.previewing());
+        QCOMPARE(b.previewCalls, calls);                 // live -> live is not a change: no repeated backend calls
+    }
+    void stoppingReturnsThePreviewToWhatWasAskedFor() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(false, 1);
+        e.start(1); emit b.started(); QVERIFY(b.previewOn);
+        e.stop();
+        QCOMPARE(e.state(), QString("stopping"));
+        QVERIFY(!e.previewing()); QVERIFY(!b.previewOn); // the backend is told BEFORE the take is finalised, so the scene can be released
+        emit b.finished({});
+        QVERIFY(!e.previewing()); QVERIFY(!b.previewOn);
+    }
+    void aPreviewThatWasAskedForKeepsRunningAfterTheTake() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(true, 1); QVERIFY(b.previewOn);
+        e.start(1); emit b.started(); QVERIFY(e.previewing());
+        e.stop(); emit b.finished({});
+        QVERIFY(e.previewing()); QVERIFY(b.previewOn);   // the ready screen's own choice is untouched
+    }
+    void aFailedStartNeverLeavesAPreviewRunning() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1);
+        emit b.failed("the screen was not shared");
+        QCOMPARE(e.state(), QString("idle"));
+        QVERIFY(!e.previewing()); QVERIFY(!b.previewOn);
+        e.start(1); emit b.started(); QVERIFY(e.previewing());
+        emit b.failed("the encoder died");               // a failure while recording must release it too
+        QVERIFY(!e.previewing()); QVERIFY(!b.previewOn);
+    }
     void aPreviewFailureDoesNotEndARecording() {
         FakeBackend b; Engine e(&b, dir.path());
         e.start(1); emit b.started(); e.setPreview(true, 1);

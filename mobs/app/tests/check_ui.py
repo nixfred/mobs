@@ -54,6 +54,16 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         check("ready with named mic and live meter", "pick=1,micdevice=test:usb,miccheck=1,desktop=1,wait=0.1,checklayout", size, True)
         check("ready preview and live meter", "pick=1,preview=1,miccheck=1,wait=0.1,expect=previewFrame:1,checklayout", size, True)
         check("recording both audio meters", "pick=1,desktop=1,start,expect=state:recording,wait=0.1,checklayout,pause,expect=state:paused,wait=0.1,checklayout,pro=1,wait=0.1,checklayout", size, True)
+    # A take shows what it is recording (fake backend: a flat colour frame). Wide, small, and a tall narrow window like a tiled one.
+    for size in ("860x560", "1024x768", "1180x720", "900x1600", "1206x2000"):
+        check("recording shows the live picture and fits",
+              "pick=1,start,expect=state:recording,wait=0.4,expect=previewing:1,expect=previewFrame:1,checklayout,pause,expect=state:paused,wait=0.3,expect=previewing:1,checklayout", size, True)
+        check("recording with both audio meters and the picture fits",
+              "pick=1,desktop=1,start,expect=state:recording,wait=0.4,expect=previewFrame:1,checklayout,pro=1,wait=0.1,checklayout", size, True)
+    check("the picture goes away after the take when it was not asked for",
+          "pick=1,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:0,expect=previewFrame:0,expect=preview:0", fake_backend=True)
+    check("a preview that was asked for keeps running after the take",
+          "pick=1,preview=1,wait=0.2,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:1,expect=previewFrame:1", fake_backend=True)
     check("audio shortcut opens inputs", "pick=1,openaudio,expect=pro:1,expect=audioTab:2")
     check("invalid folder preserves saved destination", "pro=1,foldertext=relative/path,applyfolder,expect=folderDefault:1,wait=0.1,checklayout")
     check("preview error still fits", "pick=1,preview=1,wait=0.1,checklayout")

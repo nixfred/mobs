@@ -39,6 +39,26 @@ Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a nar
 The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine
 be swapped for another language later (Fred chose C++17 + QML first, 2026-10-09).
 
+## Seeing what is being recorded
+
+While a take is recording or paused, the recording screen shows **the live picture MOBS is saving**, whether or not the ready screen's
+"preview" chip was on. It is the same scene the encoder reads (screen, plus your camera in its corner, or just the camera), at 15 frames a
+second. A red outline and the line "recording: this is what is being saved" tell you it is live; **pause** dims it and says "paused: nothing is being
+saved"; while the file is finished it stays, dimmed, under "saving...". Wide windows put the picture beside the timer and buttons, tall
+ones put it above them; nothing scrolls (Law 17).
+
+- The rule lives in `Engine::applyPreview`: preview = (what the ready screen asked for) OR (recording or paused). It is applied on the change to
+  or from recording, never while MOBS is still waiting for the screen picker (so a second copy of the scene cannot race the recording's own).
+- The ready screen's own choice is untouched: if the preview was on before the take it is on after, if it was off it goes back off (and the scene,
+  with the camera, is released as soon as the take is saved).
+- **Recording the screen MOBS is on shows a tunnel.** If the captured screen includes MOBS's own window, the picture shows MOBS showing the picture, and so on.
+  That is what is actually being recorded. Pick a window, or keep MOBS on another monitor or workspace, to avoid it.
+- The picture is 640x360 (a monitor, not a magnifier): enough to see layout, camera placement and whether anything is black.
+
+![recording, wide](../../docs/app/recording-preview-wide.png)
+![paused](../../docs/app/recording-preview-paused.png)
+![the real libobs backend in the practice VM: screen colour, "me" box in the corner](../../docs/app/recording-preview-real-libobs.png)
+
 ## The opening screen
 
 MOBS opens on a 2.8 s opening screen (`qml/SplashScreen.qml`), then fades into the app. One clock drives it, so every frame is a pure
@@ -100,6 +120,7 @@ Native integration runs each scenario in a separate process, matching the app's 
 Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "current" folder), `MOBS_SETTINGS` (settings file),
 `MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_WINDOW_SIZE=860x560`, `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`, `MOBS_TEST_CAMERA=colour` (a green stand-in webcam), `MOBS_FAKE_CAMERAS=1` (two sample cameras for screenshots), `MOBS_NO_HOTKEY=1`, `MOBS_VERBOSE=1` (libobs logs warnings and errors only otherwise). Script steps also include `pick=N`, `corner=N`, `size=N`, `panel=0/1`, `preview=0/1`, `grabpreview=`, `review=`, `split=`, `cut=`, `savereview`, `waitsaved`, `closereview`, `pro=0/1`, `tab=0..5`, `checklayout`, `key=P/Space/Esc`, `focusfolder`, `foldertext=`, `applyfolder`, `closewindow`, and `expect=state:idle` (also `pro`, `screen`, `confirmQuit`, `folderDefault`). Script `quit` explicitly exits without asking about unsaved test edits.
 
+Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.
 Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=file:/path.wav` and `MOBS_TEST_DESKTOP_AUDIO=file:/path.wav` supply generated sound to native tests. `MOBS_FAKE_BACKEND=1` is accepted only with `MOBS_SCRIPT` and exercises QML without capture. EXPERT tabs are `tab=0..5`; scripts also support `openaudio`, `audiodetails=0/1`, `micdevice=`, `desktop=0/1`, `miccheck=0/1`, `micgain=`, and `hardware=0/1`.
 
