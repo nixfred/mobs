@@ -1,0 +1,49 @@
+# 6. MOBS is a product built on libobs, not an overlay on the OBS app
+
+- Date: 2026-10-09
+- Status: decided (Fred, 2026-10-09: "I don't want an overlay. I want a new product. I was clear about that.").
+  Replaces ADR 0005 (own window driving a hidden OBS over websocket) and, with it, ADR 0003.
+
+## Decision
+
+MOBS is **one application**: its own Omarchy-styled Qt Quick frontend with **libobs embedded in the same process**,
+the OBS engine plugins it needs (capture, encoders, outputs, filters), and Monologue's editor. There is no OBS
+application, no websocket, and nothing hidden. This is how OBS Studio itself is built (a frontend on libobs); MOBS
+is a different frontend on the same engine, with Monologue's editing joined in.
+
+- `obs/` stays an untouched subtree with its history. OBS already has a build switch, `ENABLE_FRONTEND=OFF`,
+  that builds libobs and the plugins without OBS's UI. MOBS builds and ships that engine with its own binary.
+- MOBS's code lives in `mobs/app/` and links libobs. It never edits `obs/` or `monologue/` (ADR 0002 stands).
+- "All of OBS's features" is reached by building MOBS's own UI over libobs's API, using libobs's property system to
+  generate controls for any source, filter or encoder, so new OBS features arrive with upstream pulls.
+- The hotkey is a D-Bus method on MOBS itself (Alt + Shift + V), as before.
+
+## Why
+
+Fred chose, at the start, "a new project… ALL the features of OBS and Monologue, made into one big usable project"
+and rejected the wrapper option. ADR 0005 drifted back into a wrapper: a skin over a separate OBS program. A product
+is one program he owns end to end: no second process to start, hide, authenticate to or lose.
+
+## Evidence (spike 4, `mobs/spike4/`, Test Drive VM, libobs 32.2.2, native Wayland)
+
+A Qt program with libobs embedded recorded a valid file with no OBS application running: OpenGL video through
+`libobs-opengl` on Wayland, 12 of 13 engine plugins (NVENC absent in the VM, as expected), x264 + AAC, `mp4_output`
+with pause and resume (4.8 s file from 3 s + 2 s paused + 2 s), exit code 0 in 16 of 16 runs once three things were right:
+
+1. Set the Wayland platform and display **before** `obs_startup` (OBS's own `OBSApp::OBSInit` does).
+2. Load only **engine** plugins by name. `obs_load_all_modules()` also loads OBS's UI plugins (websocket, frontend
+   tools, decklink UI), which call a frontend that does not exist here, and crashes.
+3. Call `obs_wait_for_destroy_queue()` before `obs_shutdown()`, and remove scene items explicitly; otherwise libobs's
+   graphics thread releases a source during shutdown (crash, then a "Double destroy" warning).
+
+## Consequences
+
+- Gone: obs-websocket, the hidden OBS window, `qt6-websockets`, spike 3's control plane, the scene-file loading
+  question, and the "dock exits unreliably" problem. Spike 3's portal findings carry over: the restore token, the
+  picker overlay, and region captures that gave black frames.
+- To prove next: PipeWire screen capture in-process (the portal reply must be handled on the Qt main thread, which
+  iterates the GLib loop), a persisted restore token so later recordings are silent, and a first-frame-not-black check.
+- MOBS owns more: encoder and output settings, a source list, audio mixing, scene handling, and persistence of its
+  own settings. The prototype's screens and the live Omarchy palette are reused as they are.
+- Packaging: MOBS ships its own libobs build (GPLv2, like OBS). Development uses the system libobs 32.2.2 until
+  the subtree build is wired up.

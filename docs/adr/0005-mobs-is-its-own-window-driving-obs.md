@@ -1,7 +1,7 @@
 # 5. MOBS is its own Omarchy-styled window that drives OBS in the background
 
 - Date: 2026-10-09
-- Status: decided (Fred, 2026-10-09). Replaces the plugin-in-OBS part of ADR 0003.
+- Status: REPLACED by ADR 0006 (2026-10-09). Fred: "I don't want an overlay. I want a new product." This design drove a separate OBS program over websocket, which is an overlay. Its spike findings (portal picker, restore token, black region captures) still apply.
 
 ## Decision
 

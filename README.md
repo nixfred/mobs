@@ -34,7 +34,7 @@ From Clarity's Idea Box: control-plane #10 “Go fork https://github.com/omacom/
 
 **How you control it.** One global Hyprland hotkey starts and stops a recording from any app, even when MOBS isn't focused: physical **Alt + Shift + V** (pause: Ctrl + Alt + Shift + V). The window also has record and pause buttons, with Monologue's Space-to-record feel.
 
-**What it looks like (Fred, 2026-10-09).** "Super easy for beginners but also satisfy experts. It looks too much like OBS right now. Put some Omarchy feel on it." So MOBS is **its own window in the live Omarchy theme**, with OBS running behind it (ADR 0005). A beginner sees three big cards (my screen, screen + me, just my camera) and then one Record button. Experts press `P` for a Pro drawer in the same look, and "Open full OBS" reaches everything else. Pictures of the five screens: `docs/screen-design.md` (sample-data prototype, not a working recorder).
+**What it looks like (Fred, 2026-10-09).** "Super easy for beginners but also satisfy experts. It looks too much like OBS right now. Put some Omarchy feel on it." So MOBS is **its own application in the live Omarchy theme**: one program with the OBS engine (libobs) built in, not a skin over the OBS app and not a window that drives a hidden OBS (ADR 0006: "I don't want an overlay. I want a new product."). A beginner sees three big cards (my screen, screen + me, just my camera) and then one Record button. Experts press `P` for a Pro drawer in the same look; everything OBS can do is reached through MOBS's own interface over the same engine. Pictures of the five screens: `docs/screen-design.md` (sample-data prototype, not a working recorder).
 
 **What's left out of the first version.**
 
@@ -45,9 +45,9 @@ Not ruled out, not planned first: live streaming (an OBS feature, so it stays in
 
 **Known risks, accepted.**
 
-- "One combined app" now means one MOBS window driving OBS behind it, not OBS's own window with panels added (the spike showed that route exits unreliably on gus). The unproven part is OBS running hidden and controlled over websocket (spike 3). If the full MOBS window stalls, the fallback is still: record with OBS, open the take in Monologue's editor.
+- "One combined app" means one program: MOBS's own frontend with libobs inside it (ADR 0006). Spike 4 proved the core: a Qt program with libobs embedded records with pause on Wayland. Still to prove: screen capture in-process, and a live preview. The honest cost is that MOBS owns more (sources, encoders, audio, saved settings).
 - Keeping OBS and Monologue pulling from their official upstreams (ADR 0002) means MOBS's own code must live outside `obs/` and `monologue/`, and edits inside them stay small.
-- Monologue's editor is reused by path (unmodified) in the review screen; OBS is controlled over obs-websocket. Both upstreams stay untouched.
+- Monologue's editor is reused by path (unmodified) in the review screen; the OBS engine (libobs and its plugins) is built from the `obs/` subtree without OBS's UI. Both upstreams stay untouched.
 
 ## Set-up choices
 
