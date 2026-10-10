@@ -2,6 +2,19 @@
 #include <QObject>
 #include <QString>
 
+struct CameraSpec {
+    QString path;            // stable /dev/v4l/by-id path, or any non-empty string when a test source stands in
+    bool mjpg720 = false;    // ask the camera for 1280x720 MJPEG
+    int corner = 3;          // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right (used by "screen + me")
+    int size = 1;            // 0 small, 1 medium, 2 large
+    bool valid() const { return !path.isEmpty(); }
+};
+struct RecordSpec {
+    int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
+    QString path;            // the file to write
+    CameraSpec camera;
+};
+
 // The narrow door between MOBS and whatever actually records. Today the only real implementation is libobs
 // (ObsBackend); keeping this interface small is what lets the engine be swapped (or faked in tests) later.
 // All calls and signals happen on the Qt main thread. begin() and end() return at once and finish by signal.
@@ -9,8 +22,7 @@ class RecorderBackend : public QObject {
     Q_OBJECT
 public:
     using QObject::QObject;
-    // pick: 1 my screen, 2 screen + me, 3 just my camera. path: the file to write.
-    virtual void begin(int pick, const QString &path) = 0;
+    virtual void begin(const RecordSpec &spec) = 0;
     virtual void pause(bool paused) = 0;
     virtual void end() = 0;   // stop (or cancel, if recording has not really started yet)
 signals:

@@ -51,8 +51,11 @@ void Engine::setMessage(const QString &m) {
 
 void Engine::start(int pick) {
     if (m_state != Idle) return;
-    if (pick != 1) {
-        setMessage("camera sources are not wired yet: pick \"my screen\" to record");
+    if (pick < 1 || pick > 3) return;
+    const CameraSpec cam = m_camera ? m_camera() : CameraSpec{};
+    if (pick != 1 && !cam.valid()) {
+        setMessage("choose a camera first: click the camera chip");
+        emit cameraNeeded();
         return;
     }
     QDir().mkpath(m_dir);
@@ -61,7 +64,7 @@ void Engine::start(int pick) {
     m_clock.invalidate();
     setMessage({});
     setState(Starting);
-    m_backend->begin(pick, path);
+    m_backend->begin(RecordSpec{pick, path, cam});
 }
 
 void Engine::toggle(int pick) {

@@ -7,11 +7,12 @@
 
 class FakeBackend : public RecorderBackend {
 public:
-    void begin(int pick, const QString &) override { began++; lastPick = pick; }
+    void begin(const RecordSpec &spec) override { began++; lastPick = spec.pick; lastSpec = spec; }
     void pause(bool p) override { pauseCalls++; lastPause = p; }
     void end() override { ended++; }
     int began = 0, ended = 0, pauseCalls = 0, lastPick = 0;
     bool lastPause = false;
+    RecordSpec lastSpec;
 };
 
 // The slots are plain methods: D-Bus only exports them. Their logic is tested here, the bus itself in the VM.
@@ -50,12 +51,12 @@ private slots:
         c.Pause(); QCOMPARE(e.state(), QString("paused"));
         c.Pause(); QCOMPARE(e.state(), QString("recording"));
     }
-    void toggleWithACameraPickDoesNotRecord() {
+    void toggleWithACameraPickButNoCameraDoesNotRecord() {
         QSettings s(dir.path() + "/e.ini", QSettings::IniFormat); AppState st(&s); st.choose(2);
         FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);
         c.Toggle();
-        QCOMPARE(b.began, 0);            // camera sources are not wired: the engine says so rather than recording nothing
-        QVERIFY(e.message().contains("not wired"));
+        QCOMPARE(b.began, 0);            // no camera chosen: the engine asks for one rather than recording nothing
+        QVERIFY(e.message().contains("choose a camera"));
     }
     void statusReportsStateAndTime() {
         QSettings s(dir.path() + "/f.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);

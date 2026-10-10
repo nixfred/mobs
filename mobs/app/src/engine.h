@@ -4,6 +4,7 @@
 #include <QProcess>
 #include <QObject>
 #include <QTimer>
+#include <functional>
 
 // MOBS's recording state machine, for QML. It knows nothing about libobs: it drives a RecorderBackend.
 // idle -> starting -> recording <-> paused -> stopping -> idle
@@ -28,7 +29,8 @@ public:
     // True when a still from the file is (nearly) pure black. Static so tests and other code can reuse it.
     static bool looksBlack(const QByteArray &gray32x18);
 
-    Q_INVOKABLE void start(int pick);     // 1 my screen is wired; 2 and 3 say so instead of pretending
+    Q_INVOKABLE void start(int pick);     // 2 and 3 need a chosen camera: without one they say so instead of recording nothing
+    void setCameraProvider(std::function<CameraSpec()> provider) { m_camera = std::move(provider); }
     Q_INVOKABLE void toggle(int pick);    // start when idle, stop when recording (the Alt+Shift+V behaviour)
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void stop();
@@ -41,6 +43,7 @@ signals:
     void warningChanged();
     void checkedFile(const QString &path, bool black);   // after the saved file was inspected
     void saved(const QString &path);
+    void cameraNeeded();                   // the user asked for a camera recording but has not chosen a camera
 private:
     enum State { Idle, Starting, Recording, Paused, Stopping };
     void setState(State s);
@@ -50,6 +53,7 @@ private:
     void onFinished(const QString &path);
     void checkPicture(const QString &path);
     RecorderBackend *m_backend;
+    std::function<CameraSpec()> m_camera;
     QString m_dir, m_message, m_lastFile, m_warning;
     State m_state = Idle;
     QElapsedTimer m_clock;

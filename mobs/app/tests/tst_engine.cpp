@@ -9,12 +9,13 @@
 // A backend that records nothing: the test plays the part of libobs by emitting its signals.
 class FakeBackend : public RecorderBackend {
 public:
-    void begin(int pick, const QString &path) override { began++; lastPick = pick; lastPath = path; }
+    void begin(const RecordSpec &spec) override { began++; lastPick = spec.pick; lastPath = spec.path; lastSpec = spec; }
     void pause(bool p) override { pauseCalls++; lastPause = p; }
     void end() override { ended++; }
     int began = 0, ended = 0, pauseCalls = 0, lastPick = 0;
     bool lastPause = false;
     QString lastPath;
+    RecordSpec lastSpec;
 };
 
 class EngineTests : public QObject {
@@ -94,10 +95,36 @@ private slots:
         QTest::qWait(300);
         QCOMPARE(e.elapsedSeconds(), t);
     }
-    void cameraPicksSayTheyAreNotWiredAndRecordNothing() {
+    void cameraPicksWithoutACameraAskForOne() {
         FakeBackend b; Engine e(&b, dir.path());
-        e.start(2); QCOMPARE(b.began, 0); QVERIFY(e.message().contains("not wired")); QCOMPARE(e.state(), QString("idle"));
+        QSignalSpy needed(&e, &Engine::cameraNeeded);
+        e.start(2); QCOMPARE(b.began, 0); QVERIFY(e.message().contains("choose a camera")); QCOMPARE(e.state(), QString("idle"));
         e.start(3); QCOMPARE(b.began, 0);
+        QCOMPARE(needed.count(), 2);                    // so the UI can open the camera panel
+    }
+    void cameraPicksWithACameraRecordWithItsSettings() {
+        FakeBackend b; Engine e(&b, dir.path());
+        CameraSpec cam; cam.path = "/dev/v4l/by-id/usb-x-video-index0"; cam.mjpg720 = true; cam.corner = 1; cam.size = 2;
+        e.setCameraProvider([cam] { return cam; });
+        e.start(2);
+        QCOMPARE(b.began, 1);
+        QCOMPARE(b.lastSpec.pick, 2);
+        QCOMPARE(b.lastSpec.camera.path, cam.path);
+        QCOMPARE(b.lastSpec.camera.corner, 1);
+        QCOMPARE(b.lastSpec.camera.size, 2);
+        QVERIFY(b.lastSpec.camera.mjpg720);
+    }
+    void thePlainScreenPickNeverNeedsACamera() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1);
+        QCOMPARE(b.began, 1);
+        QVERIFY(!b.lastSpec.camera.valid());
+    }
+    void unknownPicksAreIgnored() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(0); e.start(4);
+        QCOMPARE(b.began, 0);
+        QVERIFY(e.message().isEmpty());
     }
     void startIsIgnoredWhileBusy() {
         FakeBackend b; Engine e(&b, dir.path());

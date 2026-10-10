@@ -34,7 +34,13 @@ Item {
             spacing: 12
             Chip { glyph: ""; text: App.displayText; visible: App.pick !== 3 }
             Chip { glyph: ""; text: "mic: default input" }
-            Chip { glyph: ""; text: App.pick === 1 ? "camera off" : "camera: not connected yet"; tint: Omarchy.tertiaryText }
+            Chip {
+                glyph: "\uf03d"
+                clickable: true
+                text: App.pick === 1 ? "camera off" : (App.hasCamera ? App.cameraName : "choose a camera")
+                tint: App.pick === 1 || !App.hasCamera ? Omarchy.tertiaryText : Omarchy.accent
+                onClicked: { App.refreshCameras(); App.setCameraPanel(true) }
+            }
         }
         Txt {
             text: Engine.warning
@@ -57,4 +63,5 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
         }
     }
+    CameraPanel { anchors.fill: parent; z: 10 }
 }

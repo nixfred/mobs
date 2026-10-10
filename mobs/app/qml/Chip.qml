@@ -7,11 +7,13 @@ Rectangle {
     property string glyph
     property alias text: label.text
     property color tint: Omarchy.accent
+    property bool clickable: false
+    signal clicked()
     implicitWidth: row.implicitWidth + 28
     implicitHeight: 38
     radius: 19
     color: Omarchy.lighterBackground
-    border.color: Omarchy.selection
+    border.color: clickable && hover.hovered ? Omarchy.accent : Omarchy.selection
     border.width: 1
     Row {
         id: row
@@ -20,4 +22,6 @@ Rectangle {
         Glyph { text: root.glyph; color: root.tint; font.pixelSize: 16 }
         Txt { id: label; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: 13 }
     }
+    HoverHandler { id: hover; enabled: root.clickable; cursorShape: Qt.PointingHandCursor }
+    TapHandler { enabled: root.clickable; onTapped: root.clicked() }
 }

@@ -25,7 +25,10 @@ int main(int argc, char *argv[]) {
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
     Palette palette(qEnvironmentVariable("MOBS_THEME_DIR"));
     QSettings settings(qEnvironmentVariable("MOBS_SETTINGS", QSettings().fileName()), QSettings::IniFormat);
-    AppState state(&settings);
+    // MOBS_FAKE_CAMERAS=1: two sample cameras, for screenshots and tests on a machine without a webcam.
+    AppState state(&settings, nullptr, qEnvironmentVariable("MOBS_FAKE_CAMERAS") == "1"
+        ? AppState::CameraScan([] { return QList<CameraInfo>{{"fake:brio", "Logitech BRIO", true}, {"fake:hd", "HD Webcam", false}}; })
+        : AppState::CameraScan([] { return CameraScanner::scan(); }));
     if (const int s = qEnvironmentVariableIntValue("MOBS_PICK"); s >= 1 && s <= 3 && state.screen() == 1) state.choose(s);
     if (qEnvironmentVariableIntValue("MOBS_SCREEN") == 1) state.back();
 
@@ -34,6 +37,8 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(cfg);
     ObsBackend backend(qEnvironmentVariable("MOBS_TOKEN_FILE", cfg + "/screen-token"));
     Engine recorder(&backend, qEnvironmentVariable("MOBS_REC_DIR", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/mobs"));
+    recorder.setCameraProvider([&] { return state.cameraSpec(); });
+    QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); state.setCameraPanel(true); });
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
 
     Control control(&recorder, &state);
@@ -57,6 +62,7 @@ int main(int argc, char *argv[]) {
     }
     // MOBS_SCRIPT drives the app itself, with no synthetic key presses (safe on a live desktop). Steps, comma separated:
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
+    //   pick=N | corner=N | size=N | panel=0/1   (what the user would click, for screenshots)
     // e.g. MOBS_SCRIPT=start,waitrec,wait=3,pause,wait=2,resume,wait=2,stop,waitidle,quit   (for tests and checks only)
     if (const QString script = qEnvironmentVariable("MOBS_SCRIPT"); !script.isEmpty()) {
         auto steps = std::make_shared<QStringList>(script.split(','));
@@ -84,6 +90,10 @@ int main(int argc, char *argv[]) {
             else if (st == "pause" || st == "resume") { recorder.togglePause(); QTimer::singleShot(0, &app, *run); }
             else if (st == "stop") { recorder.stop(); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("grab=")) { std::printf("script: grab %d\n", int(window->grabWindow().save(st.mid(5)))); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("pick=")) { state.choose(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("panel=")) { state.setCameraPanel(st.mid(6) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st == "quit") app.quit();
             else { qWarning() << "script: unknown step" << st; app.exit(3); }
         };

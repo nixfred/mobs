@@ -46,7 +46,7 @@ Window {
             else if (App.screen === 2 && e.key === Qt.Key_Space) Engine.start(App.pick)
             else if (App.screen === 3 && e.key === Qt.Key_Space) Engine.togglePause()
             else if (App.screen === 3 && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) Engine.stop()
-            else if (App.screen === 2 && e.key === Qt.Key_Escape) App.back()
+            else if (App.screen === 2 && e.key === Qt.Key_Escape) { if (App.cameraPanel) App.setCameraPanel(false); else App.back() }
         }
     }
 }

@@ -1,10 +1,12 @@
 #include "obsbackend.h"
+#include "placement.h"
 #include <obs.h>
 #include <obs-nix-platform.h>
 #include <QFile>
 #include <QGuiApplication>
 #include <QtGui/qguiapplication_platform.h>
 #include <QDebug>
+#include <linux/videodev2.h>
 #include <string>
 
 namespace {
@@ -79,29 +81,70 @@ bool ObsBackend::ensureStarted(QString *error) {
     return true;
 }
 
-bool ObsBackend::buildGraph(const QString &path, QString *error) {
+static void fillCanvas(obs_scene_item *item) {
+    vec2 bounds{float(Placement::kCanvasW), float(Placement::kCanvasH)};
+    obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+    obs_sceneitem_set_bounds(item, &bounds);
+}
+
+bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
     m_scene = obs_scene_create("mobs");
-    const bool testColour = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";   // lets tests record without the picker
-    if (testColour) {
-        obs_data_t *cs = obs_data_create();
-        obs_data_set_int(cs, "color", qEnvironmentVariable("MOBS_TEST_COLOUR", "FF3050F0").toUInt(nullptr, 16));   // ABGR; tests only obs_data_set_int(cs, "width", 1920); obs_data_set_int(cs, "height", 1080);
-        m_video = obs_source_create("color_source_v3", "test colour", cs, nullptr);
-        obs_data_release(cs);
-    } else {
-        // Created here, on the Qt main thread: the portal's reply is handled where the source was made (spike 3b/4b).
-        obs_data_t *ps = obs_data_create();
-        obs_data_set_bool(ps, "ShowCursor", true);
-        const QString token = readToken(m_tokenFile);
-        if (!token.isEmpty()) obs_data_set_string(ps, "RestoreToken", token.toUtf8().constData());
-        m_video = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);
-        obs_data_release(ps);
-        if (token.isEmpty()) emit waitingForUser("choose a screen or a window in the dialog that just opened (a dragged region can record black)");
+    m_needScreen = spec.pick != 3;
+    m_needCamera = spec.pick != 1;
+    m_testScreen = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";    // tests record without the picker
+    m_testCamera = qEnvironmentVariable("MOBS_TEST_CAMERA") == "colour";    // and without a webcam
+
+    if (m_needScreen) {
+        if (m_testScreen) {
+            obs_data_t *cs = obs_data_create();
+            obs_data_set_int(cs, "color", qEnvironmentVariable("MOBS_TEST_COLOUR", "FF3050F0").toUInt(nullptr, 16));   // ABGR
+            obs_data_set_int(cs, "width", 1920); obs_data_set_int(cs, "height", 1080);
+            m_video = obs_source_create("color_source_v3", "test colour", cs, nullptr);
+            obs_data_release(cs);
+        } else {
+            // Created here, on the Qt main thread: the portal's reply is handled where the source was made (spike 3b/4b).
+            obs_data_t *ps = obs_data_create();
+            obs_data_set_bool(ps, "ShowCursor", true);
+            const QString token = readToken(m_tokenFile);
+            if (!token.isEmpty()) obs_data_set_string(ps, "RestoreToken", token.toUtf8().constData());
+            m_video = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);
+            obs_data_release(ps);
+            if (token.isEmpty()) emit waitingForUser("choose a screen or a window in the dialog that just opened (a dragged region can record black)");
+        }
+        if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; return false; }
+        m_item = obs_scene_add(m_scene, m_video);   // first in the scene = at the back
+        fillCanvas(m_item);
     }
-    if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; return false; }
-    m_item = obs_scene_add(m_scene, m_video);
-    vec2 bounds{1920.f, 1080.f};
-    obs_sceneitem_set_bounds_type(m_item, OBS_BOUNDS_SCALE_INNER);
-    obs_sceneitem_set_bounds(m_item, &bounds);
+
+    if (m_needCamera) {
+        if (m_testCamera) {
+            obs_data_t *cs = obs_data_create();
+            obs_data_set_int(cs, "color", qEnvironmentVariable("MOBS_TEST_CAMERA_COLOUR", "FF00C800").toUInt(nullptr, 16));
+            obs_data_set_int(cs, "width", 1280); obs_data_set_int(cs, "height", 720);
+            m_camera = obs_source_create("color_source_v3", "test camera", cs, nullptr);
+            obs_data_release(cs);
+        } else {
+            obs_data_t *cs = obs_data_create();
+            obs_data_set_string(cs, "device_id", spec.camera.path.toUtf8().constData());
+            if (spec.camera.mjpg720) {                                            // otherwise the camera's own (often slow, small) default
+                obs_data_set_int(cs, "pixelformat", V4L2_PIX_FMT_MJPEG);
+                obs_data_set_int(cs, "resolution", (qint64(1280) << 32) | 720);   // the v4l2 plugin packs width and height like this
+            }
+            m_camera = obs_source_create("v4l2_input", "camera", cs, nullptr);
+            obs_data_release(cs);
+        }
+        if (!m_camera) { *error = "could not create the camera source (is the v4l2 plugin installed?)"; return false; }
+        m_camItem = obs_scene_add(m_scene, m_camera);   // added second = drawn on top of the screen
+        if (spec.pick == 3) {
+            fillCanvas(m_camItem);                      // just my camera: it fills the frame
+        } else {
+            const QRect r = Placement::cameraRect(spec.camera.corner, spec.camera.size);
+            vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
+            obs_sceneitem_set_pos(m_camItem, &pos);
+            obs_sceneitem_set_bounds_type(m_camItem, OBS_BOUNDS_SCALE_INNER);
+            obs_sceneitem_set_bounds(m_camItem, &bounds);
+        }
+    }
     obs_set_output_source(0, obs_scene_get_source(m_scene));
 
     m_mic = obs_source_create("pulse_input_capture", "mic", nullptr, nullptr);   // default input device
@@ -120,7 +163,7 @@ bool ObsBackend::buildGraph(const QString &path, QString *error) {
     obs_encoder_set_audio(m_aenc, obs_get_audio());
 
     obs_data_t *os = obs_data_create();
-    obs_data_set_string(os, "path", path.toUtf8().constData());
+    obs_data_set_string(os, "path", spec.path.toUtf8().constData());
     m_out = obs_output_create("mp4_output", "mobs recording", os, nullptr);
     obs_data_release(os);
     if (!m_out) { *error = "could not create the file output"; return false; }
@@ -129,25 +172,39 @@ bool ObsBackend::buildGraph(const QString &path, QString *error) {
     return true;
 }
 
-void ObsBackend::begin(int, const QString &path) {
+bool ObsBackend::sourcesReady() const {
+    const bool screenOk = !m_needScreen || m_testScreen || obs_source_get_width(m_video) > 0;
+    const bool cameraOk = !m_needCamera || m_testCamera || obs_source_get_width(m_camera) > 0;
+    return screenOk && cameraOk;
+}
+
+void ObsBackend::fail(const QString &why) {
+    m_poll.stop();
+    teardown();
+    m_phase = Off;
+    emit failed(why);
+}
+
+void ObsBackend::begin(const RecordSpec &spec) {
     QString error;
-    if (!ensureStarted(&error) || !buildGraph(path, &error)) {
-        teardown();
-        emit failed(error);
+    if (!ensureStarted(&error) || !buildGraph(spec, &error)) {
+        fail(error);
         return;
     }
-    m_path = path;
+    m_path = spec.path;
     m_phase = Waiting;
     m_waited.start();
+    m_screenReady.invalidate();
     m_poll.start();
 }
 
 void ObsBackend::poll() {
     if (m_phase == Waiting) {
-        const bool ready = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour" || obs_source_get_width(m_video) > 0;
-        if (ready) {
+        const bool screenUp = !m_needScreen || m_testScreen || obs_source_get_width(m_video) > 0;
+        if (screenUp && !m_screenReady.isValid()) m_screenReady.start();
+        if (sourcesReady()) {
             // Save the restore token now, not at the end: a crash later must not cost the user another picker.
-            if (qEnvironmentVariable("MOBS_TEST_SOURCE") != "colour") {
+            if (m_needScreen && !m_testScreen) {
                 obs_source_save(m_video);
                 obs_data_t *st = obs_source_get_settings(m_video);
                 const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
@@ -156,15 +213,16 @@ void ObsBackend::poll() {
             }
             if (!obs_output_start(m_out)) {
                 const QString why = QString::fromUtf8(obs_output_get_last_error(m_out));
-                m_poll.stop(); teardown(); m_phase = Off;
-                emit failed(why.isEmpty() ? "the recording would not start" : why);
+                fail(why.isEmpty() ? "the recording would not start" : why);
                 return;
             }
             m_phase = Running;
             emit started();
-        } else if (m_waited.elapsed() > 120000) {
-            m_poll.stop(); teardown(); m_phase = Off;
-            emit failed("nothing was chosen in the screen dialog, so recording was cancelled");
+        } else if (m_needCamera && !m_testCamera && m_waited.elapsed() > 15000 && (!m_needScreen || (m_screenReady.isValid() && m_screenReady.elapsed() > 15000))) {
+            // The picker (if any) is done, so only the camera is missing: say that, not "nothing was chosen".
+            fail("the camera did not start: is it plugged in and not in use by another program?");
+        } else if (m_needScreen && !m_screenReady.isValid() && m_waited.elapsed() > 120000) {
+            fail("nothing was chosen in the screen dialog, so recording was cancelled");
         }
     } else if (m_phase == Stopping) {
         if (!obs_output_active(m_out)) {
@@ -198,7 +256,9 @@ void ObsBackend::teardown() {
     if (m_aenc) { obs_encoder_release(m_aenc); m_aenc = nullptr; }
     if (m_libobsUp) { obs_set_output_source(0, nullptr); obs_set_output_source(1, nullptr); }
     if (m_item) { obs_sceneitem_remove(m_item); m_item = nullptr; }
+    if (m_camItem) { obs_sceneitem_remove(m_camItem); m_camItem = nullptr; }
     if (m_mic) { obs_source_release(m_mic); m_mic = nullptr; }
+    if (m_camera) { obs_source_release(m_camera); m_camera = nullptr; }
     if (m_video) { obs_source_release(m_video); m_video = nullptr; }
     if (m_scene) { obs_scene_release(m_scene); m_scene = nullptr; }
     if (m_libobsUp) obs_wait_for_destroy_queue();

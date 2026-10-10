@@ -93,3 +93,11 @@ recorded file's path comes back over the same link, and the review screen opens 
 - First-run permission prompts (Wayland screen capture goes through a portal) need a friendly screen of their own.
 - Whether "save a copy" belongs on the main row or behind a menu.
 - A real-hardware look on gus (this was rendered in the VM).
+
+## Camera panel (added 2026-10-10)
+
+The camera chip on the ready screen is a button. It opens a panel (screenshots: `docs/app/camera-b.png`, `camera-c.png`,
+`camera-e.png`, `camera-d.png`) with: what we're making (my screen, screen + me, just my camera); which camera (the
+webcams found on this machine, by name); and for *screen + me* a mini screen where you tap a corner, plus small, medium
+or large. The mini screen shows exactly where the camera will be in the recording (same rectangle). *Just my camera* fills
+the frame, so it needs no placement. Choosing a camera mode with no camera chosen opens this panel by itself.
