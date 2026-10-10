@@ -1,7 +1,7 @@
 # mobs: status
 
 - Started: 2026-10-09, from Clarity's Idea Box
-- Stage: shape, tech design, screen design and spike 3 (control plane + portal capture) done 2026-10-09. Next is the real app, starting with the theme reader.
+- Stage: shape, tech design, screen design and spike 3 done 2026-10-09; the real app skeleton (mobs/app) started the same day.
 - Repo: github.com/nixfred/mobs (private). OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
 - Finding: Monologue is a webcam recorder with a trim editor (Qt 6 QML, C++), not a voice tool. Voxtype (already on Omarchy) is the dictation tool.
 
@@ -20,9 +20,15 @@
 
 - Spike 3 (mobs/spike3/, ADR 0005): PASSED for the control plane in the VM. OBS hidden on special:mobs, websocket auth, scene/input, record, pause (cut 2 s of a 7 s run), resume, stop, file path back, OBS alive throughout. Learned: RecQuality must not be Stream or pause does nothing; wait for the RecordStateChanged STOPPED event, the file is not final when StopRecord replies.
 
+## App skeleton (mobs/app, 2026-10-09)
+
+- Choose and ready screens in Qt Quick, split into components from the prototype; the live Omarchy palette (full colors.toml + Hyprland rounding via Monologue's theme.cpp, reused by path), remembered pick, real display name. 18 unit tests pass (palette parsing, live theme switch, theme folder replaced, contrast guard, app state).
+- Proven in the VM: one running process changed from tokyo-night to Catppuccin Latte when the real Omarchy theme was switched (docs/app/live-*.png). Found and fixed a real problem: Tokyo Night's own dim text colours measure 1.6 to 2.4:1; the palette now lifts dim text to 4.5:1 (rendered card text measured 4.65:1).
+- Not wired, and labelled on screen: recording, hotkey, mic/camera, Pro drawer, full OBS, the OBS link.
+
 ## Open
 
 - Wayland screen capture is PROVEN end to end on gus (ADR 0005, spike 3b): pre-seeded screen source, hidden OBS, one picker click, real frames, then a silent rerun with the saved restore token. Two cautions: a screen source created live over websocket never opens the picker (load it from a scene collection file instead), and a REGION selection recorded black frames (two runs) while another selection worked. Next to test: loading the collection with SetCurrentSceneCollection.
 - New dependency: qt6-websockets (not on gus yet).
-- Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
+- Not built: the OBS link (websocket client), the hotkey, recording/review screens, the Pro drawer and its tabs, the recording pill, the first-run permission screen.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).
