@@ -10,6 +10,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <string>
+#include <fstream>
 
 static void logHandler(int level, const char *fmt, va_list args, void *) {
     if (level > LOG_WARNING && !qEnvironmentVariableIsSet("MOBS_VERBOSE")) return;
@@ -72,9 +73,31 @@ int main(int argc, char *argv[]) {
     obs_scene_t *scene = obs_scene_create("MOBS");
     obs_data_t *cs = obs_data_create();
     obs_data_set_int(cs, "color", 0xFF0000FF); obs_data_set_int(cs, "width", 1920); obs_data_set_int(cs, "height", 1080);
-    obs_source_t *colour = obs_source_create("color_source_v3", "red", cs, nullptr);
-    check(colour != nullptr, "create colour source");
+    const bool screenMode = qEnvironmentVariableIsSet("MOBS_SCREEN");
+    const QByteArray tokenFile = qgetenv("MOBS_TOKEN_FILE");
+    obs_source_t *colour = nullptr;
+    if (screenMode) {
+        // The portal reply is handled on the thread that creates the source: this is the Qt main thread, which
+        // iterates the GLib loop while we wait below. (A source made on obs-websocket's worker thread never got it.)
+        obs_data_t *ps = obs_data_create();
+        obs_data_set_bool(ps, "ShowCursor", true);
+        std::string tok;
+        if (!tokenFile.isEmpty()) { std::ifstream f(tokenFile.constData()); std::getline(f, tok); }
+        if (!tok.empty()) obs_data_set_string(ps, "RestoreToken", tok.c_str());
+        std::printf("restore token: %s\n", tok.empty() ? "none (picker will open)" : "found (should be silent)");
+        colour = obs_source_create("pipewire-screen-capture-source", "my screen", ps, nullptr);
+        obs_data_release(ps);
+        check(colour != nullptr, "create PipeWire screen source");
+    } else {
+        colour = obs_source_create("color_source_v3", "red", cs, nullptr);
+        check(colour != nullptr, "create colour source");
+    }
     obs_sceneitem_t *item = obs_scene_add(scene, colour);   // the scene (not us) owns the item
+    if (screenMode) {
+        vec2 bounds{1920.f, 1080.f};
+        obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+        obs_sceneitem_set_bounds(item, &bounds);
+    }
     obs_set_output_source(0, obs_scene_get_source(scene));
     obs_source_t *audio = obs_source_create("pulse_output_capture", "desktop audio", nullptr, nullptr);
     if (audio) { obs_source_set_audio_mixers(audio, 1); obs_set_output_source(1, audio); }
@@ -96,6 +119,14 @@ int main(int argc, char *argv[]) {
     obs_output_set_audio_encoder(rec, aenc, 0);
     check(obs_output_can_pause(rec), "output reports it can pause");
 
+    if (screenMode) {
+        std::printf("PICKER: choose what to record now (waiting up to 90 s)...\n"); std::fflush(stdout);
+        QElapsedTimer w; w.start();
+        while (obs_source_get_width(colour) == 0 && w.elapsed() < 90000) sleepMs(250);
+        check(obs_source_get_width(colour) > 0, "portal answered: the screen source has a size");
+        std::printf("source size %ux%u after %lld ms\n", obs_source_get_width(colour), obs_source_get_height(colour), (long long)w.elapsed());
+        sleepMs(1500);   // let a few frames arrive before recording
+    }
     QElapsedTimer t; t.start();
     check(obs_output_start(rec), "obs_output_start");
     sleepMs(3000);
@@ -108,6 +139,14 @@ int main(int argc, char *argv[]) {
     obs_output_stop(rec);
     for (int i = 0; i < 100 && obs_output_active(rec); ++i) sleepMs(100);
     check(!obs_output_active(rec), "output stopped");
+    if (screenMode && !tokenFile.isEmpty()) {
+        obs_source_save(colour);
+        obs_data_t *st = obs_source_get_settings(colour);
+        const char *tk = obs_data_get_string(st, "RestoreToken");
+        std::printf("restore token after the session: %s\n", (tk && *tk) ? "present (saved to file)" : "NOT present");
+        if (tk && *tk) { std::ofstream f(tokenFile.constData()); f << tk << "\n"; }
+        obs_data_release(st);
+    }
     std::printf("wall clock %lld ms\nOUTPUT %s\n", (long long)t.elapsed(), out.constData());
 
     obs_output_release(rec); obs_encoder_release(venc); obs_encoder_release(aenc);

@@ -41,8 +41,13 @@ with pause and resume (4.8 s file from 3 s + 2 s paused + 2 s), exit code 0 in 1
 - Gone: obs-websocket, the hidden OBS window, `qt6-websockets`, spike 3's control plane, the scene-file loading
   question, and the "dock exits unreliably" problem. Spike 3's portal findings carry over: the restore token, the
   picker overlay, and region captures that gave black frames.
-- To prove next: PipeWire screen capture in-process (the portal reply must be handled on the Qt main thread, which
-  iterates the GLib loop), a persisted restore token so later recordings are silent, and a first-frame-not-black check.
+- Proven next, on real gus hardware (spike 4b): **PipeWire screen capture works in-process.** The source is created on the
+  Qt main thread (which iterates the GLib loop), so the portal reply is handled; run 1 opened the picker, Fred picked, the source
+  was 470x1005 after 12.8 s, and the recording (with a pause) had real content (1,871 distinct colours), exit 0. MOBS then saved
+  the restore token itself (`obs_source_save`, `RestoreToken`) and run 2 needed **no picker**: source ready in 250 ms, real
+  content again (2,279 colours). The picker overlay was gone afterwards. libobs printed "Cannot create EGLImage" twice
+  (GPU-buffer import falling back; frames were fine), to watch on the hybrid Intel/NVIDIA machine.
+- Still to prove: a live preview inside the Qt Quick scene, and the first-frame-not-black check as code (region picks gave black).
 - MOBS owns more: encoder and output settings, a source list, audio mixing, scene handling, and persistence of its
   own settings. The prototype's screens and the live Omarchy palette are reused as they are.
 - Packaging: MOBS ships its own libobs build (GPLv2, like OBS). Development uses the system libobs 32.2.2 until

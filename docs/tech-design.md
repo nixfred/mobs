@@ -76,8 +76,9 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 
 ## Risks and next tests
 
-- **Screen capture in-process:** PipeWire needs the portal reply handled on the Qt main thread; test it on gus
-  (one click), persist the restore token ourselves, and check the first frame is not black.
+- **Screen capture in-process: proven on gus** (ADR 0006, spike 4b): picker once, the token saved with `obs_source_save`
+  makes later runs silent. Still to do: the first-frame-not-black check as code, and the "Cannot create EGLImage" warnings
+  (GPU-buffer import fallback) on this hybrid-GPU machine.
 - **Source and encoder breadth:** mic and camera sources, audio mixing, NVENC/VAAPI choices, and recording-quality settings.
 - **Own the settings:** libobs has no profile or scene-collection files here; MOBS must save and restore its own.
 - **Preview:** a live preview needs a libobs display inside the Qt Quick scene; to be proven.
@@ -87,6 +88,5 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 
 ## Next
 
-1. Screen capture in-process on gus, with a persisted restore token.
-2. An `Engine` class in `mobs/app` wrapping spike 4, with tests, and the record button on screen 2 really recording.
+1. An `Engine` class in `mobs/app` wrapping spike 4, with tests, and the record button on screen 2 really recording.
 3. The review screen with Monologue's editor; then the Pro drawer.
