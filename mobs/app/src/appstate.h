@@ -22,6 +22,7 @@ class AppState : public QObject {
     Q_PROPERTY(int corner READ corner NOTIFY cameraChanged)              // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     Q_PROPERTY(int size READ size NOTIFY cameraChanged)                  // 0 small, 1 medium, 2 large
     Q_PROPERTY(bool cameraPanel READ cameraPanel NOTIFY cameraPanelChanged)
+    Q_PROPERTY(int expertTab READ expertTab NOTIFY proChanged)
     Q_PROPERTY(bool pro READ pro NOTIFY proChanged)                       // the Pro drawer is open
     Q_PROPERTY(bool preview READ preview NOTIFY previewChanged)          // show what will be recorded (off by default)
 public:
@@ -39,6 +40,8 @@ public:
     int size() const { return m_size; }
     bool cameraPanel() const { return m_panel; }
     bool preview() const { return m_preview; }
+    int expertTab() const { return m_expertTab; }
+    Q_INVOKABLE void openAudio();
     bool pro() const { return m_pro; }
     CameraSpec cameraSpec() const;       // what the recorder needs; invalid when no connected camera is chosen
     Q_INVOKABLE void choose(int pick);   // 1 my screen, 2 screen + me, 3 just my camera
@@ -70,6 +73,7 @@ private:
     QString m_camera;
     int m_corner = 3, m_size = 1;
     bool m_panel = false, m_preview = false, m_pro = false;
+    int m_expertTab = 0;
     int m_screen = 1, m_pick = 0;
     bool m_recording = false, m_reviewing = false;
 };

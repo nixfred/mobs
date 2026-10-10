@@ -3,7 +3,11 @@
 #include "placement.h"
 #include <obs.h>
 #include <obs-nix-platform.h>
+#include <obs-audio-controls.h>
+#include <chrono>
+#include <cmath>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QtGui/qguiapplication_platform.h>
 #include <QDebug>
@@ -13,6 +17,7 @@
 #include <string>
 
 namespace {
+qint64 audioNow();
 // Engine plugins only. obs_load_all_modules() would also load OBS's UI plugins (websocket, frontend tools...),
 // which call a frontend that MOBS does not have (spike 4: crash).
 const char *kModules[] = {"obs-x264", "obs-ffmpeg", "obs-outputs", "obs-filters", "obs-transitions",
@@ -42,6 +47,8 @@ static void obsLogHandler(int level, const char *fmt, va_list args, void *) {
 ObsBackend::ObsBackend(QString tokenFile, QObject *parent) : RecorderBackend(parent), m_tokenFile(std::move(tokenFile)) {
     m_poll.setInterval(100);
     connect(&m_poll, &QTimer::timeout, this, &ObsBackend::poll);
+    m_audioTick.setInterval(100);
+    connect(&m_audioTick, &QTimer::timeout, this, &ObsBackend::pollAudio);
 }
 
 ObsBackend::~ObsBackend() {
@@ -218,19 +225,46 @@ bool ObsBackend::sourcesReady() const {
 // ---------------------------------------------------------------- the recording (mic, encoders, file)
 
 bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
-    // The audio track always exists (the file format wants one); with the mic off it is silence.
-    if (spec.mic) m_mic = obs_source_create("pulse_input_capture", "mic", nullptr, nullptr);   // default input device
-    if (m_mic) { obs_source_set_audio_mixers(m_mic, 1); obs_set_output_source(1, m_mic); }
+    m_audioStarted = audioNow();
+    // The AAC track always exists; with both inputs off it contains silence.
+    if (spec.mic && !startMic(spec.audio, error)) return false;
+    if (spec.audio.desktop) {
+        obs_data_t *settings = obs_data_create();
+        const QString test = qEnvironmentVariable("MOBS_TEST_DESKTOP_AUDIO");
+        const bool fake = test.startsWith("file:");
+        obs_data_set_string(settings, "device_id", spec.audio.desktopDevice.toUtf8().constData());
+        if (fake) {
+            obs_data_set_bool(settings, "is_local_file", true); obs_data_set_bool(settings, "looping", true);
+            obs_data_set_string(settings, "local_file", test.mid(5).toUtf8().constData());
+        }
+        m_desktop = obs_source_create(fake ? "ffmpeg_source" : "pulse_output_capture", "desktop audio", settings, nullptr);
+        obs_data_release(settings);
+        if (!m_desktop) { *error = "could not create desktop audio capture"; return false; }
+        obs_source_set_audio_mixers(m_desktop, 1);
+        obs_source_set_volume(m_desktop, obs_db_to_mul(spec.audio.desktopGainDb));
+        obs_set_output_source(2, m_desktop);
+        m_desktopDb = -60; m_desktopFrameAt = 0;
+        m_desktopMeter = obs_volmeter_create(OBS_FADER_LOG);
+        obs_volmeter_add_callback(m_desktopMeter, &ObsBackend::desktopLevel, this);
+        obs_volmeter_attach_source(m_desktopMeter, m_desktop);
+        m_audioTick.start();
+    }
 
     obs_data_t *vs = obs_data_create();
-    obs_data_set_string(vs, "rate_control", "CRF"); obs_data_set_int(vs, "crf", spec.crf);
-    m_venc = obs_video_encoder_create("obs_x264", "mobs video", vs, nullptr);
+    if (spec.hardware) {
+        obs_data_set_string(vs, "rate_control", "CQP"); obs_data_set_int(vs, "cqp", spec.crf);
+        obs_data_set_string(vs, "preset", "p5");
+    } else {
+        obs_data_set_string(vs, "preset", spec.encoderPreset.toUtf8().constData());
+        obs_data_set_string(vs, "rate_control", "CRF"); obs_data_set_int(vs, "crf", spec.crf);
+    }
+    m_venc = obs_video_encoder_create(spec.hardware ? "obs_nvenc_h264_tex" : "obs_x264", "mobs video", vs, nullptr);
     obs_data_release(vs);
     obs_data_t *as = obs_data_create();
     obs_data_set_int(as, "bitrate", 160);
     m_aenc = obs_audio_encoder_create("ffmpeg_aac", "mobs audio", as, 0, nullptr);
     obs_data_release(as);
-    if (!m_venc || !m_aenc) { *error = "no video or audio encoder is available"; return false; }
+    if (!m_venc || !m_aenc) { *error = spec.hardware ? "NVIDIA H.264 encoding is unavailable; choose software in EXPERT > hardware" : "no video or audio encoder is available"; return false; }
     obs_encoder_set_video(m_venc, obs_get_video());
     obs_encoder_set_audio(m_aenc, obs_get_audio());
 
@@ -239,22 +273,106 @@ bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
     m_out = obs_output_create("mp4_output", "mobs recording", os, nullptr);
     obs_data_release(os);
     if (!m_out) { *error = "could not create the file output"; return false; }
+    m_stopCode = 1;
+    signal_handler_connect(obs_output_get_signal_handler(m_out), "stop", &ObsBackend::outputStopped, this);
     obs_output_set_video_encoder(m_out, m_venc);
     obs_output_set_audio_encoder(m_out, m_aenc, 0);
+    // The picker can stay open long after the name was chosen. Claim the path atomically
+    // only when ready to record, so another take cannot be truncated during that delay.
+    QFile reservation(spec.path);
+    if (!reservation.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        const QFileInfo existing(spec.path);
+        *error = existing.exists() || existing.isSymLink()
+            ? "that recording filename already exists; start a new take to use another name"
+            : "cannot create the recording file: " + reservation.errorString();
+        return false;
+    }
+    reservation.close();
     if (!obs_output_start(m_out)) {
         const QString why = QString::fromUtf8(obs_output_get_last_error(m_out));
         *error = why.isEmpty() ? "the recording would not start" : why;
+        if (spec.hardware) *error += "; try software in EXPERT > hardware";
+        if (QFileInfo(spec.path).size() == 0) QFile::remove(spec.path);
         return false;
     }
     return true;
 }
 
+namespace {
+qint64 audioNow() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+float peakDb(const float *peaks) {
+    float level = -60;
+    for (int i = 0; i < MAX_AUDIO_CHANNELS; ++i) if (std::isfinite(peaks[i])) level = std::max(level, peaks[i]);
+    return level;
+}
+}
+
+void ObsBackend::micLevel(void *self, const float *, const float *peak, const float *) {
+    auto *backend = static_cast<ObsBackend *>(self); backend->m_micDb = peakDb(peak); backend->m_micFrameAt = audioNow();
+}
+void ObsBackend::desktopLevel(void *self, const float *, const float *peak, const float *) {
+    auto *backend = static_cast<ObsBackend *>(self); backend->m_desktopDb = peakDb(peak); backend->m_desktopFrameAt = audioNow();
+}
+bool ObsBackend::startMic(const AudioSpec &audio, QString *error) {
+    obs_data_t *settings = obs_data_create();
+    const QString test = qEnvironmentVariable("MOBS_TEST_AUDIO"); const bool fake = test.startsWith("file:");
+    obs_data_set_string(settings, "device_id", audio.micDevice.toUtf8().constData());
+    if (fake) {
+        obs_data_set_bool(settings, "is_local_file", true); obs_data_set_bool(settings, "looping", true);
+        obs_data_set_string(settings, "local_file", test.mid(5).toUtf8().constData());
+    }
+    m_mic = obs_source_create(fake ? "ffmpeg_source" : "pulse_input_capture", "mic", settings, nullptr); obs_data_release(settings);
+    if (!m_mic) { *error = "could not create microphone input"; return false; }
+    obs_source_set_audio_mixers(m_mic, 1); obs_source_set_volume(m_mic, obs_db_to_mul(audio.micGainDb));
+    obs_set_output_source(1, m_mic);
+    m_audioStarted = audioNow(); m_micFrameAt = 0; m_micDb = -60;
+    m_micMeter = obs_volmeter_create(OBS_FADER_LOG);
+    obs_volmeter_add_callback(m_micMeter, &ObsBackend::micLevel, this); obs_volmeter_attach_source(m_micMeter, m_mic);
+    m_audioTick.start(); return true;
+}
+void ObsBackend::stopAudio() {
+    m_audioTick.stop();
+    if (m_micMeter) { obs_volmeter_remove_callback(m_micMeter, &ObsBackend::micLevel, this); obs_volmeter_destroy(m_micMeter); m_micMeter = nullptr; }
+    if (m_desktopMeter) { obs_volmeter_remove_callback(m_desktopMeter, &ObsBackend::desktopLevel, this); obs_volmeter_destroy(m_desktopMeter); m_desktopMeter = nullptr; }
+    if (m_libobsUp) { obs_set_output_source(1, nullptr); obs_set_output_source(2, nullptr); }
+    if (m_mic) { obs_source_release(m_mic); m_mic = nullptr; }
+    if (m_desktop) { obs_source_release(m_desktop); m_desktop = nullptr; }
+    emit audioLevels(-60, -60, false, false, QString());
+}
+void ObsBackend::pollAudio() {
+    const qint64 now = audioNow();
+    const bool micFrames = m_mic && m_micFrameAt && now - m_micFrameAt.load() < 500;
+    const bool desktopFrames = m_desktop && m_desktopFrameAt && now - m_desktopFrameAt.load() < 500;
+    QString problem;
+    if (now - m_audioStarted > 4000) {
+        if (m_mic && !micFrames) problem = "microphone is not sending audio; check the input in EXPERT > audio";
+        if (m_desktop && !desktopFrames) problem += (problem.isEmpty() ? "" : "\n") + QString("desktop audio is not sending frames; check the selected output");
+    }
+    emit audioLevels(micFrames ? m_micDb.load() : -60, desktopFrames ? m_desktopDb.load() : -60, micFrames, desktopFrames, problem);
+}
+void ObsBackend::setMicCheck(bool on, const AudioSpec &audio) {
+    if (m_phase != Off) return; // changes during a take apply to the next take
+    stopAudio();
+    if (!on) return;
+    QString error;
+    if (!ensureStarted(&error) || !startMic(audio, &error)) { stopAudio(); emit micCheckFailed(error); }
+}
+void ObsBackend::checkHardware() {
+    QString error;
+    if (!ensureStarted(&error)) { emit hardwareChecked(false, error); return; }
+    bool nvenc = false; const char *id;
+    for (size_t n = 0; obs_enum_encoder_types(n, &id); ++n) if (QString::fromUtf8(id) == "obs_nvenc_h264_tex") nvenc = true;
+    emit hardwareChecked(nvenc, nvenc ? "NVIDIA H.264 is available" : "NVIDIA H.264 is unavailable; software encoding works");
+}
+
 void ObsBackend::stopOutput() {
-    if (m_out) { obs_output_release(m_out); m_out = nullptr; }
+    if (m_out) {
+        signal_handler_disconnect(obs_output_get_signal_handler(m_out), "stop", &ObsBackend::outputStopped, this);
+        obs_output_release(m_out); m_out = nullptr;
+    }
     if (m_venc) { obs_encoder_release(m_venc); m_venc = nullptr; }
     if (m_aenc) { obs_encoder_release(m_aenc); m_aenc = nullptr; }
-    if (m_libobsUp) obs_set_output_source(1, nullptr);
-    if (m_mic) { obs_source_release(m_mic); m_mic = nullptr; }
+    stopAudio();
     if (m_libobsUp) obs_wait_for_destroy_queue();
 }
 
@@ -272,6 +390,8 @@ void ObsBackend::fail(const QString &why) {
 }
 
 void ObsBackend::begin(const RecordSpec &spec) {
+    if (m_phase != Off) return;
+    stopAudio(); // a preflight microphone check must not survive into the take
     QString error;
     if (!ensureStarted(&error) || !ensureGraph(spec, &error)) {
         fail(error);
@@ -308,13 +428,25 @@ void ObsBackend::poll() {
         } else if (m_needScreen && !m_screenReady.isValid() && m_waited.elapsed() > 120000) {
             fail("nothing was chosen in the screen dialog, so recording was cancelled");
         }
-    } else if (m_phase == Stopping) {
-        if (!obs_output_active(m_out)) {
+    } else if (m_phase == Running || m_phase == Stopping) {
+        const int code = m_stopCode.load();
+        if (code != 1 && !obs_output_active(m_out)) {
+            if (code != OBS_OUTPUT_SUCCESS) {
+                const char *detail = obs_output_get_last_error(m_out);
+                const QString why = detail ? QString::fromUtf8(detail) : QString();
+                fail(why.isEmpty() ? QString("recording stopped unexpectedly (output code %1)").arg(code) : why);
+                return;
+            }
             const QString done = m_path;
             finishAttempt();
             emit finished(done);
         }
     }
+}
+
+void ObsBackend::outputStopped(void *self, calldata *data) {
+    // libobs signals from its output thread. poll() does cleanup and emits UI signals on Qt's thread.
+    static_cast<ObsBackend *>(self)->m_stopCode = int(calldata_int(data, "code"));
 }
 
 void ObsBackend::pause(bool paused) {
@@ -343,7 +475,8 @@ void ObsBackend::setPreview(bool on, const RecordSpec &spec) {
     QString error;
     if (!ensureStarted(&error) || !ensureGraph(spec, &error)) {
         m_previewOn = false;
-        emit failed(error);
+        removePreviewCallback();
+        emit previewFailed(error);
         return;
     }
     m_previewOn = true;

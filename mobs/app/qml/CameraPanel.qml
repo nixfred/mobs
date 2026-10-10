@@ -14,7 +14,7 @@ Item {
         id: card
         anchors.centerIn: parent
         width: 600
-        height: col.implicitHeight + 56
+        height: col.implicitHeight + 40
         radius: Omarchy.rounding
         color: Omarchy.darkBackground
         border.color: Omarchy.selection
@@ -23,8 +23,8 @@ Item {
 
         Column {
             id: col
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 28 }
-            spacing: 18
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 20 }
+            spacing: root.height < 600 ? 10 : 18
 
             Row {
                 width: parent.width
@@ -63,26 +63,13 @@ Item {
                 spacing: 8
                 visible: App.pick !== 1
                 Txt { text: "which camera"; color: Omarchy.tertiaryText; font.pixelSize: 12 }
-                Repeater {
-                    model: App.cameras
-                    Rectangle {
-                        required property var modelData
-                        width: parent.width; height: 46; radius: 14
-                        color: Omarchy.lighterBackground
-                        border.color: App.camera === modelData.path ? Omarchy.accent : Omarchy.selection
-                        border.width: App.camera === modelData.path ? 2 : 1
-                        Row {
-                            anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
-                            spacing: 12
-                            Rectangle { width: 14; height: 14; radius: 7; anchors.verticalCenter: parent.verticalCenter
-                                        color: App.camera === parent.parent.modelData.path ? Omarchy.accent : "transparent"
-                                        border.color: Omarchy.tertiaryText; border.width: 1 }
-                            Glyph { text: "\uf03d"; font.pixelSize: 15; color: Omarchy.secondaryText }
-                            Txt { text: parent.parent.modelData.name; font.pixelSize: 14 }
-                        }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: App.setCamera(parent.modelData.path) }
-                    }
+                DevicePicker {
+                    objectName: "cameraPicker"
+                    width: parent.width
+                    showDefault: false
+                    devices: App.cameras.map(camera => ({id: camera.path, name: camera.name}))
+                    selectedId: App.camera
+                    onSelected: (id) => App.setCamera(id)
                 }
                 Txt {
                     visible: App.cameras.length === 0
@@ -101,7 +88,7 @@ Item {
                     Txt { text: "tap a corner"; color: Omarchy.tertiaryText; font.pixelSize: 12 }
                     Rectangle {
                         id: diagram
-                        width: 320; height: 180; radius: 10
+                        width: 280; height: 158; radius: 10
                         color: Omarchy.darkerBackground; border.color: Omarchy.selection; border.width: 1
                         Txt { anchors.centerIn: parent; text: "your screen"; color: Omarchy.tertiaryText; font.pixelSize: 12 }
                         Rectangle {   // the webcam, exactly where the recording puts it
@@ -130,7 +117,7 @@ Item {
                         model: [["small", 0], ["medium", 1], ["large", 2]]
                         Rectangle {
                             required property var modelData
-                            width: 140; height: 40; radius: 20
+                            width: 140; height: 36; radius: 20
                             color: App.size === modelData[1] ? Omarchy.accent : "transparent"
                             border.color: App.size === modelData[1] ? Omarchy.accent : Omarchy.selection; border.width: 1
                             Txt { anchors.centerIn: parent; text: parent.modelData[0]; font.pixelSize: 13

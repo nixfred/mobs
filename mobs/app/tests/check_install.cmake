@@ -22,10 +22,18 @@ foreach(f bin/mobs share/icons/hicolor/scalable/apps/mobs.svg)
   endif()
 endforeach()
 
+if(EXISTS "${BUILD_DIR}/obs-nvenc-test" AND NOT EXISTS "${PREFIX}/bin/obs-nvenc-test")
+  message(FATAL_ERROR "NVIDIA helper was built but not installed beside MOBS")
+endif()
+
 # The INSTALLED binary must actually start and draw its window. (A module-name clash once made the installed copy exit with
 # "Module Mobs contains no type named Main" while the build-directory copy worked, because only the latter sat next to a qmldir.)
 set(ENV{QT_QPA_PLATFORM} offscreen)
+set(ENV{QT_QPA_PLATFORMTHEME} generic)
+set(ENV{QT_QUICK_BACKEND} software)
 set(ENV{MOBS_NO_HOTKEY} 1)
+set(ENV{MOBS_FAKE_AUDIO} 1)
+set(ENV{QT_IM_MODULE} none)
 set(ENV{MOBS_SETTINGS} "${PREFIX}/test-settings.ini")
 set(ENV{MOBS_GRAB} "${PREFIX}/grab.png")
 set(ENV{MOBS_GRAB_MS} 600)

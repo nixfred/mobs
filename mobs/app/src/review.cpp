@@ -7,7 +7,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryFile>
+#include <QTimer>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 Review::Review(QObject *parent) : QObject(parent) {
@@ -15,7 +17,11 @@ Review::Review(QObject *parent) : QObject(parent) {
 }
 
 Review::~Review() {
-    if (m_export) { m_export->kill(); m_export->waitForFinished(2000); }
+    cancelOpen();
+    // Application shutdown can precede delivery of a cancelled probe's exit event.
+    for (auto *p : findChildren<QProcess *>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (p->state() != QProcess::NotRunning) { p->kill(); p->waitForFinished(2000); }
+    }
     if (!m_partial.isEmpty()) QFile::remove(m_partial);
 }
 
@@ -57,22 +63,58 @@ QString Review::editedPathFor(const QString &take) {
     const QFileInfo fi(take);
     const QString base = fi.absolutePath() + "/" + fi.completeBaseName() + " (edited)";
     QString path = base + ".mp4";
-    for (int n = 2; QFileInfo::exists(path); ++n) path = base + " " + QString::number(n) + ".mp4";
+    for (int n = 2; QFileInfo::exists(path) || QFileInfo(path).isSymLink(); ++n) path = base + " " + QString::number(n) + ".mp4";
     return path;
 }
 
 void Review::setMessage(const QString &m) { m_message = m; emit saveChanged(); }
 
 bool Review::open(const QString &path) {
-    if (m_export) return false;                                  // never swap the take under a running save
-    const auto probe = media::probe(path);
-    if (!probe.ok || probe.duration <= 0) {
-        setMessage("could not open this recording" + (probe.error.isEmpty() ? QString() : ": " + probe.error));
-        return false;
+    if (m_export || m_probe) return false; // never swap the take under a running save or inspection
+    auto *p = new QProcess(this);
+    m_probe = p;
+    setMessage({});
+    emit loadingChanged();
+    auto *timeout = new QTimer(p);
+    timeout->setSingleShot(true);
+    connect(timeout, &QTimer::timeout, this, [this, p, path] {
+        finishOpen(p, path, "inspection timed out; try opening the recording again");
+    });
+    connect(p, &QProcess::errorOccurred, this, [this, p, path](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) finishOpen(p, path, "could not start ffprobe");
+    });
+    connect(p, &QProcess::finished, this, [this, p, path] { finishOpen(p, path); });
+    timeout->start(30000);
+    p->start("ffprobe", {"-v", "error", "-show_streams", "-show_format", "-of", "json", path});
+    return true;
+}
+
+void Review::finishOpen(QProcess *p, const QString &path, const QString &error) {
+    if (p != m_probe) return;
+    const auto doc = QJsonDocument::fromJson(p->readAllStandardOutput()).object();
+    QSize size;
+    bool audio = false;
+    for (const auto &entry : doc["streams"].toArray()) {
+        const auto stream = entry.toObject();
+        if (stream["codec_type"] == "video" && stream["codec_name"] == "h264")
+            size = QSize(stream["width"].toInt(), stream["height"].toInt());
+        if (stream["codec_type"] == "audio" && stream["codec_name"] == "aac") audio = true;
+    }
+    const double duration = doc["format"].toObject()["duration"].toString().toDouble();
+    const bool valid = error.isEmpty() && p->exitStatus() == QProcess::NormalExit && p->exitCode() == 0 &&
+                       !size.isEmpty() && std::isfinite(duration) && duration > 0;
+    releaseProbe(p);
+    m_probe = nullptr;
+    emit loadingChanged();
+    if (!valid) {
+        setMessage("could not open this recording: " + (error.isEmpty() ? QString("the file is not a playable H.264 MP4") : error));
+        emit openFailed(m_message);
+        emit opened(false);
+        return;
     }
     m_path = QFileInfo(path).absoluteFilePath();
-    m_duration = probe.duration;
-    m_audio = probe.audio;
+    m_duration = duration;
+    m_audio = audio;
     m_pauses = readPauses(m_path);
     m_edit = edit::whole(m_duration);
     m_savedEdit.clear();
@@ -81,10 +123,33 @@ bool Review::open(const QString &path) {
     m_open = true;
     m_thumbs.load(m_path, m_duration);
     emit openChanged(); emit editChanged(); emit saveChanged();
-    return true;
+    emit opened(true);
+}
+
+void Review::cancelOpen() {
+    if (!m_probe) return;
+    auto *p = m_probe;
+    m_probe = nullptr;
+    releaseProbe(p);
+    emit loadingChanged();
+    emit opened(false);
+}
+
+void Review::releaseProbe(QProcess *p) {
+    disconnect(p, nullptr, this, nullptr);
+    if (auto *timer = p->findChild<QTimer *>()) timer->stop();
+    if (p->state() == QProcess::NotRunning) { p->deleteLater(); return; }
+    // Killing is asynchronous too: deleting before the exit event blocks in QProcess's destructor.
+    connect(p, &QProcess::finished, p, &QObject::deleteLater);
+    connect(p, &QProcess::errorOccurred, p, [p](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) p->deleteLater();
+    });
+    connect(p, &QProcess::started, p, &QProcess::kill);
+    p->kill();
 }
 
 void Review::close() {
+    cancelOpen();
     if (!m_open || m_export) return;
     m_open = false;
     m_thumbs.clear();
@@ -102,6 +167,7 @@ void Review::applyEdit(edit::Clips next) {
 }
 
 void Review::split(double time) {
+    if (!std::isfinite(time)) return;
     for (int i = 0; i < m_edit.size(); ++i) {
         const auto clip = m_edit[i];
         if (time - clip.start < edit::minimumClip || clip.end - time < edit::minimumClip) continue;
@@ -114,7 +180,7 @@ void Review::split(double time) {
 }
 
 void Review::setClip(int index, double start, double end) {
-    if (index < 0 || index >= m_edit.size()) return;
+    if (index < 0 || index >= m_edit.size() || !std::isfinite(start) || !std::isfinite(end)) return;
     const double low = index > 0 ? m_edit[index - 1].end : 0;                                  // may grow into a gap...
     const double high = index + 1 < m_edit.size() ? m_edit[index + 1].start : m_duration;      // ...never over a neighbour
     start = std::clamp(start, low, high);
@@ -140,13 +206,17 @@ void Review::joinClips(int index) {
     applyEdit(next);
 }
 
-void Review::beginGesture() { if (m_open) { m_gesture = true; m_gestureRecorded = false; } }
+void Review::beginGesture() {
+    if (!m_open || m_export || m_gesture) return;
+    m_gesture = true; m_gestureRecorded = false; emit editChanged();
+}
 
 void Review::endGesture() {
     if (!m_gesture) return;
     m_gesture = false;
     const auto next = edit::normalized(m_edit, m_duration);
-    if (!next.isEmpty() && next != m_edit) { m_edit = next; emit editChanged(); }   // never let tidying empty the take
+    if (!next.isEmpty()) m_edit = next; // never let tidying empty the take
+    emit editChanged(); // canUndo/canRedo change even when clip geometry does not
 }
 
 void Review::undo() {
@@ -166,6 +236,7 @@ void Review::redo() {
 void Review::save() {
     if (!m_open || m_export) return;
     if (!changed()) { setMessage("nothing to save: the recording is untouched"); return; }
+    if (!unsaved()) { setMessage("your edit is already saved"); return; }
     const QString destination = editedPathFor(m_path);
     // Encode into a hidden partial file beside the destination, then rename it into place: no half-written file ever has the real name.
     const QFileInfo target(destination);
@@ -194,8 +265,8 @@ void Review::save() {
         if (status != QProcess::NormalExit || code != 0) {
             error = QString::fromUtf8(p->readAllStandardError()).trimmed().left(300);
             if (error.isEmpty()) error = "ffmpeg could not encode the clip";
-        } else if (std::rename(QFile::encodeName(m_partial).constData(), QFile::encodeName(destination).constData()) != 0) {
-            error = "could not move the finished file into place";
+        } else if (!QFile::rename(m_partial, destination)) {
+            error = "could not move the finished file into place (the destination may already exist)";
         }
         finishSave(destination, error);
     });

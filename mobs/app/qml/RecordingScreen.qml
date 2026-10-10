@@ -3,10 +3,11 @@ import MobsCore
 
 // While recording: big timer, pause and stop. Starting shows what MOBS is waiting for (the screen dialog).
 Item {
+    id: root
     readonly property bool live: Engine.state === "recording" || Engine.state === "paused"
     Column {
         anchors.centerIn: parent
-        spacing: 26
+        spacing: Engine.recordingMic || Engine.recordingDesktop ? 14 : 26
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 12
@@ -24,13 +25,19 @@ Item {
                 font.pixelSize: 20; font.bold: true
             }
         }
-        Txt { text: Engine.elapsedText; font.pixelSize: 112; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+        Txt { text: Engine.elapsedText; font.pixelSize: root.height < 600 ? 88 : 112; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
         Txt {
-            text: Engine.message !== "" ? Engine.message : (App.pickName + ", with mic  ·  saving to ~/Videos/mobs")
+            text: Engine.message !== "" ? Engine.message : (App.pickName + (Engine.recordingMic ? ", " + Audio.name(Engine.recordingMicDevice) : ", mic off") + (Engine.recordingDesktop ? ", desktop sound" : "") + "  ·  saving to " + Engine.recordingFolder)
             color: Omarchy.tertiaryText; font.pixelSize: 13
-            width: 700; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+            width: Math.min(700, root.width - 48); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
             anchors.horizontalCenter: parent.horizontalCenter
         }
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter; spacing: 24
+            LevelMeter { visible: Engine.recordingMic; width: Engine.recordingDesktop ? 280 : 400; db: Engine.micDb; receiving: Engine.micFrames; label: "mic (live input)" }
+            LevelMeter { visible: Engine.recordingDesktop; width: Engine.recordingMic ? 280 : 400; db: Engine.desktopDb; receiving: Engine.desktopFrames; label: "desktop (live input)" }
+        }
+        Txt { text: Engine.audioProblem; visible: text !== ""; width: Math.min(700, root.width - 48); anchors.horizontalCenter: parent.horizontalCenter; wrapMode: Text.WordWrap; font.pixelSize: 13; color: Omarchy.red }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 26

@@ -12,52 +12,141 @@ Window {
     title: "mobs"
     color: Omarchy.background
 
+    // Monologue's unchanged EditBar calls these methods on its host window.
+    function preciseTime(seconds) { return reviewScreen.preciseTime(seconds) }
+    function restoreGap(gap) { reviewScreen.restoreGap(gap) }
+
+    property bool closeAfterRecording: false
+    property bool confirmQuit: false
+    property bool confirmStopQuit: false
+    onConfirmQuitChanged: if (confirmQuit) keyboard.forceActiveFocus()
+    onConfirmStopQuitChanged: if (confirmStopQuit) keyboard.forceActiveFocus()
+    onClosing: (close) => {
+        if (Engine.active) {
+            close.accepted = false
+            if (closeAfterRecording && Engine.state === "stopping") confirmStopQuit = true
+            closeAfterRecording = true
+            Engine.stop()
+        } else if (Review.saving || Review.unsaved) {
+            close.accepted = false
+            confirmQuit = true
+        } else if (Review.loading) Review.close()
+    }
+    Connections {
+        target: Engine
+        function onStateChanged() {
+            if (!Engine.active) win.confirmStopQuit = false
+            if (win.closeAfterRecording && !Engine.active) {
+                win.closeAfterRecording = false
+                // Failed/cancelled recordings remain visible with their explanation.
+                if (Engine.message.indexOf("saved ") === 0) win.close()
+            }
+        }
+    }
+
     Header {
+        enabled: !win.confirmQuit && !win.confirmStopQuit
         id: header
         anchors { top: parent.top; left: parent.left; right: parent.right }
         stateWord: App.screen === 1 ? "new" : App.screen === 3 ? Engine.state : App.screen === 4 ? "review" : "ready"
     }
     ChooseScreen {
-        visible: App.screen === 1
-        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: proDrawer.visible ? proDrawer.left : parent.right }
+        objectName: "contentScreen"
+        visible: App.screen === 1 && !App.pro
+        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: parent.right }
     }
     ReadyScreen {
-        visible: App.screen === 2
-        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: proDrawer.visible ? proDrawer.left : parent.right }
+        objectName: "contentScreen"
+        visible: App.screen === 2 && !App.pro
+        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: parent.right }
     }
     RecordingScreen {
-        visible: App.screen === 3
-        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: proDrawer.visible ? proDrawer.left : parent.right }
+        objectName: "contentScreen"
+        visible: App.screen === 3 && !App.pro
+        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: parent.right }
     }
     ReviewScreen {
+        objectName: "contentScreen"
         id: reviewScreen
-        visible: App.screen === 4
-        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: proDrawer.visible ? proDrawer.left : parent.right }
+        visible: App.screen === 4 && !App.pro
+        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: parent.right }
     }
     ProDrawer {
+        enabled: !win.confirmQuit && !win.confirmStopQuit
         id: proDrawer
-        anchors { top: header.bottom; bottom: footer.top; right: parent.right }
+        anchors { top: header.bottom; bottom: footer.top; left: parent.left; right: parent.right }
         z: 20
     }
     Footer {
         id: footer
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
-        Row { spacing: 8; visible: App.screen === 1; Key { text: "1" } Key { text: "2" } Key { text: "3" } Txt { text: "pick"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 2; Key { text: "Space" } Txt { text: "record"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 3; Key { text: "Space" } Txt { text: "pause / resume"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 3; Key { text: "Enter" } Txt { text: "stop and save"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 4; Key { text: "Space" } Txt { text: "play"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 4; Key { text: "S" } Txt { text: "split"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 4; Key { text: "X" } Txt { text: "cut"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 4; Key { text: "Ctrl" } Key { text: "S" } Txt { text: "save"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 4; Key { text: "Esc" } Txt { text: "done"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 2; Key { text: "P" } Txt { text: "pro"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: App.screen === 2; Key { text: "Esc" } Txt { text: "change what we're making"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: App.pro; Key { text: "Esc" } Txt { text: "close EXPERT"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 1; Key { text: "1" } Key { text: "2" } Key { text: "3" } Txt { text: "pick"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 2; Key { text: "Space" } Txt { text: "record"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 3; Key { text: "Space" } Txt { text: "pause / resume"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 3; Key { text: "Enter" } Txt { text: "stop and save"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "Space" } Txt { text: "play"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "S" } Txt { text: "split"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "X" } Txt { text: "cut"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "Ctrl" } Key { text: "S" } Txt { text: "save"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "Esc" } Txt { text: "done"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 2; Key { text: "P" } Txt { text: "EXPERT"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
+        Row { spacing: 8; visible: !App.pro && App.screen === 2; Key { text: "Esc" } Txt { text: "change what we're making"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
     }
 
+    Rectangle {
+        anchors.fill: parent; z: 100; visible: win.confirmQuit
+        color: Omarchy.darkBackground
+        TapHandler {}
+        Column {
+            anchors.centerIn: parent; width: Math.min(700, win.width - 64); spacing: 22
+            Txt { width: parent.width; wrapMode: Text.WordWrap; text: Review.saving ? "your edit is still saving" : "your edit has unsaved changes"; font.pixelSize: 22; font.bold: true }
+            Txt { width: parent.width; wrapMode: Text.WordWrap; text: Review.saving ? "Keep MOBS open until the export finishes." : "Save the edit before quitting, or discard the edits. Your original recording stays on disk."; font.pixelSize: 14; color: Omarchy.secondaryText }
+            Flow {
+                width: parent.width; spacing: 12
+                Button { text: "keep editing"; primary: true; onClicked: win.confirmQuit = false }
+                Button { text: "save edit"; visible: !Review.saving; onClicked: { win.confirmQuit = false; Review.save() } }
+                Button { text: "discard edits and quit"; visible: !Review.saving; tone: Omarchy.red; onClicked: { Review.close(); win.confirmQuit = false; win.close() } }
+            }
+        }
+    }
+    Connections {
+        target: App
+        function onProChanged() { keyboard.forceActiveFocus() }
+    }
+    Rectangle {
+        anchors.fill: parent; z: 100; visible: win.confirmStopQuit
+        color: Omarchy.darkBackground
+        TapHandler {}
+        Column {
+            anchors.centerIn: parent; width: Math.min(700, win.width - 64); spacing: 22
+            Txt { width: parent.width; wrapMode: Text.WordWrap; text: "your recording is still saving"; font.pixelSize: 22; font.bold: true }
+            Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Keep waiting to finish the recording. If saving has stalled, you can quit now, but this recording may be incomplete or unplayable."; font.pixelSize: 14; color: Omarchy.secondaryText }
+            Flow {
+                width: parent.width; spacing: 12
+                Button { text: "keep waiting"; primary: true; onClicked: win.confirmStopQuit = false }
+                Button { objectName: "forceQuitButton"; text: "quit without waiting"; tone: Omarchy.red; onClicked: Engine.requestForceQuit() }
+            }
+        }
+    }
+    SplashScreen { id: splash }
     Item {
+        id: keyboard
         focus: true
         Keys.onPressed: (e) => {
+            if (!splash.done) { splash.skip(); e.accepted = true; return }   // the opening screen eats the first key, so it can never start a recording
+            if (win.confirmStopQuit) { if (e.key === Qt.Key_Escape) win.confirmStopQuit = false; e.accepted = true; return }
+            if (win.confirmQuit) { if (e.key === Qt.Key_Escape) win.confirmQuit = false; e.accepted = true; return }
+            if (App.pro) {
+                if (e.key === Qt.Key_Escape || e.key === Qt.Key_P) App.setPro(false)
+                e.accepted = true
+                return
+            }
+            if (App.cameraPanel) {
+                if (e.key === Qt.Key_Escape) App.setCameraPanel(false)
+                e.accepted = true
+                return
+            }
             if (e.key === Qt.Key_P && App.screen !== 3 && !(e.modifiers & Qt.ControlModifier)) App.setPro(!App.pro)
             else if (e.key === Qt.Key_Escape && App.pro) App.setPro(false)
             else if (App.screen === 1 && e.key >= Qt.Key_1 && e.key <= Qt.Key_3) App.choose(e.key - Qt.Key_0)

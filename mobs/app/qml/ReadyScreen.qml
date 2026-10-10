@@ -3,18 +3,32 @@ import MobsCore
 
 // One big record button, plain words, and what will be recorded.
 Item {
+    id: root
     readonly property bool showPreview: App.preview
     Column {
+        id: readyColumn
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: showPreview ? -6 : -20
-        spacing: showPreview ? 14 : 22
+        anchors.verticalCenterOffset: showPreview ? -6 : root.height < 500 ? 0 : -20
+        spacing: showPreview && Engine.micChecking ? 10 : showPreview ? 14 : root.height < 500 ? 16 : 22
         PreviewView {
+            objectName: "readyPreview"
             visible: showPreview
             anchors.horizontalCenter: parent.horizontalCenter
-            previewWidth: Math.min(480, Math.max(240, (parent.parent.height - 330) * 16 / 9))
+            // Reserve the actual space used by controls, meters and explanations.
+            // A fixed budget missed the extra hotkey row on taller windows.
+            readonly property int extraRows: (hotkeys.visible ? 1 : 0) + (micMeter.visible ? 1 : 0) + (warningText.visible ? 1 : 0) + (noticeText.visible ? 1 : 0)
+            readonly property real reservedHeight: recordButton.height + summary.height + chips.height
+                + (hotkeys.visible ? hotkeys.height : 0) + (micMeter.visible ? micMeter.height : 0)
+                + (warningText.visible ? warningText.height : 0) + (noticeText.visible ? noticeText.height : 0)
+                + readyColumn.spacing * (3 + extraRows) + 12
+            previewWidth: Math.min(480, Math.max(160, (root.height - reservedHeight - captionHeight) * 16 / 9))
         }
         Item {
-            width: showPreview ? 112 : 190; height: width
+            id: recordButton
+            objectName: "recordButton"
+            enabled: !Review.loading
+            opacity: Review.loading ? 0.4 : 1
+            width: showPreview && Engine.micChecking ? 96 : showPreview || Engine.micChecking ? 112 : root.height < 500 ? 144 : 190; height: width
             anchors.horizontalCenter: parent.horizontalCenter
             Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: showPreview ? 3 : 4 }
             Rectangle { anchors.centerIn: parent; width: parent.width * 0.67; height: width; radius: width / 2; color: Omarchy.red }
@@ -22,13 +36,18 @@ Item {
             TapHandler { onTapped: Engine.start(App.pick) }
         }
         Column {
+            id: summary
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 6
-            Txt { text: "ready to record"; font.pixelSize: 24; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+            Txt { text: Review.loading ? "opening your recording…" : "ready to record"; font.pixelSize: 24; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 10
-                Txt { text: App.pickName + (App.pick === 3 ? "" : ", with mic"); color: Omarchy.secondaryText; font.pixelSize: 14 }
+                Txt {
+                    text: App.pickName + (Prefs.micOn ? ", " + Audio.name(Prefs.micDevice) : ", mic off") + (Prefs.desktopOn ? ", desktop sound" : "")
+                    width: Math.min(580, root.width - 170); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                    color: Omarchy.secondaryText; font.pixelSize: 14
+                }
                 Rectangle {   // the way back to "what are we making?": my screen / screen + me / just my camera
                     width: changeLabel.implicitWidth + 22; height: 26; radius: 13
                     color: "transparent"
@@ -40,18 +59,26 @@ Item {
             }
         }
         Row {
+            id: hotkeys
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 8
+            visible: !root.showPreview || root.height >= 600
             Key { text: "Alt" }
             Key { text: "Shift" }
             Key { text: "V" }
             Txt { text: "starts it from anywhere"; color: Omarchy.tertiaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; leftPadding: 8 }
         }
-        Row {
+        LevelMeter { id: micMeter; visible: Engine.micChecking; width: 340; anchors.horizontalCenter: parent.horizontalCenter; db: Engine.micDb; receiving: Engine.micFrames }
+        Flow {
+            id: chips
+            width: Math.min(root.width - 48, 820)
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 12
             Chip { glyph: ""; text: App.displayText; visible: App.pick !== 3 }
-            Chip { glyph: ""; text: "mic: default input" }
+            Chip { glyph: ""; text: Prefs.micOn ? "mic on" : "mic off"; tint: Prefs.micOn ? Omarchy.accent : Omarchy.tertiaryText; clickable: true; onClicked: Prefs.setMicOn(!Prefs.micOn) }
+            Chip { glyph: ""; text: "EXPERT audio"; clickable: true; onClicked: App.openAudio() }
+            Chip { glyph: ""; text: Prefs.desktopOn ? "desktop on" : "desktop off"; clickable: true; onClicked: Prefs.setDesktopOn(!Prefs.desktopOn) }
+            Chip { glyph: "⚙"; text: Prefs.customQuality ? "custom quality" : ["small file", "balanced", "high quality"][Prefs.quality]; clickable: true; onClicked: App.setPro(true) }
             Chip {
                 glyph: "\uf03d"
                 clickable: true
@@ -68,19 +95,22 @@ Item {
             }
         }
         Txt {
+            id: warningText
             text: Engine.warning
             visible: Engine.warning !== ""
             color: Omarchy.red
             font.pixelSize: 13
-            width: 640
+            width: Math.min(640, root.width - 48)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             anchors.horizontalCenter: parent.horizontalCenter
         }
         Txt {
-            text: Engine.message
-            visible: Engine.message !== ""
-            width: 640
+            id: noticeText
+            objectName: "readyNotice"
+            text: [Engine.message, Engine.audioProblem].filter((message, index, all) => message !== "" && all.indexOf(message) === index).join("\n")
+            visible: Engine.audioProblem !== "" || Engine.message !== ""
+            width: Math.min(640, root.width - 48)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             color: Omarchy.accent

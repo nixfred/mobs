@@ -5,10 +5,21 @@
 #include <QProcess>
 #include <QSignalSpy>
 #include <QStandardPaths>
+#include <QScopeGuard>
+#include <QTimer>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <limits>
 
 static bool haveFfmpeg() { return !QStandardPaths::findExecutable("ffmpeg").isEmpty() && !QStandardPaths::findExecutable("ffprobe").isEmpty(); }
+
+// The UI must remain responsive while the take is inspected.
+static bool openReview(Review &review, const QString &path) {
+    QSignalSpy result(&review, &Review::opened);
+    if (!review.open(path)) return false;
+    if (result.isEmpty() && !result.wait(35000)) return false;
+    return result.first().first().toBool();
+}
 
 // A real take: a test pattern with a tone, `seconds` long.
 static bool makeTake(const QString &file, int seconds) {
@@ -39,16 +50,78 @@ class ReviewTests : public QObject {
     QTemporaryDir dir;
     QString take;
 private slots:
+    void aSlowProbeLeavesTheEventLoopResponsive() {
+        const QString ffprobe = QStandardPaths::findExecutable("ffprobe");
+        QTemporaryDir tools;
+        QFile wrapper(tools.path() + "/ffprobe"); QVERIFY(wrapper.open(QIODevice::WriteOnly));
+        wrapper.write(("#!/bin/sh\n/bin/sleep 0.3\nexec '" + ffprobe + "' \"$@\"\n").toUtf8()); wrapper.close();
+        QVERIFY(wrapper.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto previous = qgetenv("PATH");
+        const auto restore = qScopeGuard([&] { qputenv("PATH", previous); });
+        qputenv("PATH", tools.path().toUtf8() + ":" + previous);
+        Review r; bool heartbeat = false;
+        QTimer::singleShot(100, &r, [&] { heartbeat = true; });
+        QVERIFY(openReview(r, take));
+        QVERIFY2(heartbeat, "opening a take must allow UI events while ffprobe runs");
+    }
     void initTestCase() {
         if (!haveFfmpeg()) QSKIP("ffmpeg/ffprobe not installed");
         take = dir.path() + "/take.mp4";
         QVERIFY(makeTake(take, 6));
     }
+    void cancelledInspectionCannotReopenTheReview() {
+        QTest::failOnWarning(QRegularExpression("QProcess: Destroyed while process.*"));
+        const QString ffprobe = QStandardPaths::findExecutable("ffprobe");
+        QTemporaryDir tools;
+        QFile wrapper(tools.path() + "/ffprobe"); QVERIFY(wrapper.open(QIODevice::WriteOnly));
+        wrapper.write(("#!/bin/sh\n/bin/sleep 0.3\nexec '" + ffprobe + "' \"$@\"\n").toUtf8()); wrapper.close();
+        QVERIFY(wrapper.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto previous = qgetenv("PATH");
+        const auto restore = qScopeGuard([&] { qputenv("PATH", previous); });
+        qputenv("PATH", tools.path().toUtf8() + ":" + previous);
+        Review r; QVERIFY(r.open(take)); QVERIFY(r.loading());
+        r.close(); QVERIFY(!r.loading());
+        QTest::qWait(500);
+        QVERIFY(!r.isOpen());
+        QVERIFY(openReview(r, take)); // cancellation must not prevent a later successful open
+    }
+    void missingProbeReportsFailureAndAllowsRetry() {
+        QTemporaryDir tools;
+        const auto previous = qgetenv("PATH");
+        const auto restore = qScopeGuard([&] { qputenv("PATH", previous); });
+        qputenv("PATH", tools.path().toUtf8());
+        Review r; QSignalSpy failures(&r, &Review::openFailed);
+        QVERIFY(!openReview(r, take)); QVERIFY(!r.loading()); QVERIFY(!r.isOpen());
+        QCOMPARE(failures.count(), 1); QVERIFY(r.message().contains("could not start ffprobe"));
+        qputenv("PATH", previous);
+        QVERIFY(openReview(r, take));
+    }
+    void aSavedEditCanBeSplitWithoutBecomingUnsavedOrSavingADuplicate() {
+        QTemporaryDir other; const QString file = other.path() + "/split.mp4"; QVERIFY(QFile::copy(take, file));
+        Review r; QVERIFY(openReview(r, file)); r.split(2); r.removeClip(0);
+        QSignalSpy saved(&r, &Review::saved); r.save();
+        QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 1, 30000); QVERIFY(!r.unsaved());
+        r.split(4); QVERIFY2(!r.unsaved(), "a split changes markers, not the saved video");
+        r.save(); QVERIFY(!r.saving()); QCOMPARE(saved.count(), 1);
+        r.removeClip(0); QVERIFY(r.unsaved());
+    }
+    void endingAHandleDragNotifiesUndoAvailability() {
+        Review r; QVERIFY(openReview(r, take)); r.split(3);
+        QSignalSpy edits(&r, &Review::editChanged);
+        r.beginGesture(); r.setClip(0, 0, 2.5); QVERIFY(!r.canUndo());
+        edits.clear(); r.endGesture(); QVERIFY(r.canUndo());
+        QVERIFY2(!edits.isEmpty(), "QML must be told when undo becomes available after a drag");
+    }
+    void nonFiniteEditTimesAreIgnored() {
+        Review r; QVERIFY(openReview(r, take)); r.split(3); const auto before = r.clips();
+        r.split(std::numeric_limits<double>::quiet_NaN()); QCOMPARE(r.clips(), before);
+        r.setClip(0, 0, std::numeric_limits<double>::infinity()); QCOMPARE(r.clips(), before);
+    }
     void openReadsDurationAndPauseMarks() {
         QVERIFY(Review::writePauses(take, {1.5, 3.0, 99.0, 0.0}));       // 99 is past the end, 0 is the very start: neither is shown
         Review r;
         QSignalSpy op(&r, &Review::openChanged);
-        QVERIFY(r.open(take));
+        QVERIFY(openReview(r, take));
         QVERIFY(r.isOpen());
         QVERIFY(qAbs(r.duration() - 6.0) < 0.3);
         QCOMPARE(r.title(), QString("take"));
@@ -60,20 +133,20 @@ private slots:
     }
     void aMissingSidecarMeansNoPauses() {
         QFile::remove(Review::sidecarPath(take));
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         QVERIFY(r.pauses().isEmpty());
     }
     void openingGarbageFailsWithAMessageAndStaysClosed() {
         const QString junk = dir.path() + "/junk.mp4";
         QFile f(junk); f.open(QIODevice::WriteOnly); f.write("not a video"); f.close();
         Review r;
-        QVERIFY(!r.open(junk));
+        QVERIFY(!openReview(r, junk));
         QVERIFY(!r.isOpen());
         QVERIFY(r.message().contains("could not open"));
-        QVERIFY(!r.open(dir.path() + "/does-not-exist.mp4"));
+        QVERIFY(!openReview(r, dir.path() + "/does-not-exist.mp4"));
     }
     void splitCutsAClipIntoTwoAndTinyPiecesAreRefused() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(2.0);
         QCOMPARE(r.clips().size(), 2);
         r.split(2.04);                                                    // 0.04 s from the split: too short to keep
@@ -83,7 +156,7 @@ private slots:
         QVERIFY(r.changed());                                             // ...cutting a part out does
     }
     void removingAClipLeavesAGapAndTheLastClipCannotBeRemoved() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.removeClip(0);                                                  // only one clip: refused
         QCOMPARE(r.clips().size(), 1);
         r.split(2.0); r.split(4.0);
@@ -93,7 +166,7 @@ private slots:
         QVERIFY(qAbs(r.keptDuration() - (r.duration() - 2.0)) < 0.2);
     }
     void aClipCanGrowIntoAGapButNeverOverItsNeighbour() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(2.0); r.split(4.0); r.removeClip(1);                      // clips: [0,2] and [4,6]; gap 2..4
         r.setClip(0, 0.0, 3.0);                                           // grows into the gap: fine
         QCOMPARE(r.clips()[0].toMap()["end"].toDouble(), 3.0);
@@ -101,14 +174,14 @@ private slots:
         QVERIFY(r.clips()[0].toMap()["end"].toDouble() <= r.clips()[1].toMap()["start"].toDouble() + 1e-9);
     }
     void joiningTwoClipsRestoresTheCut() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(3.0);
         r.joinClips(0);
         QCOMPARE(r.clips().size(), 1);
         QVERIFY(!r.changed());
     }
     void aHandleDragIsOneUndoStep() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(3.0);
         QCOMPARE(r.clips().size(), 2);
         r.beginGesture();
@@ -123,7 +196,7 @@ private slots:
         QVERIFY(!r.canUndo());
     }
     void redoWorksAndANewEditClearsIt() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(2.0);
         r.undo();
         QVERIFY(r.canRedo());
@@ -134,7 +207,7 @@ private slots:
         QVERIFY(!r.canRedo());
     }
     void savingAnUntouchedTakeIsRefusedWithAReason() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.save();
         QVERIFY(!r.saving());
         QVERIFY(r.message().contains("nothing to save"));
@@ -142,7 +215,7 @@ private slots:
     void savedEditContainsOnlyTheKeptPartsAndTheOriginalIsUntouched() {
         const QByteArray before = hashOf(take);
         const QString outDir = dir.path();
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(2.0); r.split(4.0); r.removeClip(1);                      // keep 0..2 and 4..6: 4 s of 6
         QVERIFY(r.unsaved());
         QSignalSpy saved(&r, &Review::saved);
@@ -167,7 +240,7 @@ private slots:
             QVERIFY2(!f.startsWith(".take (edited)-"), qPrintable("leftover partial file: " + f));
     }
     void aSecondSaveNeverOverwritesTheFirst() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(3.0); r.removeClip(0);
         QSignalSpy saved(&r, &Review::saved);
         r.save();
@@ -175,10 +248,21 @@ private slots:
         QCOMPARE(saved.first().first().toString(), dir.path() + "/take (edited) 2.mp4");
         QVERIFY(QFileInfo::exists(dir.path() + "/take (edited).mp4"));    // the first one is still there
     }
+    void aDestinationCreatedDuringExportIsPreserved() {
+        const QString source = dir.path() + "/race.mp4";
+        QVERIFY(makeTake(source, 3));
+        Review r; QVERIFY(openReview(r, source)); r.split(1.0); r.removeClip(0);
+        const QString target = Review::editedPathFor(source);
+        r.save(); QVERIFY(r.saving());
+        QFile collision(target); QVERIFY(collision.open(QIODevice::WriteOnly)); collision.write("keep me"); collision.close();
+        QTRY_VERIFY_WITH_TIMEOUT(!r.saving(), 30000);
+        QVERIFY(r.message().contains("could not save")); QVERIFY(r.unsaved());
+        QVERIFY(collision.open(QIODevice::ReadOnly)); QCOMPARE(collision.readAll(), QByteArray("keep me"));
+    }
     void aFailedExportSaysSoAndLeavesNothingBehind() {
         const QString victim = dir.path() + "/victim.mp4";
         QVERIFY(makeTake(victim, 3));
-        Review r; QVERIFY(r.open(victim));
+        Review r; QVERIFY(openReview(r, victim));
         r.split(1.0); r.removeClip(0);
         QVERIFY(QFile::remove(victim));                                   // the source vanishes before the save runs
         QSignalSpy msg(&r, &Review::saveChanged);
@@ -190,12 +274,12 @@ private slots:
             QVERIFY2(!f.startsWith(".victim (edited)-"), qPrintable("leftover partial file: " + f));
     }
     void closeForgetsTheTake() {
-        Review r; QVERIFY(r.open(take));
+        Review r; QVERIFY(openReview(r, take));
         r.split(2.0);
         r.close();
         QVERIFY(!r.isOpen());
         QVERIFY(r.clips().isEmpty());
-        QVERIFY(r.open(take));
+        QVERIFY(openReview(r, take));
         QCOMPARE(r.clips().size(), 1);                                    // a fresh start, not the old edits
     }
     void deleteMovesToTheTrashAndNeverRemovesDirectly() {
@@ -204,7 +288,7 @@ private slots:
         const QString doomed = dir.path() + "/doomed.mp4";
         QVERIFY(makeTake(doomed, 2));
         QVERIFY(Review::writePauses(doomed, {0.5}));
-        Review r; QVERIFY(r.open(doomed));
+        Review r; QVERIFY(openReview(r, doomed));
         QVERIFY(r.deleteTake());
         QVERIFY(!QFileInfo::exists(doomed));
         QVERIFY(!QFileInfo::exists(Review::sidecarPath(doomed)));
@@ -223,6 +307,8 @@ private slots:
         QCOMPARE(Review::editedPathFor(f), dir.path() + "/names (edited).mp4");
         QFile a(dir.path() + "/names (edited).mp4"); a.open(QIODevice::WriteOnly); a.close();
         QCOMPARE(Review::editedPathFor(f), dir.path() + "/names (edited) 2.mp4");
+        QVERIFY(QFile::link(dir.path() + "/missing-target", dir.path() + "/names (edited) 2.mp4"));
+        QCOMPARE(Review::editedPathFor(f), dir.path() + "/names (edited) 3.mp4");
     }
 };
 QTEST_MAIN(ReviewTests)

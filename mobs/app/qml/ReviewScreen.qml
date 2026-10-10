@@ -7,7 +7,24 @@ Item {
     id: root
     property bool confirmLeave: false
     property bool confirmDelete: false
-    readonly property real videoWidth: Math.max(320, Math.min(720, (height - 330) * 16 / 9, width - 80))
+    onVisibleChanged: { if (!visible) { player.pause(); finishTrim() }; confirmLeave = false; confirmDelete = false }
+    Connections { target: Review; function onEditChanged() { root.confirmLeave = false; root.confirmDelete = false } }
+    property var trimArea: null
+    function finishTrim() {
+        Review.endGesture()
+        if (trimArea) { trimArea.mode = 0; trimArea.clipIndex = -1 }
+    }
+    function preciseTime(seconds) {
+        const cs = Math.round(Math.max(0, seconds) * 100)
+        const m = Math.floor(cs / 6000), s = (cs - m * 6000) / 100
+        return String(m).padStart(2, "0") + ":" + s.toFixed(2).padStart(5, "0")
+    }
+    Connections { target: root.trimArea; function onCanceled() { root.finishTrim() } }
+    Connections { target: root.Window.window; function onActiveChanged() { if (!root.Window.window.active) root.finishTrim() } }
+    readonly property real videoWidth: Math.min(720, width - 80, Math.max(160,
+        (height - reviewTitle.height - bar.height - transport.height - reviewActions.height
+         - (reviewNotice.visible ? reviewNotice.height : 0)
+         - reviewColumn.spacing * (reviewNotice.visible ? 5 : 4) - 24) * 16 / 9))
 
     function fmt(t) {
         t = Math.max(0, Math.round(t))
@@ -57,6 +74,7 @@ Item {
         player.pause(); seekTo(target)
     }
     function leave() {
+        if (Review.saving) return
         if (Review.unsaved && !confirmLeave) { confirmLeave = true; return }
         player.stop(); confirmLeave = false; Review.close()
     }
@@ -101,11 +119,13 @@ Item {
     }
 
     Column {
+        id: reviewColumn
         anchors.centerIn: parent
-        width: root.videoWidth
+        width: Math.min(root.width - 64, 740)
         spacing: 14
 
         Row {
+            id: reviewTitle
             spacing: 14
             Txt { text: Review.title; font.pixelSize: 14; font.bold: true; elide: Text.ElideMiddle; width: Math.min(implicitWidth, root.videoWidth * 0.6) }
             Txt {
@@ -115,7 +135,8 @@ Item {
         }
 
         Rectangle {
-            width: parent.width; height: Math.round(width * 9 / 16)
+            width: root.videoWidth; height: Math.round(width * 9 / 16)
+            anchors.horizontalCenter: parent.horizontalCenter
             radius: 16; color: Omarchy.darkerBackground; border.color: Omarchy.selection; border.width: 1
             VideoOutput {
                 id: video
@@ -133,6 +154,8 @@ Item {
 
         EditBar {
             id: bar
+            objectName: "reviewTimeline"
+            Component.onCompleted: { for (let child of children) if (child.mode !== undefined && child.clipIndex !== undefined) { child.objectName = "reviewTrimArea"; root.trimArea = child } }
             width: parent.width
             height: 64
             accent: Omarchy.accent
@@ -142,6 +165,7 @@ Item {
         }
 
         Row {
+            id: transport
             spacing: 14
             Rectangle {
                 width: 40; height: 40; radius: 20; color: "transparent"; border.color: Omarchy.selection; border.width: 2
@@ -154,21 +178,25 @@ Item {
             Txt { visible: Review.pauses.length > 0; text: Review.pauses.length + (Review.pauses.length === 1 ? " pause" : " pauses") + " marked"; font.pixelSize: 12; color: Omarchy.tertiaryText; anchors.verticalCenter: parent.verticalCenter }
         }
 
-        Row {
+        Flow {
+            id: reviewActions
+            width: parent.width
             spacing: 12
             Button {
                 text: Review.saving ? "saving " + Math.round(Review.saveProgress * 100) + "%" : "save edit"
                 primary: true
-                enabled: Review.changed && !Review.saving
+                enabled: Review.unsaved && !Review.saving
                 onClicked: Review.save()
             }
             Button {
+                objectName: "reviewDone"
                 text: root.confirmLeave ? "leave without saving" : "done"
                 tone: root.confirmLeave ? Omarchy.red : Omarchy.foreground
                 enabled: !Review.saving
                 onClicked: root.leave()
             }
             Button {
+                objectName: "reviewDelete"
                 text: root.confirmDelete ? "yes, move to trash" : "delete take"
                 tone: Omarchy.red
                 enabled: !Review.saving
@@ -178,9 +206,12 @@ Item {
         }
 
         Txt {
-            width: parent.width; wrapMode: Text.WordWrap
+            id: reviewNotice
+            objectName: "reviewNotice"
+            width: parent.width; wrapMode: Text.Wrap
             visible: text !== ""
-            text: Engine.warning !== "" ? Engine.warning : Review.message
+            text: [Engine.warning, Engine.message.indexOf("saved ") === 0 ? "" : Engine.message, Review.message]
+                .filter((message, index, all) => message !== "" && all.indexOf(message) === index).join("\n")
             color: Engine.warning !== "" || Review.message.indexOf("could not") === 0 ? Omarchy.red : Omarchy.tertiaryText
             font.pixelSize: 12
         }

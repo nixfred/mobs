@@ -10,12 +10,22 @@ struct CameraSpec {
     int size = 1;            // 0 small, 1 medium, 2 large
     bool valid() const { return !path.isEmpty(); }
 };
+struct AudioSpec {
+    QString micDevice = "default";
+    int micGainDb = 0;
+    bool desktop = false;
+    QString desktopDevice = "default";
+    int desktopGainDb = -6;
+};
 struct RecordSpec {
     int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
     QString path;            // the file to write
     CameraSpec camera;
-    int crf = 23;            // x264 constant rate factor (lower = bigger, better); from the quality setting
-    bool mic = true;         // record the default microphone
+    int crf = 23;            // x264 CRF / NVIDIA CQP (lower = bigger, better); from the quality setting
+    bool mic = true;         // record the selected microphone
+    QString encoderPreset = "veryfast"; // x264 CPU/compression tradeoff
+    AudioSpec audio;
+    bool hardware = false;
 };
 
 // The narrow door between MOBS and whatever actually records. Today the only real implementation is libobs
@@ -31,8 +41,14 @@ public:
     // Show what would be recorded, without recording. Call again with a new spec when the pick, camera or placement
     // changes. A recording that starts afterwards reuses the same scene (no second screen-share dialog).
     virtual void setPreview(bool on, const RecordSpec &spec) { Q_UNUSED(on); Q_UNUSED(spec); }
+    virtual void setMicCheck(bool on, const AudioSpec &audio) { Q_UNUSED(on); Q_UNUSED(audio); }
+    virtual void checkHardware() { emit hardwareChecked(false, "hardware detection is not supported by this backend"); }
 signals:
+    void audioLevels(double micDb, double desktopDb, bool micFrames, bool desktopFrames, const QString &problem);
+    void micCheckFailed(const QString &why);
+    void hardwareChecked(bool nvenc, const QString &message);
     void previewFrame(const QImage &image);     // ~15 per second while previewing, 640x360
+    void previewFailed(const QString &why);    // preview failure leaves the recording state alone
     void waitingForUser(const QString &what);   // e.g. the screen picker is open
     void started();                             // frames are really being recorded
     void failed(const QString &why);            // nothing is recording any more

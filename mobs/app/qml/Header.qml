@@ -19,7 +19,7 @@ Item {
             width: proLabel.implicitWidth + 24; height: 30; radius: 15
             color: App.pro ? Omarchy.accent : "transparent"
             border.color: App.pro || proHover.hovered ? Omarchy.accent : Omarchy.selection; border.width: 1
-            Txt { id: proLabel; anchors.centerIn: parent; text: "pro"; font.pixelSize: 13; font.bold: App.pro; color: App.pro ? Omarchy.accentForeground : Omarchy.secondaryText }
+            Txt { id: proLabel; anchors.centerIn: parent; text: App.pro ? "close EXPERT" : "EXPERT"; font.pixelSize: 13; font.bold: App.pro; color: App.pro ? Omarchy.accentForeground : Omarchy.secondaryText }
             HoverHandler { id: proHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: App.setPro(!App.pro) }
         }

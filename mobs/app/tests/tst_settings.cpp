@@ -6,12 +6,53 @@
 class SettingsTests : public QObject {
     Q_OBJECT
 private slots:
+    void audioChoicesPersistAndInvalidGainsAreIgnored() {
+        QTemporaryDir d; const QString path = d.path() + "/audio.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QCOMPARE(c.micDevice(), QString("default")); QCOMPARE(c.micGainDb(), 0);
+          QCOMPARE(c.desktopGainDb(), -6); QVERIFY(!c.desktopOn()); QVERIFY(!c.hardware());
+          c.setMicDevice("usb"); c.setMicGainDb(-9); c.setDesktopOn(true);
+          c.setDesktopDevice("speakers.monitor"); c.setDesktopGainDb(3); c.setHardware(true);
+          c.setMicGainDb(-61); c.setDesktopGainDb(13); c.setMicDevice(""); }
+        QSettings s(path, QSettings::IniFormat); Settings c(&s);
+        QCOMPARE(c.micDevice(), QString("usb")); QCOMPARE(c.micGainDb(), -9);
+        QCOMPARE(c.desktopDevice(), QString("speakers.monitor")); QCOMPARE(c.desktopGainDb(), 3);
+        QVERIFY(c.desktopOn()); QVERIFY(c.hardware());
+        const auto a = c.audioSpec(); QCOMPARE(a.micDevice, c.micDevice()); QVERIFY(a.desktop);
+        c.setMicGainDb(-60); QCOMPARE(c.micGainDb(), -60);
+        c.setDesktopGainDb(12); QCOMPARE(c.desktopGainDb(), 12);
+    }
+    void customEncodingPersistsAndQualityPresetsClearIt() {
+        QTemporaryDir d; const QString path = d.path() + "/s.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QCOMPARE(c.crf(), 23); QCOMPARE(c.encoderPreset(), QString("veryfast"));
+          c.setCrf(17); c.setEncoderPreset("fast"); }
+        QSettings s(path, QSettings::IniFormat); Settings c(&s);
+        QCOMPARE(c.crf(), 17); QVERIFY(c.customQuality()); QCOMPARE(c.encoderPreset(), QString("fast"));
+        c.setQuality(1); QCOMPARE(c.crf(), 23); QVERIFY(!c.customQuality());
+        c.setCrf(0); QCOMPARE(c.crf(), 0); c.setCrf(51); QCOMPARE(c.crf(), 51);
+        c.setCrf(52); c.setCrf(-2); QCOMPARE(c.crf(), 51);
+        c.setEncoderPreset("unsafe"); QCOMPARE(c.encoderPreset(), QString("fast"));
+        c.resetEncoding(); QCOMPARE(c.crf(), 23); QCOMPARE(c.encoderPreset(), QString("veryfast"));
+        Settings again(&s); QCOMPARE(again.crf(), 23); QVERIFY(!again.customQuality());
+    }
+    void corruptedExpertSettingsFallBackToDefaults() {
+        QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat);
+        s.setValue("micGainDb", 999); s.setValue("desktopGainDb", "bad");
+        s.setValue("micDevice", ""); s.setValue("desktopDevice", "");
+        s.setValue("customCrf", "broken"); s.setValue("encoderPreset", "bad");
+        Settings c(&s); QCOMPARE(c.micGainDb(), 0); QCOMPARE(c.desktopGainDb(), -6);
+        QCOMPARE(c.micDevice(), QString("default")); QCOMPARE(c.desktopDevice(), QString("default"));
+        QCOMPARE(c.crf(), 23); QVERIFY(!c.customQuality());
+        QCOMPARE(c.encoderPreset(), QString("veryfast"));
+    }
     void defaultsAreBalancedMicOnReviewOnDefaultFolder() {
         QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat);
         Settings c(&s);
         QCOMPARE(c.quality(), 1);
         QVERIFY(c.micOn());
         QVERIFY(c.reviewAfter());
+        QVERIFY(c.splash());                                              // the opening animation is on until someone turns it off
         QVERIFY(c.folderIsDefault());
         QCOMPARE(c.folder(), Settings::defaultFolder());
         QVERIFY(c.folder().endsWith("/mobs"));
@@ -19,11 +60,12 @@ private slots:
     void everythingIsRemembered() {
         QTemporaryDir d; const QString f = d.path() + "/s.ini"; const QString out = d.path() + "/takes";
         { QSettings s(f, QSettings::IniFormat); Settings c(&s);
-          c.setQuality(2); c.setMicOn(false); c.setReviewAfter(false); c.setFolder(out); }
+          c.setQuality(2); c.setMicOn(false); c.setReviewAfter(false); c.setSplash(false); c.setFolder(out); }
         QSettings s2(f, QSettings::IniFormat); Settings c(&s2);
         QCOMPARE(c.quality(), 2);
         QVERIFY(!c.micOn());
         QVERIFY(!c.reviewAfter());
+        QVERIFY(!c.splash());
         QCOMPARE(c.folder(), out);
         QVERIFY(!c.folderIsDefault());
         QVERIFY(QFileInfo(out).isDir());                                  // choosing a folder creates it

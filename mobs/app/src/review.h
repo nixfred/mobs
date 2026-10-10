@@ -13,6 +13,7 @@
 class Review : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool open READ isOpen NOTIFY openChanged)
+    Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(QUrl clip READ clip NOTIFY openChanged)
     Q_PROPERTY(QString title READ title NOTIFY openChanged)
     Q_PROPERTY(double duration READ duration NOTIFY openChanged)
@@ -32,6 +33,7 @@ public:
     explicit Review(QObject *parent = nullptr);
     ~Review() override;
     bool isOpen() const { return m_open; }
+    bool loading() const { return m_probe != nullptr; }
     QUrl clip() const { return QUrl::fromLocalFile(m_path); }
     QString title() const;
     double duration() const { return m_duration; }
@@ -42,7 +44,7 @@ public:
     double keptDuration() const { return edit::keptDuration(m_edit); }
     bool canUndo() const { return !m_undo.isEmpty() && !m_gesture; }
     bool canRedo() const { return !m_redo.isEmpty() && !m_gesture; }
-    bool unsaved() const { return m_open && changed() && m_edit != m_savedEdit; }
+    bool unsaved() const { return m_open && changed() && edit::kept(m_edit) != edit::kept(m_savedEdit); }
     bool changed() const { return m_open && !edit::untouched(m_edit, m_duration); }
     bool saving() const { return m_export != nullptr; }
     double saveProgress() const { return m_progress; }
@@ -56,6 +58,7 @@ public:
     // "<dir>/<name> (edited).mp4", or " 2", " 3"... if that already exists.
     static QString editedPathFor(const QString &take);
 
+    // Starts asynchronous inspection; opened reports success once inspection finishes.
     Q_INVOKABLE bool open(const QString &path);
     Q_INVOKABLE void close();
     Q_INVOKABLE void split(double time);
@@ -69,6 +72,9 @@ public:
     Q_INVOKABLE void save();           // write the edited version beside the original; the original stays
     Q_INVOKABLE bool deleteTake();     // move the original (and its sidecar) to the trash
 signals:
+    void loadingChanged();
+    void opened(bool success);
+    void openFailed(const QString &message);
     void openChanged();
     void editChanged();
     void saveChanged();
@@ -77,6 +83,9 @@ private:
     void applyEdit(edit::Clips next);
     void setMessage(const QString &m);
     void finishSave(const QString &destination, const QString &error);
+    void finishOpen(QProcess *process, const QString &path, const QString &error = {});
+    void cancelOpen();
+    void releaseProbe(QProcess *process);
     QString m_path, m_message, m_savedPath, m_partial;
     bool m_open = false, m_audio = false, m_gesture = false, m_gestureRecorded = false;
     double m_duration = 0, m_progress = 0;
@@ -85,4 +94,5 @@ private:
     QList<edit::Clips> m_undo, m_redo;
     Thumbnails m_thumbs;
     QProcess *m_export = nullptr;
+    QProcess *m_probe = nullptr;
 };

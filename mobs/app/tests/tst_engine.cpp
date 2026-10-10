@@ -5,8 +5,10 @@
 #include <QProcess>
 #include <QSignalSpy>
 #include <QStandardPaths>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <limits>
 
 // A backend that records nothing: the test plays the part of libobs by emitting its signals.
 class FakeBackend : public RecorderBackend {
@@ -15,6 +17,8 @@ public:
     void pause(bool p) override { pauseCalls++; lastPause = p; }
     void end() override { ended++; }
     void setPreview(bool on, const RecordSpec &spec) override { previewCalls++; previewOn = on; previewSpec = spec; }
+    void setMicCheck(bool on, const AudioSpec &spec) override { checkCalls++; checking = on; checkedAudio = spec; }
+    int checkCalls = 0; bool checking = false; AudioSpec checkedAudio;
     int previewCalls = 0; bool previewOn = false; RecordSpec previewSpec;
     int began = 0, ended = 0, pauseCalls = 0, lastPick = 0;
     bool lastPause = false;
@@ -26,6 +30,99 @@ class EngineTests : public QObject {
     Q_OBJECT
     QTemporaryDir dir;
 private slots:
+    void immediateQuitIsOnlyAvailableWhileStopping() {
+        FakeBackend b; Engine e(&b, dir.path()); QSignalSpy quit(&e, &Engine::forceQuitRequested);
+        e.requestForceQuit(); QCOMPARE(quit.count(), 0);
+        e.start(1); e.requestForceQuit(); QCOMPARE(quit.count(), 0);
+        emit b.started(); e.requestForceQuit(); QCOMPARE(quit.count(), 0);
+        e.stop(); QCOMPARE(e.state(), QString("stopping"));
+        e.requestForceQuit(); QCOMPARE(quit.count(), 1);
+        emit b.finished({}); e.requestForceQuit(); QCOMPARE(quit.count(), 1);
+    }
+    void failedPictureCheckerDoesNotLeaveAProcessBehind() {
+        QTemporaryDir tools;
+        QFile stub(tools.path() + "/ffmpeg"); QVERIFY(stub.open(QIODevice::WriteOnly));
+        stub.write("#!/missing/mobs-test-interpreter\n"); stub.close();
+        QVERIFY(stub.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto previous = qgetenv("PATH");
+        const auto restore = qScopeGuard([&] { qputenv("PATH", previous); });
+        qputenv("PATH", tools.path().toUtf8());
+        QFile take(tools.path() + "/take.mp4"); QVERIFY(take.open(QIODevice::WriteOnly)); take.close();
+        FakeBackend b; Engine e(&b, dir.path());
+        emit b.finished(take.fileName());
+        QTRY_VERIFY_WITH_TIMEOUT(e.findChildren<QProcess *>().isEmpty(), 1000);
+    }
+    void micCheckStopsBeforeRecordingAndOptionsAreSnapshotted() {
+        FakeBackend b; Engine e(&b, dir.path()); AudioSpec a;
+        a.micDevice = "usb"; a.micGainDb = -9; a.desktop = true;
+        e.setAudioProvider([&] { return a; }); e.setHardwareProvider([] { return true; });
+        e.checkMic(true); QVERIFY(e.micChecking()); QVERIFY(b.checking);
+        QCOMPARE(b.checkedAudio.micDevice, QString("usb"));
+        e.start(1); QVERIFY(!e.micChecking()); QVERIFY(!b.checking);
+        QVERIFY(b.lastSpec.hardware); QVERIFY(e.recordingDesktop());
+        QCOMPARE(b.lastSpec.audio.micGainDb, -9);
+        a.micDevice = "changed"; a.desktop = false;
+        QCOMPARE(e.recordingMicDevice(), QString("usb")); QVERIFY(e.recordingDesktop());
+        const int calls = b.checkCalls; e.checkMic(true); QCOMPARE(b.checkCalls, calls);
+    }
+    void editorActionsClearAnIdlePromptButKeepLiveRecordingMessages() {
+        FakeBackend b; Engine e(&b, dir.path());
+        emit b.waitingForUser("save your edit"); e.clearIdleMessage(); QVERIFY(e.message().isEmpty());
+        e.start(1); emit b.waitingForUser("choose a screen"); e.clearIdleMessage();
+        QCOMPARE(e.message(), QString("choose a screen"));
+    }
+    void failedGuardStopsAnExistingMicCheck() {
+        FakeBackend b; Engine e(&b, dir.path()); QString problem;
+        e.setMicGuard([&] { return problem; }); e.checkMic(true);
+        problem = "unplugged"; e.checkMic(true);
+        QVERIFY(!e.micChecking()); QVERIFY(!b.checking); QCOMPARE(e.audioProblem(), problem);
+        e.checkMic(false); QVERIFY(e.audioProblem().isEmpty());
+        problem.clear(); e.checkMic(true); emit b.micCheckFailed("capture failed");
+        QVERIFY(!e.micChecking()); QCOMPARE(e.audioProblem(), QString("capture failed"));
+    }
+    void audioMetersSanitizeBadValuesAndHardwareResultsAreVisible() {
+        FakeBackend b; Engine e(&b, dir.path());
+        emit b.audioLevels(std::numeric_limits<double>::quiet_NaN(), 40, false, true, "desktop only");
+        QCOMPARE(e.micDb(), -60); QCOMPARE(e.desktopDb(), 12);
+        QVERIFY(!e.micFrames()); QVERIFY(e.desktopFrames());
+        QCOMPARE(e.audioProblem(), QString("desktop only"));
+        emit b.hardwareChecked(true, "available");
+        QVERIFY(e.hardwareKnown()); QVERIFY(e.nvencAvailable());
+        QCOMPARE(e.hardwareMessage(), QString("available"));
+    }
+    void recordingNamesDoNotOverwriteTakesOrSidecars() {
+        const QString stamp = "2026-10-10 00-00-00-123";
+        const QString first = Engine::recordingPathFor(dir.path(), stamp);
+        QFile f(first); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("original"); f.close();
+        const QString second = Engine::recordingPathFor(dir.path(), stamp);
+        QVERIFY(second != first);
+        QVERIFY(Review::writePauses(second, {1.0}));
+        const QString third = Engine::recordingPathFor(dir.path(), stamp);
+        QVERIFY(third != second && third != first);
+        QVERIFY(QFile::link(dir.path() + "/missing-target", third));
+        QVERIFY(Engine::recordingPathFor(dir.path(), stamp) != third);
+        QVERIFY(f.open(QIODevice::ReadOnly)); QCOMPARE(f.readAll(), QByteArray("original"));
+    }
+    void unsavedOrExportingReviewBlocksAllStarts() {
+        FakeBackend b; Engine e(&b, dir.path());
+        bool blocked = true;
+        e.setStartGuard([&] { return blocked ? QString("save your edit before recording") : QString(); });
+        e.start(1); e.toggle(1);
+        QCOMPARE(b.began, 0); QCOMPARE(e.state(), QString("idle"));
+        QVERIFY(e.message().contains("save your edit"));
+        blocked = false; e.toggle(1); QCOMPARE(b.began, 1);
+    }
+    void expertOptionsAndRecordingSummaryAreSnapshotted() {
+        FakeBackend b; Engine e(&b, dir.path());
+        bool mic = false;
+        e.setOptionsProvider([&] { return std::make_pair(17, mic); });
+        e.setPresetProvider([] { return QString("fast"); });
+        e.start(1);
+        QCOMPARE(b.lastSpec.crf, 17); QCOMPARE(b.lastSpec.encoderPreset, QString("fast"));
+        QVERIFY(!b.lastSpec.mic); QVERIFY(!e.recordingMic());
+        QCOMPARE(e.recordingFolder(), dir.path());
+        mic = true; QVERIFY(!e.recordingMic());
+    }
     void startGoesStartingThenRecording() {
         FakeBackend b; Engine e(&b, dir.path());
         QCOMPARE(e.state(), QString("idle"));
@@ -96,6 +193,7 @@ private slots:
         emit b.failed("disk full");
         QCOMPARE(e.state(), QString("idle"));
         const double t = e.elapsedSeconds();
+        QVERIFY(t >= 0.2);
         QTest::qWait(300);
         QCOMPARE(e.elapsedSeconds(), t);
     }
@@ -265,6 +363,13 @@ private slots:
         e.setPreview(false, 1); e.setPreview(false, 1);
         QCOMPARE(b.previewCalls, 0);
     }
+    void aPreviewFailureDoesNotEndARecording() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); emit b.started(); e.setPreview(true, 1);
+        emit b.previewFailed("preview unavailable");
+        QCOMPARE(e.state(), QString("recording")); QVERIFY(!e.previewing());
+        QCOMPARE(e.message(), QString("preview unavailable"));
+    }
     void previewNeverChangesTheRecordingState() {
         FakeBackend b; Engine e(&b, dir.path());
         e.setPreview(true, 1);
@@ -337,7 +442,7 @@ private slots:
         QCOMPARE(b.began, 0);
         QCOMPARE(e.state(), QString("idle"));
         QVERIFY(e.message().contains("cannot save to"));
-        QVERIFY(e.message().contains("pro"));                             // and says where to fix it
+        QVERIFY(e.message().contains("EXPERT"));                             // and says where to fix it
     }
     void withoutProvidersTheDefaultsApply() {
         FakeBackend b; Engine e(&b, dir.path());

@@ -142,6 +142,13 @@ void AppState::setPreview(bool on) {
 
 void AppState::setPro(bool open) {
     if (open == m_pro) return;
+    if (open) setCameraPanel(false);
+    else m_expertTab = 0;
     m_pro = open;
     emit proChanged();
+}
+
+void AppState::openAudio() {
+    m_expertTab = 2;
+    if (m_pro) emit proChanged(); else setPro(true);
 }

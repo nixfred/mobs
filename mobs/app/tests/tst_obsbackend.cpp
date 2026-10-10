@@ -4,10 +4,20 @@
 #include "placement.h"
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QMetaMethod>
 #include <QProcess>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <obs.h>
+#include <cmath>
+#include <cstring>
+#include <cstdio>
+
+// Integration fixtures never capture the real microphone.
+static RecordSpec silentSpec(int pick, const QString &path) {
+    RecordSpec spec; spec.mic = false; spec.pick = pick; spec.path = path; spec.mic = false; return spec;
+}
 
 static double durationOf(const QString &file) {
     QProcess p;
@@ -41,6 +51,31 @@ static int greenPixels(const QByteArray &f) {
     return n;
 }
 
+
+// RAII restores test overrides even if a Qt assertion returns early.
+struct AudioFixture {
+    QTemporaryDir dir;
+    AudioFixture() {
+        QProcess g; g.start("ffmpeg", {"-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=8", dir.path() + "/tone.wav"});
+        valid = g.waitForFinished(15000) && g.exitCode() == 0;
+        qputenv("MOBS_TEST_AUDIO", ("file:" + dir.path() + "/tone.wav").toUtf8());
+        qputenv("MOBS_TEST_DESKTOP_AUDIO", ("file:" + dir.path() + "/tone.wav").toUtf8());
+    }
+    ~AudioFixture() { qunsetenv("MOBS_TEST_AUDIO"); qunsetenv("MOBS_TEST_DESKTOP_AUDIO"); }
+    bool valid = false;
+};
+static bool received(const QSignalSpy &spy, int index) {
+    for (const auto &args : spy) if (args[index].toBool()) return true;
+    return false;
+}
+static double audioRms(const QString &file) {
+    QProcess p; p.start("ffmpeg", {"-nostdin", "-v", "error", "-ss", "0.5", "-i", file, "-t", "0.8", "-vn", "-ac", "1", "-f", "f32le", "-"});
+    if (!p.waitForFinished(15000) || p.exitCode()) return -1;
+    const auto bytes = p.readAllStandardOutput(); double sum = 0;
+    for (int i = 0; i + 4 <= bytes.size(); i += 4) { float sample; std::memcpy(&sample, bytes.constData() + i, 4); sum += sample * sample; }
+    return bytes.size() >= 4 ? std::sqrt(sum / (bytes.size() / 4)) : -1;
+}
+
 class ObsBackendTests : public QObject {
     Q_OBJECT
 private slots:
@@ -49,12 +84,124 @@ private slots:
         if (!QGuiApplication::platformName().contains("wayland")) QSKIP("needs QT_QPA_PLATFORM=wayland");
         qputenv("MOBS_TEST_SOURCE", "colour");   // no screen picker in a test
     }
+    void micCheckDeliversLevelsWithoutSavingOrOpeningVideoSources() {
+        AudioFixture fixture; QVERIFY(fixture.valid); ObsBackend b(fixture.dir.path() + "/token");
+        QSignalSpy levels(&b, &RecorderBackend::audioLevels), failed(&b, &RecorderBackend::micCheckFailed);
+        b.setMicCheck(true, AudioSpec{});
+        QTRY_VERIFY_WITH_TIMEOUT(received(levels, 2), 6000); QVERIFY(failed.isEmpty());
+        auto *mic = obs_get_output_source(1); QVERIFY(mic); obs_source_release(mic);
+        auto *video = obs_get_output_source(0); QVERIFY(!video);
+        QVERIFY(!obs_get_output_by_name("mobs recording"));
+        b.setMicCheck(false, AudioSpec{});
+        QVERIFY(!obs_get_output_source(1));
+        levels.clear(); QTest::qWait(300); QVERIFY(levels.isEmpty());
+    }
+    void missingAudioFramesAreExplained() {
+        AudioFixture fixture; QVERIFY(fixture.valid);
+        qputenv("MOBS_TEST_AUDIO", "file:/does/not/exist.wav");
+        ObsBackend b(fixture.dir.path() + "/token"); QSignalSpy levels(&b, &RecorderBackend::audioLevels);
+        b.setMicCheck(true, AudioSpec{});
+        QTRY_VERIFY_WITH_TIMEOUT(!levels.isEmpty() && levels.last()[4].toString().contains("not sending"), 6500);
+        b.setMicCheck(false, AudioSpec{});
+    }
+    void microphoneGainChangesTheSavedSound() {
+        AudioFixture fixture; QVERIFY(fixture.valid); double rms[2]{};
+        ObsBackend b(fixture.dir.path() + "/token");
+        for (int i = 0; i < 2; ++i) {
+            QSignalSpy levels(&b, &RecorderBackend::audioLevels), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+            auto spec = silentSpec(1, fixture.dir.path() + QString("/gain%1.mp4").arg(i));
+            spec.mic = true; spec.audio.micGainDb = i ? -12 : 0;
+            b.begin(spec); QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+            QTRY_VERIFY_WITH_TIMEOUT(received(levels, 2), 6000);
+            QTest::qWait(1500);
+            double peak = -60; for (const auto &args : levels) if (args[2].toBool()) peak = std::max(peak, args[0].toDouble());
+            QVERIFY2(std::abs(peak - (i ? -30 : -18)) < 2, qPrintable(QString("meter peak %1").arg(peak)));
+            b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+            QVERIFY(failed.isEmpty()); rms[i] = audioRms(spec.path); QVERIFY(rms[i] > 0.001);
+        }
+        const double ratio = rms[1] / rms[0];
+        QVERIFY2(ratio > 0.20 && ratio < 0.32, qPrintable(QString("-12 dB RMS ratio %1").arg(ratio)));
+    }
+    void desktopAudioWorksWithTheMicrophoneOff() {
+        AudioFixture fixture; QVERIFY(fixture.valid); ObsBackend b(fixture.dir.path() + "/token");
+        QSignalSpy levels(&b, &RecorderBackend::audioLevels), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        auto spec = silentSpec(1, fixture.dir.path() + "/desktop.mp4"); spec.audio.desktop = true;
+        b.begin(spec); QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(received(levels, 3), 6000);
+        QVERIFY(!received(levels, 2)); QVERIFY(!obs_get_output_source(1));
+        QTest::qWait(1500); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+        QVERIFY(failed.isEmpty()); QVERIFY(audioRms(spec.path) > 0.02);
+        QVERIFY(!obs_get_output_source(2));
+    }
+    void bothAudioSourcesMixIntoTheSavedTrack() {
+        AudioFixture fixture; QVERIFY(fixture.valid); ObsBackend b(fixture.dir.path() + "/token");
+        QSignalSpy levels(&b, &RecorderBackend::audioLevels), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        auto spec = silentSpec(1, fixture.dir.path() + "/mixed.mp4"); spec.mic = true; spec.audio.desktop = true;
+        b.begin(spec); QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(received(levels, 2) && received(levels, 3), 6000);
+        QTest::qWait(1500); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+        QVERIFY(failed.isEmpty()); QVERIFY(audioRms(spec.path) > 0.02);
+    }
+    void hardwareChoiceEitherRecordsOrExplainsItsUnavailability() {
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy checked(&b, &RecorderBackend::hardwareChecked); b.checkHardware(); QCOMPARE(checked.count(), 1);
+        qInfo() << "NVIDIA H.264 available:" << checked.first()[0].toBool();
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        auto spec = silentSpec(1, d.path() + "/gpu.mp4"); spec.hardware = true;
+        b.begin(spec);
+        if (!checked.first()[0].toBool()) {
+            QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 15000);
+            QVERIFY(failed.first()[0].toString().contains("NVIDIA")); QVERIFY(started.isEmpty());
+            return;
+        }
+        for (int take = 0; take < 3; ++take) {
+            if (take) { started.clear(); finished.clear(); spec.hardware = take != 1;
+                spec.path = d.path() + QString("/switch%1.mp4").arg(take); b.begin(spec); }
+            QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+            QTest::qWait(1500); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+            QVERIFY2(failed.isEmpty(), qPrintable(failed.isEmpty() ? QString() : failed.first()[0].toString()));
+            QVERIFY(durationOf(spec.path) > 1); QVERIFY(stillRgb(spec.path).size() == 192 * 108 * 3);
+        }
+    }
+    void aFileCreatedWhileCaptureStartsIsNeverOverwritten() {
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), failed(&b, &RecorderBackend::failed);
+        const QString path = d.path() + "/conflict.mp4";
+        b.begin(silentSpec(1, path));
+        QFile existing(path); QVERIFY(existing.open(QIODevice::WriteOnly)); existing.write("keep my recording"); existing.close();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 5000);
+        QVERIFY(failed.first()[0].toString().contains("already exists")); QVERIFY(started.isEmpty());
+        QVERIFY(existing.open(QIODevice::ReadOnly)); QCOMPARE(existing.readAll(), QByteArray("keep my recording"));
+    }
+    void expertEncodingProducesAPlayableFile() {
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        auto spec = silentSpec(1, d.path() + "/expert.mp4"); spec.crf = 17; spec.encoderPreset = "fast";
+        b.begin(spec); QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTest::qWait(1200); b.end(); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+        QVERIFY(failed.isEmpty()); QVERIFY(durationOf(spec.path) > 1.0);
+    }
+    void unexpectedOutputFailureIsReported() {
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), failed(&b, &RecorderBackend::failed), finished(&b, &RecorderBackend::finished);
+        b.begin(silentSpec(1, d.path() + "/error.mp4"));
+        QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        auto *output = obs_get_output_by_name("mobs recording");
+        QVERIFY(output);
+        obs_output_set_last_error(output, "test disk full");
+        obs_output_signal_stop(output, OBS_OUTPUT_NO_SPACE);
+        obs_output_release(output);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 3000);
+        QVERIFY(failed.first().first().toString().contains("test disk full"));
+        QVERIFY(finished.isEmpty());
+    }
     void recordsPausesAndSavesAValidFile() {
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
         const QString path = d.path() + "/t.mp4";
-        b.begin(RecordSpec{1, path, {}});
+        b.begin(silentSpec(1, path));
         QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
         QTest::qWait(1500);
         b.pause(true);  QTest::qWait(1500);
@@ -74,7 +221,7 @@ private slots:
         for (int i = 0; i < 2; ++i) {
             QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished);
             const QString path = d.path() + QString("/r%1.mp4").arg(i);
-            b.begin(RecordSpec{1, path, {}});
+            b.begin(silentSpec(1, path));
             QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
             QTest::qWait(1200);
             b.end();
@@ -83,12 +230,11 @@ private slots:
         }
     }
     // ---- webcam placement, checked on the real pixels of the saved file -------------------------------------------------
-    QByteArray recordWithCamera(const QString &dir, int pick, int corner, int size) {
+    QByteArray recordWithCamera(ObsBackend &b, const QString &dir, int pick, int corner, int size) {
         qputenv("MOBS_TEST_COLOUR", "FF0000FF");           // red "screen"
         qputenv("MOBS_TEST_CAMERA", "colour");              // green "camera"
-        ObsBackend b(dir + "/token");
         QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
-        RecordSpec spec; spec.pick = pick; spec.path = dir + QString("/cam-%1-%2-%3.mp4").arg(pick).arg(corner).arg(size);
+        RecordSpec spec; spec.mic = false; spec.pick = pick; spec.path = dir + QString("/cam-%1-%2-%3.mp4").arg(pick).arg(corner).arg(size);
         spec.camera.path = "test"; spec.camera.corner = corner; spec.camera.size = size;
         b.begin(spec);
         started.wait(15000);
@@ -100,9 +246,9 @@ private slots:
         return stillRgb(spec.path);
     }
     void theCameraLandsInTheChosenCorner() {
-        QTemporaryDir d;
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
         for (int corner = 0; corner < 4; ++corner) {
-            const QByteArray f = recordWithCamera(d.path(), 2, corner, 1);
+            const QByteArray f = recordWithCamera(b, d.path(), 2, corner, 1);
             QVERIFY2(f.size() == 192 * 108 * 3, qPrintable(QString("no frame for corner %1").arg(corner)));
             const QRect r = Placement::cameraRect(corner, 1);
             QVERIFY2(greenAt(f, r.center().x(), r.center().y()), qPrintable(QString("corner %1: camera not at %2,%3").arg(corner).arg(r.center().x()).arg(r.center().y())));
@@ -113,10 +259,10 @@ private slots:
         }
     }
     void biggerSizesCoverMoreOfTheScreen() {
-        QTemporaryDir d;
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
         int prev = 0;
         for (int size = 0; size < 3; ++size) {
-            const QByteArray f = recordWithCamera(d.path(), 2, 3, size);
+            const QByteArray f = recordWithCamera(b, d.path(), 2, 3, size);
             QVERIFY(f.size() == 192 * 108 * 3);
             const int n = greenPixels(f);
             QVERIFY2(n > prev, qPrintable(QString("size %1 covers %2 px, previous %3").arg(size).arg(n).arg(prev)));
@@ -124,8 +270,8 @@ private slots:
         }
     }
     void justMyCameraFillsTheFrame() {
-        QTemporaryDir d;
-        const QByteArray f = recordWithCamera(d.path(), 3, 3, 1);
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        const QByteArray f = recordWithCamera(b, d.path(), 3, 3, 1);
         QVERIFY(f.size() == 192 * 108 * 3);
         for (QPoint p : {QPoint(100, 100), QPoint(960, 540), QPoint(1820, 980), QPoint(100, 980), QPoint(1820, 100)})
             QVERIFY2(greenAt(f, p.x(), p.y()), qPrintable(QString("not camera at %1,%2").arg(p.x()).arg(p.y())));
@@ -140,7 +286,7 @@ private slots:
         qputenv("MOBS_TEST_CAMERA", ("video:" + clip).toUtf8());
         ObsBackend b(d.path() + "/token");
         QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
-        RecordSpec spec; spec.pick = 3; spec.path = d.path() + "/fill.mp4"; spec.camera.path = "test";
+        RecordSpec spec; spec.mic = false; spec.pick = 3; spec.path = d.path() + "/fill.mp4"; spec.camera.path = "test";
         b.begin(spec);
         started.wait(15000);
         QVERIFY2(!started.isEmpty(), "never started");
@@ -173,7 +319,7 @@ private slots:
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy frames(&b, &RecorderBackend::previewFrame);
-        RecordSpec spec; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 3; spec.camera.size = 1;
+        RecordSpec spec; spec.mic = false; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 3; spec.camera.size = 1;
         b.setPreview(true, spec);
         QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 5, 8000);                 // frames really arrive, repeatedly
         QImage f = frameFrom(frames);
@@ -198,7 +344,7 @@ private slots:
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy frames(&b, &RecorderBackend::previewFrame);
-        RecordSpec spec; spec.pick = 1;
+        RecordSpec spec; spec.mic = false; spec.pick = 1;
         b.setPreview(true, spec);
         QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 3, 8000);
         b.setPreview(false, spec);
@@ -212,7 +358,7 @@ private slots:
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy frames(&b, &RecorderBackend::previewFrame), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
-        RecordSpec spec; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 1; spec.camera.size = 1;
+        RecordSpec spec; spec.mic = false; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 1; spec.camera.size = 1;
         b.setPreview(true, spec);
         QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 3, 8000);
         spec.path = d.path() + "/with-preview.mp4";
@@ -240,7 +386,7 @@ private slots:
         ObsBackend b(d.path() + "/token");
         for (int i = 0; i < 2; ++i) {                                         // twice: nothing may leak between recordings
             QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished);
-            RecordSpec spec; spec.pick = 1; spec.path = d.path() + QString("/p%1.mp4").arg(i);
+            RecordSpec spec; spec.mic = false; spec.pick = 1; spec.path = d.path() + QString("/p%1.mp4").arg(i);
             b.begin(spec);
             started.wait(15000);
             QVERIFY(!started.isEmpty());
@@ -251,11 +397,10 @@ private slots:
         }
     }
     // ---- the quality setting must really change the file ------------------------------------------------------------
-    qint64 recordedSize(const QString &dir, int crf, const QString &clip) {
+    qint64 recordedSize(ObsBackend &b, const QString &dir, int crf, const QString &clip) {
         qputenv("MOBS_TEST_CAMERA", ("video:" + clip).toUtf8());
-        ObsBackend b(dir + "/token");
         QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
-        RecordSpec spec; spec.pick = 3; spec.camera.path = "test"; spec.crf = crf; spec.path = dir + QString("/q%1.mp4").arg(crf);
+        RecordSpec spec; spec.mic = false; spec.pick = 3; spec.camera.path = "test"; spec.crf = crf; spec.path = dir + QString("/q%1.mp4").arg(crf);
         b.begin(spec);
         started.wait(15000);
         if (started.isEmpty()) return -1;
@@ -269,8 +414,9 @@ private slots:
         const QString clip = d.path() + "/busy.mp4";
         QProcess g; g.start("ffmpeg", {"-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30", "-t", "20", "-pix_fmt", "yuv420p", clip});
         QVERIFY(g.waitForFinished(30000) && g.exitCode() == 0);
-        const qint64 small = recordedSize(d.path(), 32, clip);                // quality "small"
-        const qint64 large = recordedSize(d.path(), 16, clip);                // quality "high"
+        ObsBackend b(d.path() + "/token");
+        const qint64 small = recordedSize(b, d.path(), 32, clip);                // quality "small"
+        const qint64 large = recordedSize(b, d.path(), 16, clip);                // quality "high"
         QVERIFY2(small > 0 && large > 0, "a recording failed");
         QVERIFY2(large > small * 1.3, qPrintable(QString("high quality %1 bytes is not clearly bigger than small %2").arg(large).arg(small)));
     }
@@ -279,7 +425,7 @@ private slots:
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy failed(&b, &RecorderBackend::failed), started(&b, &RecorderBackend::started);
-        RecordSpec spec; spec.pick = 3; spec.path = d.path() + "/x.mp4"; spec.camera.path = "/dev/does-not-exist";
+        RecordSpec spec; spec.mic = false; spec.pick = 3; spec.path = d.path() + "/x.mp4"; spec.camera.path = "/dev/does-not-exist";
         b.begin(spec);
         failed.wait(30000);
         QCOMPARE(failed.count(), 1);
@@ -291,11 +437,32 @@ private slots:
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");
         QSignalSpy finished(&b, &RecorderBackend::finished);
-        b.begin(RecordSpec{1, d.path() + "/c.mp4", {}});
+        b.begin(silentSpec(1, d.path() + "/c.mp4"));
         b.end();                                  // immediately, before the first poll
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
         QVERIFY(finished.first().first().toString().isEmpty() || QFileInfo(finished.first().first().toString()).exists());
     }
 };
-QTEST_MAIN(ObsBackendTests)
+int main(int argc, char **argv) {
+    QGuiApplication app(argc, argv);
+    ObsBackendTests tests;
+    // libobs leaves plugin DSOs loaded at shutdown. NVENC retains CUDA state across that
+    // boundary, so repeated startup/shutdown in one process is unsupported. Each scenario
+    // matches MOBS: one backend lifetime, with repeated takes explicitly tested inside it.
+    if (argc == 1 && qEnvironmentVariable("MOBS_LIBOBS_TEST") == "1" && app.platformName().contains("wayland")) {
+        const auto *meta = tests.metaObject(); int count = 0;
+        for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+            const auto method = meta->method(i); const auto name = method.name();
+            if (method.parameterCount() || method.returnType() != QMetaType::Void || name == "initTestCase" || name == "cleanupTestCase") continue;
+            QProcess child; child.start(app.applicationFilePath(), {QString::fromLatin1(name)});
+            if (!child.waitForFinished(90000)) { child.kill(); child.waitForFinished(2000); qCritical() << "libobs scenario timed out:" << name; return 1; }
+            const auto out = child.readAllStandardOutput(), err = child.readAllStandardError();
+            std::fwrite(out.constData(), 1, out.size(), stdout); std::fwrite(err.constData(), 1, err.size(), stderr);
+            if (child.exitStatus() != QProcess::NormalExit || child.exitCode()) return 1;
+            ++count;
+        }
+        std::printf("%d isolated libobs scenarios passed\n", count); return 0;
+    }
+    return QTest::qExec(&tests, argc, argv);
+}
 #include "tst_obsbackend.moc"

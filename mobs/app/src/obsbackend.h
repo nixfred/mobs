@@ -12,6 +12,8 @@ struct obs_output;
 struct obs_encoder;
 struct obs_scene_item;
 struct video_data;
+struct calldata;
+struct obs_volmeter;
 
 // Records with libobs running INSIDE this process (ADR 0006): no OBS application, nothing hidden.
 // Rules proven in spike 4: platform before obs_startup, engine plugins by name, destroy queue before shutdown.
@@ -29,6 +31,8 @@ public:
     void pause(bool paused) override;
     void end() override;
     void setPreview(bool on, const RecordSpec &spec) override;
+    void setMicCheck(bool on, const AudioSpec &audio) override;
+    void checkHardware() override;
 private:
     enum Phase { Off, Waiting, Running, Stopping };
     bool ensureStarted(QString *error);
@@ -37,6 +41,11 @@ private:
     void dropGraph();
     bool startOutput(const RecordSpec &spec, QString *error);
     void stopOutput();
+    bool startMic(const AudioSpec &audio, QString *error);
+    void stopAudio();
+    void pollAudio();
+    static void micLevel(void *, const float *, const float *, const float *);
+    static void desktopLevel(void *, const float *, const float *, const float *);
     bool sourcesReady() const;
     void poll();
     void fail(const QString &why);
@@ -44,6 +53,8 @@ private:
     void addPreviewCallback();
     void removePreviewCallback();
     void onRawFrame(video_data *frame);
+    static void outputStopped(void *self, calldata *data);
+    std::atomic<int> m_stopCode{1}; // 1 means no stop signal yet (libobs stop codes are <= 0)
     static void rawFrameCb(void *self, video_data *frame);
 
     QString m_tokenFile, m_path;
@@ -53,7 +64,12 @@ private:
     int m_graphPick = 0;
     QString m_graphCamera;
     Phase m_phase = Off;
-    QTimer m_poll;
+    QTimer m_poll, m_audioTick;
+    obs_source *m_desktop = nullptr;
+    obs_volmeter *m_micMeter = nullptr, *m_desktopMeter = nullptr;
+    std::atomic<float> m_micDb{-60}, m_desktopDb{-60};
+    std::atomic<qint64> m_micFrameAt{0}, m_desktopFrameAt{0};
+    qint64 m_audioStarted = 0;
     QElapsedTimer m_waited, m_screenReady;
     obs_scene *m_scene = nullptr;
     obs_scene_item *m_item = nullptr, *m_camItem = nullptr;

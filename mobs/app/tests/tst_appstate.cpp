@@ -7,6 +7,14 @@
 class AppStateTests : public QObject {
     Q_OBJECT
 private slots:
+    void audioShortcutOpensTheRightPageAndCloseResetsIt() {
+        QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat); AppState a(&s);
+        QSignalSpy changed(&a, &AppState::proChanged);
+        a.openAudio(); QVERIFY(a.pro()); QCOMPARE(a.expertTab(), 2); QCOMPARE(changed.count(), 1);
+        a.setPro(false); QCOMPARE(a.expertTab(), 0);
+        a.setPro(true); QCOMPARE(a.expertTab(), 0);
+        a.openAudio(); QCOMPARE(a.expertTab(), 2);
+    }
     void newUserStartsOnChoose() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
         AppState a(&s);
