@@ -16,7 +16,7 @@ find_package(libobs REQUIRED)
 qt_policy(SET QTP0001 NEW)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
-add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
+add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/pipcontroller.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
 target_include_directories(mobs-core PUBLIC src ${MONOLOGUE_SRC})
 target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Multimedia OBS::libobs)
 
@@ -30,10 +30,10 @@ qt_add_qml_module(mobs
     qml/Main.qml qml/Txt.qml qml/Glyph.qml qml/Key.qml qml/Chip.qml qml/Card.qml
     qml/Header.qml qml/Footer.qml qml/ChooseScreen.qml qml/ReadyScreen.qml qml/RecordingScreen.qml qml/CameraPanel.qml qml/PreviewView.qml qml/ReviewScreen.qml qml/Button.qml qml/ProDrawer.qml qml/Toggle.qml qml/AudioPage.qml qml/LevelMeter.qml qml/DevicePicker.qml ${MONOLOGUE_SRC}/EditBar.qml
 )
-qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml)   # the opening screen
+qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml)   # the opening screen, and the webcam window
 target_link_libraries(mobs PRIVATE mobs-core)
 
-foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog)
+foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller)
   add_executable(tst_${t} tests/tst_${t}.cpp)
   target_link_libraries(tst_${t} PRIVATE mobs-core Qt6::Test)
   # QTest pulls all of QtCore, which trips GCC 16 over Qt's own QBitArray (same flag Monologue uses).

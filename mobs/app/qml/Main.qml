@@ -130,6 +130,7 @@ Window {
         }
     }
     SplashScreen { id: splash }
+    PipWindow { id: pipWindow }
     Item {
         id: keyboard
         focus: true

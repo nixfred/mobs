@@ -714,6 +714,34 @@ private slots:
         if (kbps == -4) QSKIP("no NVIDIA H.264 on this machine");
         QVERIFY2(kbps > 2300 && kbps < 3800, qPrintable(QString("asked 3000 kbps (+128 audio), the server got %1").arg(kbps)));
     }
+    // ---- the webcam as a WINDOW on the screen: libobs captures only the screen, which already contains it
+    void inPipModeTheWebcamIsNotPartOfTheCapturedPictureAndNoCameraIsOpened() {
+        qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");      // red screen; a green webcam that must NOT appear
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.mic = false; spec.pick = 2; spec.path = d.path() + "/pip.mp4"; spec.camera.path = "test"; spec.camera.pip = true;
+        b.begin(spec); started.wait(20000); QVERIFY(!started.isEmpty());
+        QVERIFY(!obs_get_source_by_name("camera") && !obs_get_source_by_name("test camera"));   // no camera source exists at all
+        QTest::qWait(1500); b.end(); finished.wait(20000); QVERIFY(failed.isEmpty());
+        const QByteArray still = stillRgb(spec.path);
+        QCOMPARE(greenPixels(still), 0);                                                         // no webcam composited in
+        QVERIFY(redAt(still, 262, 161) && redAt(still, 1657, 918) && redAt(still, 960, 540));    // the whole picture is the screen, corners included
+    }
+    // switching the window mode on or off rebuilds the picture (a camera source appears / goes) without a restart
+    void turningTheWebcamWindowOffBringsTheWebcamBackIntoThePicture() {
+        qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        RecordSpec spec; spec.mic = false; spec.pick = 2; spec.camera.path = "test"; spec.camera.pip = true;
+        QSignalSpy frames(&b, &RecorderBackend::previewFrame);
+        b.setPreview(true, spec);
+        for (int waited = 0; frames.count() < 3 && waited < 8000; waited += 100) QTest::qWait(100);
+        QVERIFY(frames.count() >= 3); QVERIFY(!obs_get_source_by_name("camera") && !obs_get_source_by_name("test camera"));
+        spec.camera.pip = false; frames.clear();
+        b.setPreview(true, spec);                                                                 // the toggle in EXPERT
+        for (int waited = 0; frames.count() < 3 && waited < 8000; waited += 100) QTest::qWait(100);
+        QVERIFY(frames.count() >= 3);
+        auto *cam = obs_get_source_by_name("test camera"); QVERIFY(cam); obs_source_release(cam);
+    }
     void cancelBeforeStartIsClean() {
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");

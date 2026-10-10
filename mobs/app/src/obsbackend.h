@@ -86,6 +86,7 @@ private:
     obs_source *m_guest = nullptr, *m_bg = nullptr;
     obs_scene_item *m_guestItem = nullptr, *m_bgItem = nullptr;
     int m_graphPick = 0;
+    bool m_graphPip = false;
     QString m_graphCamera;
     RecordSpec m_previewSpec;               // the last picture asked for, so "change screen" can rebuild it
     Phase m_phase = Off;

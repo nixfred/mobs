@@ -87,9 +87,15 @@ the ready screen).
 - **It shares a whole screen, never a window or a dragged region.** "My screen" and "screen + me" ask the portal for monitors only (OBS's `pipewire-desktop-capture-source`),
   so you can **change workspaces and the stream follows**. A window or a region was what once made half a picture and a black rest. Only "the show" may pick a window.
   The choice is remembered (`~/.config/mobs/screen-token-desktop`); **the screen chip on the ready screen ("eDP-1 1920x1080 (change)")** forgets it and asks again.
-- **Drag your webcam, even while you are live.** Over the live picture, press on the webcam and drag it anywhere inside the frame; it moves in the broadcast as you move it,
-  so you can uncover whatever was under it and put it back (or tap a corner in the camera panel to snap it there). Releasing remembers the place. The default is the **top-right** corner.
-  Dragging is applied by the backend in the middle of a take (`ObsBackend::applyPlacement` no longer waits for the take to end); it is only for "screen + me".
+- **The webcam is a picture-in-picture WINDOW on your screen, and you move it with SUPER + drag, even while you are live** (Fred, 2026-10-10: "capture the entire screen and put
+  the webcam in a pip and allow me to SUPER drag it around during live"). In "screen + me" MOBS captures the **entire screen** and shows your camera in a small window
+  (`qml/PipWindow.qml`, a Qt Multimedia camera view). On Hyprland, `PipController` floats it, **pins it to every workspace** (so changing workspaces keeps you in the stream),
+  puts it top-right of the usable area, remembers where you leave it, and hands the keyboard straight back to what you were doing. Because it is a real window, Omarchy's own
+  **SUPER + left-drag moves it and SUPER + right-drag resizes it**, in any app, mid-broadcast; whatever is on your screen, including the window, is the picture.
+  It shows whenever the picture is on (ready screen with the preview on, armed, or a take) and goes when it goes. MOBS finds its OWN window by title **and process id**, so it can
+  never grab another window. In this mode libobs opens no camera of its own (one open camera, not two). EXPERT > recording has the toggle "webcam in a window on the screen"; with it off
+  the webcam is composited into the picture by libobs instead, and the older **drag handle over the live picture** applies (it moves in the broadcast live, and a corner tap snaps it back).
+  Without Hyprland the window is an ordinary window to move yourself. **Keep MOBS's own window off the captured screen** (another workspace or monitor), or the preview shows a tunnel.
 - **GO LIVE to X is always a bold red button** beside Record, whether or not a stream key is saved: without one it opens EXPERT > live (the key is per machine).
 
 ## The log
@@ -217,7 +223,7 @@ Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "curre
 
 Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
 The show: `MOBS_TEST_GUEST=colour` (a blue stand-in) or `video:/path.mp4` (a file) replaces the guest's window dialog in tests; `MOBS_TEST_GUEST_COLOUR` sets the colour. Script step `guestcrop=EDGE:PERCENT` (0 left, 1 top, 2 right, 3 bottom), `click=NAME` also finds items a Repeater made, and `expect=guestCrop:L/T/R/B`.
-Logging: `MOBS_LOG_FILE=/path` (tests use a throwaway one). Dragging: script steps `dragcam=DX:DY` (a real press, move and release on the webcam handle), `movecam=X:Y` (0..1), and `expect=camMoved:0|1`.
+Logging: `MOBS_LOG_FILE=/path` (tests use a throwaway one). Webcam window: `expect=pipWanted:0|1`, `expect=pipShown:0|1`; the stand-in picture (no camera opened) is used with `MOBS_TEST_CAMERA` or fake cameras. Dragging (window-off mode): script steps `dragcam=DX:DY` (a real press, move and release on the webcam handle), `movecam=X:Y` (0..1), and `expect=camMoved:0|1`.
 Mock-ups: `MOBS_FAKE_PREVIEW=/path.png` (fake backend only) serves that picture in the live preview, so the REAL window can be drawn with a stand-in picture inside it (see `docs/app/mockup-golive-board.png`: stand-in desktop and webcam, real layout, corner and windows).
 Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted runs use a throwaway one). Script steps `arm=0/1`, `streamurl=`, `streamkey=`, `streamquality=N`, and with the fake backend `streamdrop` / `streamretry` / `streamback`; conditions `expect=armed|broadcasting|streamReady:0|1`, `expect=streamState:live` and `expect=streamProblem:text`. EXPERT tab 6 is the live page (`tab=0..6`).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.

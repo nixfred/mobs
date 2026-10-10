@@ -183,7 +183,7 @@ void ObsBackend::applyPlacement(const RecordSpec &spec) {
 }
 
 bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
-    if (m_graphUp && spec.pick == m_graphPick && spec.camera.path == m_graphCamera) {
+    if (m_graphUp && spec.pick == m_graphPick && spec.camera.path == m_graphCamera && spec.camera.pip == m_graphPip) {
         applyPlacement(spec);                          // moving the webcam needs no new scene (nor a new picker), so it may happen mid-take or mid-broadcast
         return true;
     }
@@ -193,7 +193,8 @@ bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
     }
     m_scene = obs_scene_create("mobs");
     m_needScreen = spec.pick != 3;
-    m_needCamera = spec.pick != 1;
+    m_needCamera = spec.pick != 1 && !(spec.pick == 2 && spec.camera.pip);   // in pip mode the webcam is a window on the screen, not part of this picture
+    m_graphPip = spec.camera.pip;
     m_needGuest = spec.pick == 4;
     m_testGuest = false; m_guestTokenSaved = m_mainTokenSaved = false; m_cropApplied[0] = -1; m_cropW = m_cropH = 0;
     if (m_needGuest) {   // a quiet dark backdrop behind the three pictures, like a call's gallery
@@ -412,6 +413,7 @@ void ObsBackend::dropGraph() {
     m_graphUp = false;
     m_graphPick = 0;
     m_graphCamera.clear();
+    m_graphPip = false;
 }
 
 bool ObsBackend::sourcesReady() const {

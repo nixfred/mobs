@@ -62,6 +62,7 @@ Rectangle {
                     Toggle { label: "open editor after recording"; on: Prefs.reviewAfter; onToggled: Prefs.setReviewAfter(!Prefs.reviewAfter) }
                     Toggle { label: "live preview"; on: App.preview; onToggled: App.setPreview(!App.preview) }
                     Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Preview starts capture and turns on the camera in camera modes. Screen capture may open the system picker."; font.pixelSize: 12; color: Omarchy.tertiaryText }
+                    Toggle { label: "webcam in a window on the screen (SUPER + drag)"; on: Prefs.pip; onToggled: Prefs.setPip(!Prefs.pip) }
                 }
                 Column {
                     width: (parent.width - parent.spacing) / 2; spacing: 12

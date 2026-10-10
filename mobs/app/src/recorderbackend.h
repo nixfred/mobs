@@ -8,6 +8,7 @@ struct CameraSpec {
     bool mjpg720 = false;    // ask the camera for 1280x720 MJPEG
     int corner = 3;          // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right (used by "screen + me")
     int size = 1;            // 0 small, 1 medium, 2 large
+    bool pip = false;        // "screen + me" with the webcam as a WINDOW on the screen: libobs captures only the screen, which then contains the webcam
     int x = -1, y = -1;      // the webcam dragged to a free place: its top-left on the 1920x1080 canvas. -1 = use the corner above
     int guestCrop[4] = {0, 0, 0, 0};   // "the show" only: percent trimmed off the guest's window: left, top, right, bottom
     bool valid() const { return !path.isEmpty(); }

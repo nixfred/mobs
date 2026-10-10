@@ -5,6 +5,7 @@
 #include "mobslog.h"
 #include "obsbackend.h"
 #include "palette.h"
+#include "pipcontroller.h"
 #include "previewmodel.h"
 #include "review.h"
 #include "settings.h"
@@ -115,7 +116,7 @@ int main(int argc, char *argv[]) {
     recorder.setStreamProvider([&] { return prefs.streamSpec(); });
     recorder.setMicGuard([&] { auto spec = prefs.audioSpec(); spec.desktop = false; return !prefs.micOn() ? QString("turn on the microphone first") : audio.problem(spec, true); });
     recorder.setPresetProvider([&] { return prefs.encoderPreset(); });
-    recorder.setCameraProvider([&] { return state.cameraSpec(); });
+    recorder.setCameraProvider([&] { auto c = state.cameraSpec(); c.pip = prefs.pip(); return c; });   // "screen + me" with the webcam as a window on the screen
     QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); state.setCameraPanel(true); });
     QObject::connect(&recorder, &Engine::liveSetupNeeded, &state, [&] { state.openLive(); });
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
@@ -156,6 +157,8 @@ int main(int argc, char *argv[]) {
     QObject::connect(backend.get(), &RecorderBackend::previewFailed, &state, [&] { state.setPreview(false); });
     for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged})
         QObject::connect(&state, sig, &state, syncPreview);
+    QObject::connect(&prefs, &Settings::changed, &state, syncPreview);   // the webcam window on or off rebuilds the picture (the backend ignores a repeat)
+    PipController pip(&state, &recorder, &prefs, &settings);
 
     QObject::connect(&prefs, &Settings::changed, &recorder, [&, previousAudio = prefs.audioSpec(), previousMic = prefs.micOn()]() mutable {
         const auto current = prefs.audioSpec();
@@ -181,6 +184,7 @@ int main(int argc, char *argv[]) {
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Prefs", &prefs);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Pip", &pip);
 
     QStringList qmlWarnings;
     QQmlApplicationEngine engine;
@@ -242,7 +246,7 @@ int main(int argc, char *argv[]) {
             };
             (*poll)();
         };
-        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -377,6 +381,8 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "preview") ok = state.preview() == (condition[1] == "1");
                 else if (ok && condition[0] == "previewing") ok = recorder.previewing() == (condition[1] == "1");
                 else if (ok && condition[0] == "message") ok = recorder.message().contains(condition[1]);
+                else if (ok && condition[0] == "pipWanted") ok = pip.wanted() == (condition[1] == "1");
+                else if (ok && condition[0] == "pipShown") { bool shown = false; for (auto *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) shown = true; ok = shown == (condition[1] == "1"); }
                 else if (ok && condition[0] == "camMoved") ok = (state.cameraX() >= 0) == (condition[1] == "1");
                 else if (ok && condition[0] == "guestCrop") { QStringList have; for (const auto &v : state.guestCrop()) have << QString::number(v.toInt()); ok = have.join('/') == condition[1]; }
                 else if (ok && condition[0] == "armed") ok = recorder.streamArmed() == (condition[1] == "1");

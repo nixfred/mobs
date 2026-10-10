@@ -79,8 +79,16 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     # "All I want is screen and me": a new user lands on ready with the whole screen and the webcam, and the webcam can be dragged.
     check("a new user lands on ready with screen + me", "wait=0.3,expect=screen:2,expect=previewing:1,expect=previewFrame:1,checklayout", fake_backend=True, default_preview=True)
     for size in ("860x560", "1024x768", "1180x720"):
-        check("dragging the webcam in the preview moves it and the layout still fits", "pick=2,preview=1,wait=0.4,expect=camMoved:0,dragcam=-40:30,expect=camMoved:1,wait=0.2,checklayout", size, True)
-    check("the webcam can be dragged while recording", "pick=2,start,expect=state:recording,wait=0.5,dragcam=-60:40,expect=camMoved:1,expect=state:recording,wait=0.2,checklayout", fake_backend=True)
+        check("dragging the webcam in the preview moves it and the layout still fits (webcam window off)", "pick=2,preview=1,wait=0.4,expect=camMoved:0,dragcam=-40:30,expect=camMoved:1,wait=0.2,checklayout", size, True, ini_extra="pip=false\n")
+    check("the webcam can be dragged while recording (webcam window off)", "pick=2,start,expect=state:recording,wait=0.5,dragcam=-60:40,expect=camMoved:1,expect=state:recording,wait=0.2,checklayout", fake_backend=True, ini_extra="pip=false\n")
+    # The webcam as a window ON the screen (the default for screen + me): SUPER + drag moves it, so there is no handle inside the picture.
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("screen + me shows the webcam as a window and the ready screen still fits", "pick=2,preview=1,wait=0.4,expect=pipWanted:1,expect=pipShown:1,checklayout", size, True)
+    check("the webcam window follows the picture: on with the preview, off without it", "pick=2,preview=0,wait=0.2,expect=pipWanted:0,expect=pipShown:0,preview=1,wait=0.3,expect=pipShown:1,preview=0,wait=0.3,expect=pipShown:0", fake_backend=True)
+    check("a take always shows the webcam window, and it goes with the take", "pick=2,preview=0,expect=pipShown:0,start,expect=state:recording,wait=0.4,expect=pipWanted:1,expect=pipShown:1,stop,waitidle,wait=0.3,expect=pipShown:0", fake_backend=True)
+    check("the webcam window is off when the setting is off, and the picture has no drag handle then either way", "pick=2,preview=1,wait=0.4,expect=pipWanted:0,expect=pipShown:0", fake_backend=True, ini_extra="pip=false\n")
+    check("my screen and just my camera have no webcam window", "pick=1,preview=1,wait=0.3,expect=pipShown:0,pick=3,wait=0.3,expect=pipShown:0", fake_backend=True)
+    check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")
     check("there is no webcam to drag in the other picks", "pick=1,wait=0.3,expect=camMoved:0,checklayout", fake_backend=True)
     check("the show: a silent guest is flagged on the ready screen", "pick=4,wait=0.1,checklayout,desktop=1,wait=0.1,checklayout", "860x560", True)
     # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.

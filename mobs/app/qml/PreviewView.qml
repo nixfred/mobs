@@ -62,7 +62,7 @@ Item {
         Item {
             id: camHandle
             objectName: "webcamHandle"
-            visible: root.draggable && App.pick === 2 && Preview.hasFrame
+            visible: root.draggable && App.pick === 2 && !Prefs.pip && Preview.hasFrame   // in pip mode the webcam is a window: SUPER + drag it instead
             readonly property rect r: { App.camera; App.size; App.corner; return App.cameraRectNormalized() }
             x: 1 + r.x * (picture.width - 2); y: 1 + r.y * (picture.height - 2)
             width: r.width * (picture.width - 2); height: r.height * (picture.height - 2)
@@ -101,6 +101,6 @@ Item {
         spacing: 6
         visible: Preview.hasFrame
         Rectangle { width: 8; height: 8; radius: 4; color: root.dotColor; anchors.verticalCenter: parent.verticalCenter }
-        Txt { text: root.caption + (camHandle.visible ? "  ·  drag your webcam to move it" : ""); font.pixelSize: 11; color: Omarchy.secondaryText }
+        Txt { text: root.caption + (camHandle.visible ? "  ·  drag your webcam to move it" : (root.draggable && App.pick === 2 && Prefs.pip ? "  ·  your webcam is a window: SUPER + drag moves it" : "")); font.pixelSize: 11; color: Omarchy.secondaryText }
     }
 }

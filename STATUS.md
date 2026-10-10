@@ -193,3 +193,11 @@ Verified: unit tests (log 8 new, appstate and engine updated), UI scenarios for 
 
 Not verified: a real broadcast to X; the whole-screen capture on Fred's own vic and gus compositors with a real picker (the VM used a scripted one).
 
+## The webcam as a PiP window you SUPER-drag (2026-10-10)
+
+Fred: "You set it up to capture the entire screen and put the webcam in a pip and allow me to SUPER drag it around during live." Built: in "screen + me" MOBS captures the entire screen and shows the webcam as a floating, workspace-pinned window (`PipController`, `qml/PipWindow.qml`); Omarchy's own SUPER + left-drag moves it, in any app, mid-broadcast. libobs opens no camera in this mode. EXPERT has a toggle back to the composited webcam (with the in-picture drag handle).
+
+Verified (before Fred said to stop VM testing and move faster): 12 unit suites incl. 11 new controller tests; 13 UI scenarios for the window; real libobs in the VM (screen-only picture with no camera source; the rebuild when the mode flips); and on a REAL Hyprland in the practice VM with the real portal: the window floated, pinned, landed top-right (776,50 on a 1280x800 monitor, exactly the computed place), appeared INSIDE the captured picture, moved when moved, and followed to workspace 2 while MOBS's own window stayed behind.
+
+Not verified: the real BRIO in the window on gus or vic (the VM used a stand-in picture, and opening Fred's camera needs his say-so), the full UI and libobs suites after this change (stopped on request), and vic (not updated this round).
+
