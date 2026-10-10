@@ -51,6 +51,14 @@ OpenGL video output instead of the software-rendered workaround of ADR 0004.
     session created", sent `SelectSources` 0.08 s after `CreateSession`, and the picker stayed up until answered.
     Likely mechanism (inferred, not proven): OBS's portal reply is handled on the thread that created the source;
     the UI and scene-load paths run on the main loop, the websocket worker thread has none.
+  - **End to end now proven on real gus hardware** (spike 3b, last runs): pre-seeded source, hidden OBS, one click on the
+    picker, OBS saved a RestoreToken into the scene file, hidden OBS recorded real frames (2,081 distinct colours in a
+    recorded frame; a screenshot payload of 251,666 characters, versus 534 for a black frame). A rerun with the saved
+    token needed NO picker and recorded again silently (4.7 s file, STOPPED event).
+  - **Region capture gave black frames** (two runs, one hidden, one visible, a 1681x1203 region; the stream said `streaming`
+    but every pixel was 0). A different selection (470x1005) gave real frames. gus's layout has negative coordinates
+    (DP-3 at -2560,-2160), a plausible but unproven cause. Until investigated, MOBS offers screen and window only, and checks
+    the first frame is not black before telling the user it is recording.
   - So MOBS must put the screen source in a scene collection file and load it (OBS reads it on its main thread), not
     create it live. Switching collections (`SetCurrentSceneCollection`) is the thing to test next.
   - Hiding OBS makes no difference. The picker is a layer-shell overlay (`ch.wysbd.hyprland-preview-share-picker`,

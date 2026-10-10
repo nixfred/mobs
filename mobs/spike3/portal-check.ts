@@ -60,7 +60,7 @@ for (let s = 0; s < 120; s++) {
     const st = await req("GetInputSettings", { inputName: "my screen" }, 3000);
     log(`   t=${s}s screenshot: result=${r.requestStatus?.result} code=${r.requestStatus?.code} ${r.requestStatus?.comment ?? ""} payload=${sized}; RestoreToken set: ${!!st.responseData?.inputSettings?.RestoreToken}`);
   }
-  if (sized > 9000) { approvedAfter = s; writeFileSync(out, Buffer.from(data.split(",")[1] ?? "", "base64")); break; }
+  if (r.requestStatus?.result) { approvedAfter = s; await sleep(2000); writeFileSync(out, Buffer.from(data.split(",")[1] ?? "", "base64")); break; }
   await sleep(1000);
 }
 if (approvedAfter < 0) { log(`FAIL  no real frames after 120 s (last screenshot payload ${sized} chars)`); process.exit(1); }

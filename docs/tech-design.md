@@ -81,7 +81,8 @@ so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting i
   collection JSON does, and the picker opens. MOBS writes the collection and loads it (next to test: `SetCurrentSceneCollection`),
   then drives everything else over websocket. The picker is a layer overlay centered on the focused monitor; after one pick
   the restore token makes later recordings silent (`allow_token_by_default = true`). MOBS must say "pick your screen" first.
-  Still unseen: a human clicking the picker while hidden OBS then captures real frames.
+  Proven on gus: click once, hidden OBS records real frames, the saved token then needs no picker. Region selections gave black
+  frames (ADR 0005), so MOBS offers screen and window and verifies the first frame is not black.
 - **Profile must set `RecQuality`** (not `Stream`) or pause silently does nothing; **wait for `RecordStateChanged`
   STOPPED** before opening a take, because `StopRecord` replies before a Hybrid MP4 is finalized.
 - **New dependency:** `qt6-websockets` (not installed on gus; installed in the VM for the spike).

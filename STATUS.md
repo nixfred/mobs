@@ -1,7 +1,7 @@
 # mobs: status
 
 - Started: 2026-10-09, from Clarity's Idea Box
-- Stage: shape, tech design, screen design and spike 3 done 2026-10-09. Next is the portal check on gus, then the build.
+- Stage: shape, tech design, screen design and spike 3 (control plane + portal capture) done 2026-10-09. Next is the real app, starting with the theme reader.
 - Repo: github.com/nixfred/mobs (private). OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
 - Finding: Monologue is a webcam recorder with a trim editor (Qt 6 QML, C++), not a voice tool. Voxtype (already on Omarchy) is the dictation tool.
 
@@ -22,7 +22,7 @@
 
 ## Open
 
-- Wayland screen capture: root cause found (ADR 0005, spike 3b). A screen source created via websocket CreateInput never opens the portal picker; one pre-seeded in the scene collection does. MOBS must load a collection file for the screen source. Still to see: a click on the picker while hidden OBS then records real frames, and SetCurrentSceneCollection as the loading route.
+- Wayland screen capture is PROVEN end to end on gus (ADR 0005, spike 3b): pre-seeded screen source, hidden OBS, one picker click, real frames, then a silent rerun with the saved restore token. Two cautions: a screen source created live over websocket never opens the picker (load it from a scene collection file instead), and a REGION selection recorded black frames (two runs) while another selection worked. Next to test: loading the collection with SetCurrentSceneCollection.
 - New dependency: qt6-websockets (not on gus yet).
 - Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).

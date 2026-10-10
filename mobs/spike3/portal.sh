@@ -16,6 +16,8 @@ if [ -n "${PRESEED:-}" ]; then
 fi
 printf '{"alerts_enabled":false,"auth_required":true,"first_load":false,"server_enabled":true,"server_password":"%s","server_port":4455}' "$PASS" > "$CFG/obs-studio/plugin_config/obs-websocket/config.json"
 
+# SEEDCFG=<old cfg dir>: reuse its scenes/profile, which carry the saved RestoreToken (no picker needed)
+if [ -n "${SEEDCFG:-}" ]; then rm -rf "$CFG/obs-studio/basic"; cp -r "$SEEDCFG/obs-studio/basic" "$CFG/obs-studio/basic"; fi
 XDG_CONFIG_HOME=$CFG obs --disable-shutdown-check --disable-missing-files-check >"$W/obs.out" 2>&1 </dev/null &
 OBS=$!; echo "OBS pid $OBS ($(ps -p $OBS -o comm=))"
 find_win() { hyprctl clients -j | python3 -c "
