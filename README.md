@@ -1,10 +1,16 @@
+> # ALPHA
+> **MOBS is ALPHA software.** It is early, and it is being built for the author's own Omarchy machines. It has
+> recorded real files, with pause, screen capture and a webcam, on the author's hardware and in a test VM, but
+> many screens in [`docs/`](docs/) are design prototypes rendered with sample data, and not every control is
+> wired yet. Expect rough edges and breaking changes. [`STATUS.md`](STATUS.md) says what is done and what is next.
+
 # mobs
 
 Fork a voice tool and OBS (a big screen-recording program) into one Omarchy-only app called MOBS. It's worth a tiny version, not a full merge.
 
 ## Where it came from
 
-From Clarity's Idea Box: control-plane #10 “Go fork https://github.com/omacom/monologue and…”.
+From an idea-box entry: “Go fork https://github.com/omacom/monologue and…”.
 
 ### The idea, in its own words
 

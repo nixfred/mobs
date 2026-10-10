@@ -17,7 +17,7 @@ Shaping. Don't build anything until the shaping is done: who it's for, what it m
 
 ## Where it came from
 
-From Clarity's Idea Box: control-plane #10 “Go fork https://github.com/omacom/monologue and…”.
+From an idea-box entry: “Go fork https://github.com/omacom/monologue and…”.
 
 ### The idea, in its own words
 

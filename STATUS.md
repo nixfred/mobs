@@ -1,8 +1,8 @@
 # mobs: status
 
-- Started: 2026-10-09, from Clarity's Idea Box
+- Started: 2026-10-09, from an idea-box entry
 - Stage: product architecture decided 2026-10-09 (ADR 0006); app skeleton (mobs/app) built; spike 4 proved libobs in-process recording.
-- Repo: github.com/nixfred/mobs (private). OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
+- Repo: github.com/nixfred/mobs. OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
 - Finding: Monologue is a webcam recorder with a trim editor (Qt 6 QML, C++), not a voice tool. Voxtype (already on Omarchy) is the dictation tool.
 
 ## Decided (Fred, 2026-10-09; details in README.md)

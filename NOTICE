@@ -1,0 +1,13 @@
+MOBS licensing
+
+MOBS is distributed under the GNU General Public License, version 2 (see LICENSE). This follows the project's
+own decision: OBS Studio is GPLv2, Monologue is MIT, and the combined work is GPLv2 (docs/adr/0002 and 0006).
+
+This repository contains three things, each in its own directory:
+
+  obs/        OBS Studio, imported with its full history as a git subtree. GPLv2. Its own COPYING is kept.
+  monologue/  Monologue, imported with its full history as a git subtree. MIT. Its own licence file is kept.
+  mobs/       The MOBS application, which links libobs and so is GPLv2.
+
+The imported directories are not modified here, and their commits keep their original hashes so that
+upstream updates can still be pulled in. Their authors and licences are their own.
