@@ -5,6 +5,7 @@
 #include "mobslog.h"
 #include "obsbackend.h"
 #include "palette.h"
+#include "notifier.h"
 #include "pipcontroller.h"
 #include "previewmodel.h"
 #include "review.h"
@@ -159,6 +160,17 @@ int main(int argc, char *argv[]) {
         QObject::connect(&state, sig, &state, syncPreview);
     QObject::connect(&prefs, &Settings::changed, &state, syncPreview);   // the webcam window on or off rebuilds the picture (the backend ignores a repeat)
     PipController pip(&state, &recorder, &prefs, &settings);
+    QObject::connect(backend.get(), &RecorderBackend::captureSized, &pip, &PipController::setCaptureSize);   // which monitor is in the picture
+    // A person working in another window needs to be TOLD: connected (and the one step left for them), dropped, not live, saved. Each state once.
+    QObject::connect(&recorder, &Engine::streamChanged, &state, [&, last = QString("off")]() mutable {
+        const QString now = recorder.streamState();
+        if (now == last) return;
+        const QString before = last; last = now;
+        if (now == "live") Notifier::send("MOBS: X is receiving your stream", "Viewers see it once you press Go live in X Live Studio (studio.x.com/live).");
+        else if (now == "reconnecting" && before == "live") Notifier::send("MOBS: the connection to X dropped", "Trying again. The recording is still being saved.");
+        else if (now == "failed") Notifier::send("MOBS: NOT LIVE", recorder.streamProblem().left(220) + ". The recording is still being saved.", true);
+    });
+    QObject::connect(&recorder, &Engine::saved, &state, [](const QString &path) { Notifier::send("MOBS: take saved", path); });
 
     QObject::connect(&prefs, &Settings::changed, &recorder, [&, previousAudio = prefs.audioSpec(), previousMic = prefs.micOn()]() mutable {
         const auto current = prefs.audioSpec();
@@ -279,6 +291,12 @@ int main(int argc, char *argv[]) {
                 for (int i = 1; i <= 6; ++i) send(QEvent::MouseMove, start + (end - start) * (i / 6.0), Qt::LeftButton);
                 send(QEvent::MouseButtonRelease, end, Qt::NoButton);
                 QTimer::singleShot(0, &app, *run);
+            }
+            else if (st.startsWith("grabpip=")) {   // the webcam window's own pixels (its badge, in every state), for design checks
+                QQuickWindow *pipWindow = nullptr;
+                for (QWindow *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) pipWindow = qobject_cast<QQuickWindow *>(w);
+                if (!pipWindow) { std::fprintf(stderr, "script: no webcam window to grab\n"); app.exit(4); return; }
+                std::printf("script: grabpip %d\n", int(pipWindow->grabWindow().save(st.mid(8)))); QTimer::singleShot(0, &app, *run);
             }
             else if (st.startsWith("guestcrop=")) { const auto edgeAndPercent = st.mid(10).split(':'); if (edgeAndPercent.size() == 2) state.setGuestCrop(edgeAndPercent[0].toInt(), edgeAndPercent[1].toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }

@@ -742,6 +742,26 @@ private slots:
         QVERIFY(frames.count() >= 3);
         auto *cam = obs_get_source_by_name("test camera"); QVERIFY(cam); obs_source_release(cam);
     }
+    // A diagnostic, not a regression test: MOBS_X_PROBE=1 sends MOBS's real stream path to X's own ingest with a key that is DELIBERATELY INVALID
+    // (nothing of anyone's account is involved) and prints, with times, every state X puts it through and how long and how much it was connected.
+    // It shows what a refusal by X looks like to MOBS. Set MOBS_X_PROBE_HARDWARE=1 to use the NVIDIA encoder.
+    void xRefusalLooksLikeThisToMobs() {
+        if (qEnvironmentVariable("MOBS_X_PROBE") != "1") QSKIP("diagnostic: set MOBS_X_PROBE=1 to run (talks to X's ingest with a fake key)");
+        QTemporaryDir d; ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), state(&b, &RecorderBackend::streamState), stats(&b, &RecorderBackend::streamStats);
+        RecordSpec spec = silentSpec(1, d.path() + "/probe.mp4"); spec.hardware = qEnvironmentVariable("MOBS_X_PROBE_HARDWARE") == "1";
+        spec.stream.on = true; spec.stream.url = qEnvironmentVariable("MOBS_X_PROBE_URL", "rtmp://va.pscp.tv:80/x"); spec.stream.key = "mobs-invalid-probe-key"; spec.stream.kbps = 6000;
+        QElapsedTimer clock; clock.start();
+        b.begin(spec); started.wait(20000);
+        int seen = 0;
+        while (clock.elapsed() < 40000) {
+            QTest::qWait(250);
+            for (; seen < state.count(); ++seen) qInfo().noquote() << QString("PROBE %1 ms  state=%2  %3").arg(clock.elapsed(), 6).arg(state[seen][0].toString(), state[seen][1].toString());
+        }
+        qInfo().noquote() << QString("PROBE states in order: %1").arg(statesOf(state).join(" > "));
+        qInfo().noquote() << QString("PROBE last stats: %1").arg(stats.isEmpty() ? QString("none (never sent)") : QString("%1 kbps, %2 dropped").arg(stats.last()[0].toInt()).arg(stats.last()[1].toInt()));
+        b.end(); finished.wait(20000);
+    }
     void cancelBeforeStartIsClean() {
         QTemporaryDir d;
         ObsBackend b(d.path() + "/token");

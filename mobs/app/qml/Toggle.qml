@@ -8,7 +8,7 @@ Item {
     property bool on: false
     signal toggled()
     width: parent ? parent.width : 300
-    height: 40
+    height: 36
     Txt { text: root.label; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 70; elide: Text.ElideRight }
     Rectangle {
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }

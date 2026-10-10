@@ -13,16 +13,29 @@
 #include <QStandardPaths>
 #include <algorithm>
 
+// Hyprland's monitor is in pixels and `scale` turns it into layout units; `reserved` is the bar and gaps (left, top, right, bottom).
+static QRect usableArea(const QJsonObject &m) {
+    const double scale = std::max(0.1, m.value("scale").toDouble(1.0));
+    const QJsonArray r = m.value("reserved").toArray();
+    const int left = r.size() > 0 ? r[0].toInt() : 0, top = r.size() > 1 ? r[1].toInt() : 0, right = r.size() > 2 ? r[2].toInt() : 0, bottom = r.size() > 3 ? r[3].toInt() : 0;
+    const int w = int(m.value("width").toDouble() / scale), h = int(m.value("height").toDouble() / scale);
+    return QRect(m.value("x").toInt() + left, m.value("y").toInt() + top, w - left - right, h - top - bottom);
+}
+
 PipController::PipController(AppState *state, Engine *engine, Settings *prefs, QSettings *store, QObject *parent)
     : QObject(parent), m_state(state), m_engine(engine), m_prefs(prefs), m_store(store) {
-    m_placeTimer.setInterval(150);
+    for (const char *old : {"pipX", "pipY", "pipW", "pipH", "pipMonitor"}) m_store->remove(old);   // the first version saved its own default as if the person had chosen it
+    m_placeTimer.setInterval(40);                         // fast: a window that has just opened is still TILED, shoving the others aside, until it is floated
     connect(&m_placeTimer, &QTimer::timeout, this, &PipController::tryPlace);
     connect(m_engine, &Engine::previewingChanged, this, [this] { rememberActive(); emit changed(); });
+    connect(m_engine, &Engine::stateChanged, this, &PipController::onEngineState);
     connect(m_state, &AppState::pickChanged, this, &PipController::changed);
     connect(m_state, &AppState::screenChanged, this, &PipController::changed);
     connect(m_state, &AppState::cameraChanged, this, &PipController::changed);
     connect(m_prefs, &Settings::changed, this, &PipController::changed);
 }
+
+PipController::~PipController() { if (m_mainHidden) restoreMain(); }
 
 // Wanted whenever "screen + me" is showing its picture (ready with the preview on, armed, or a take in progress): Engine::previewing is exactly that.
 bool PipController::wanted() const { return m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera() && m_engine->previewing(); }
@@ -57,7 +70,14 @@ QCameraFormat PipController::format() const {
     return best;
 }
 
-// ---------------------------------------------------------------- Hyprland: float, pin, place
+void PipController::cameraProblem(const QString &what) { MobsLog::write("pip", "camera: " + what); }
+
+void PipController::setCaptureSize(int width, int height) {
+    m_captureSize = QSize(width, height);
+    MobsLog::write("pip", QString("the picture is a %1x%2 screen").arg(width).arg(height));
+}
+
+// ---------------------------------------------------------------- Hyprland: float, pin, place; and getting MOBS's own window out of the picture
 
 bool PipController::onHyprland() const {
     if (!QGuiApplication::platformName().contains("wayland")) return false;
@@ -99,7 +119,10 @@ void PipController::rememberActive() {
 
 void PipController::windowShown() {
     m_shown = true; m_tries = 0;
-    if (!onHyprland()) { MobsLog::write("pip", "webcam window shown (not on Hyprland: it is an ordinary window, move it yourself)"); return; }
+    const QCameraFormat f = format();
+    MobsLog::write("pip", testPattern() ? QString("webcam window shown (a stand-in picture, no camera)")
+        : QString("webcam window shown: camera \"%1\", format %2x%3 at up to %4 fps").arg(device().description()).arg(f.resolution().width()).arg(f.resolution().height()).arg(int(f.maxFrameRate())));
+    if (!onHyprland()) { MobsLog::write("pip", "(not on Hyprland: it is an ordinary window, move it yourself)"); return; }
     m_placeTimer.start();
 }
 
@@ -108,7 +131,7 @@ void PipController::tryPlace() {
     const QJsonArray clients = hyprJson({"clients", "-j"}).array();
     const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
     if (address.isEmpty()) {
-        if (++m_tries > 40) { m_placeTimer.stop(); MobsLog::write("pip", "gave up waiting for the compositor to list the webcam window"); }
+        if (++m_tries > 100) { m_placeTimer.stop(); MobsLog::write("pip", "gave up waiting for the compositor to list the webcam window"); }
         return;
     }
     m_placeTimer.stop();
@@ -121,19 +144,23 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
     const QString win = QString("window=\"address:%1\"").arg(address);
     const auto dsp = [&](const QString &call) { return hyprEval("hl.dispatch(hl.dsp." + call + ")"); };
 
-    // Where: where it was left last time (if that monitor is still there), else the top-right of MOBS's own monitor.
-    QJsonObject monitor = monitorByName(monitors, m_store->value("pipMonitor").toString());
-    QSize size(qBound(160, m_store->value("pipW", 480).toInt(), 1920), qBound(90, m_store->value("pipH", 270).toInt(), 1080));
+    // Where: where the person last left it (if that monitor is still there), else the top-right of MOBS's own monitor, sized for the broadcast.
+    QRect saved; QString savedMonitor;
+    QJsonObject monitor;
     QRect rect;
-    if (!monitor.isEmpty() && m_store->contains("pipX")) rect = fitInside(QRect(QPoint(m_store->value("pipX").toInt(), m_store->value("pipY").toInt()), size), monitor);
+    if (decodePlace(m_store->value("pipPlace").toString(), &saved, &savedMonitor)) {
+        monitor = monitorByName(monitors, savedMonitor);
+        if (!monitor.isEmpty()) rect = fitInside(saved, monitor);
+    }
     if (rect.isNull()) {
+        monitor = {};
         for (const QJsonValue &v : clients) {            // MOBS's own main window decides the monitor
             const QJsonObject c = v.toObject();
             if (c.value("pid").toInt() == QCoreApplication::applicationPid() && c.value("title").toString() != kTitle) { monitor = monitorById(monitors, c.value("monitor").toInt()); break; }
         }
         if (monitor.isEmpty()) for (const QJsonValue &v : monitors) if (v.toObject().value("focused").toBool()) monitor = v.toObject();
         if (monitor.isEmpty() && !monitors.isEmpty()) monitor = monitors.first().toObject();
-        if (!monitor.isEmpty()) rect = defaultRect(monitor, size);
+        if (!monitor.isEmpty()) rect = defaultRect(monitor, defaultSize(monitor));
     }
 
     if (!client.value("floating").toBool()) dsp(QString("window.float({action=\"set\",%1})").arg(win));
@@ -145,7 +172,8 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
     dsp(QString("window.alter_zorder({mode=\"top\",%1})").arg(win));
     // A new window takes the keyboard. Give it straight back: the person is typing in something else.
     if (!m_prevActive.isEmpty() && m_prevActive != address && !clientAt(clients, m_prevActive).isEmpty()) dsp(QString("focus({window=\"address:%1\"})").arg(m_prevActive));
-    MobsLog::write("pip", QString("webcam window %1 placed at %2,%3 %4x%5 on %6 (floating, pinned to every workspace); SUPER + drag moves it")
+    m_placed = rect;
+    MobsLog::write("pip", QString("webcam window %1 placed at %2,%3 %4x%5 on %6 (floating, pinned to every workspace); SUPER + drag moves it, SUPER + right-drag resizes it")
         .arg(address).arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height()).arg(monitor.value("name").toString()));
 }
 
@@ -158,11 +186,50 @@ void PipController::windowHidden() {
     const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
     const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
     if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
-    m_store->setValue("pipX", at[0].toInt()); m_store->setValue("pipY", at[1].toInt());
-    m_store->setValue("pipW", size[0].toInt()); m_store->setValue("pipH", size[1].toInt());
-    m_store->setValue("pipMonitor", monitor.value("name").toString()); m_store->sync();
-    MobsLog::write("pip", QString("webcam window left at %1,%2 %3x%4 on %5").arg(at[0].toInt()).arg(at[1].toInt()).arg(size[0].toInt()).arg(size[1].toInt()).arg(monitor.value("name").toString()));
+    const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
+    // Only a place the person CHOSE is remembered (a move or a resize); where MOBS put it by itself is recomputed next time, for whatever screen is there then.
+    if (m_placed.isValid() && (std::abs(now.x() - m_placed.x()) > 4 || std::abs(now.y() - m_placed.y()) > 4 || std::abs(now.width() - m_placed.width()) > 4 || std::abs(now.height() - m_placed.height()) > 4)) {
+        m_store->setValue("pipPlace", encodePlace(now, monitor.value("name").toString())); m_store->sync();
+        MobsLog::write("pip", QString("webcam window left at %1,%2 %3x%4 on %5: remembered, you moved it").arg(now.x()).arg(now.y()).arg(now.width()).arg(now.height()).arg(monitor.value("name").toString()));
+    } else MobsLog::write("pip", "webcam window closed where MOBS put it");
     m_prevActive.clear();
+}
+
+void PipController::onEngineState() {
+    const QString st = m_engine->state();
+    if (st == "recording" && !m_mainHidden) hideMain();
+    else if (st == "idle" && m_mainHidden) restoreMain();
+}
+
+// A screen capture shows everything on that screen, MOBS's own window included: a stream of MOBS showing the stream. So while a take records, MOBS's window
+// steps aside to a hidden workspace (the hotkey SUPER + SHIFT + V still stops it) and comes back when the take ends.
+void PipController::hideMain() {
+    if (!m_prefs->stayOut() || !onHyprland()) return;
+    if (m_state->pick() != 1 && m_state->pick() != 2) return;     // the show and just-the-camera do not capture a screen with MOBS on it
+    const QJsonArray clients = hyprJson({"clients", "-j"}).array();
+    QJsonObject mine;
+    for (const QJsonValue &v : clients) {
+        const QJsonObject c = v.toObject();
+        if (c.value("pid").toInt() == QCoreApplication::applicationPid() && c.value("title").toString() != kTitle) { mine = c; break; }
+    }
+    if (mine.isEmpty()) return;
+    const QJsonArray monitors = hyprJson({"monitors", "-j"}).array();
+    const QJsonObject monitor = monitorById(monitors, mine.value("monitor").toInt());
+    const QString workspace = mine.value("workspace").toObject().value("name").toString();
+    if (workspace.isEmpty() || workspace.startsWith("special")) return;
+    if (!shouldHide(monitor, m_captureSize, monitors.size())) { MobsLog::write("pip", "MOBS's window is not on the monitor in the picture: left where it is"); return; }
+    m_hiddenAddress = mine.value("address").toString(); m_homeWorkspace = workspace; m_mainHidden = true;
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=\"special:mobs\",follow=false,window=\"address:%1\"}))").arg(m_hiddenAddress));
+    MobsLog::write("pip", QString("MOBS's window hidden from the picture (on special:mobs); it returns to workspace %1 when the take ends. SUPER + SHIFT + V stops the take.").arg(workspace));
+}
+
+void PipController::restoreMain() {
+    const QString address = m_hiddenAddress, workspace = m_homeWorkspace;
+    m_mainHidden = false; m_hiddenAddress.clear(); m_homeWorkspace.clear();
+    if (address.isEmpty() || !onHyprland()) return;
+    if (clientAt(hyprJson({"clients", "-j"}).array(), address).isEmpty()) return;   // closed meanwhile
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=\"%1\",follow=false,window=\"address:%2\"}))").arg(workspace, address));
+    MobsLog::write("pip", QString("MOBS's window is back on workspace %1").arg(workspace));
 }
 
 // ---------------------------------------------------------------- pure helpers
@@ -192,13 +259,9 @@ QJsonObject PipController::monitorByName(const QJsonArray &monitors, const QStri
     return {};
 }
 
-// Hyprland's monitor is in pixels and `scale` turns it into layout units; `reserved` is the bar and gaps (left, top, right, bottom).
-static QRect usableArea(const QJsonObject &m) {
-    const double scale = std::max(0.1, m.value("scale").toDouble(1.0));
-    const QJsonArray r = m.value("reserved").toArray();
-    const int left = r.size() > 0 ? r[0].toInt() : 0, top = r.size() > 1 ? r[1].toInt() : 0, right = r.size() > 2 ? r[2].toInt() : 0, bottom = r.size() > 3 ? r[3].toInt() : 0;
-    const int w = int(m.value("width").toDouble() / scale), h = int(m.value("height").toDouble() / scale);
-    return QRect(m.value("x").toInt() + left, m.value("y").toInt() + top, w - left - right, h - top - bottom);
+QSize PipController::defaultSize(const QJsonObject &monitor) {
+    const int w = qBound(480, int(usableArea(monitor).width() * 0.20), 1024);
+    return QSize(w, w * 9 / 16);
 }
 
 QRect PipController::defaultRect(const QJsonObject &monitor, const QSize &size, int margin) {
@@ -213,4 +276,24 @@ QRect PipController::fitInside(const QRect &want, const QJsonObject &monitor) {
     r.moveLeft(qBound(a.left(), r.left(), std::max(a.left(), a.right() + 1 - r.width())));
     r.moveTop(qBound(a.top(), r.top(), std::max(a.top(), a.bottom() + 1 - r.height())));
     return r;
+}
+
+QString PipController::encodePlace(const QRect &rect, const QString &monitor) {
+    return QString("%1,%2,%3,%4,%5").arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height()).arg(monitor);
+}
+
+bool PipController::decodePlace(const QString &text, QRect *rect, QString *monitor) {
+    const QStringList p = text.split(',');
+    if (p.size() != 5) return false;
+    bool ok[4] = {false, false, false, false}; int v[4];
+    for (int i = 0; i < 4; ++i) v[i] = p[i].toInt(&ok[i]);
+    if (!ok[0] || !ok[1] || !ok[2] || !ok[3] || v[2] < 160 || v[3] < 90 || v[2] > 8000 || v[3] > 8000 || p[4].isEmpty()) return false;
+    *rect = QRect(v[0], v[1], v[2], v[3]); *monitor = p[4];
+    return true;
+}
+
+bool PipController::shouldHide(const QJsonObject &monitor, const QSize &captured, int monitorCount) {
+    if (monitor.isEmpty()) return false;
+    if (captured.isValid() && !captured.isEmpty()) return QSize(monitor.value("width").toInt(), monitor.value("height").toInt()) == captured;   // the monitor whose size is in the picture
+    return monitorCount == 1;                                       // size not known yet: with one monitor there is no doubt
 }

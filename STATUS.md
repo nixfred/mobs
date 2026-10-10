@@ -201,3 +201,19 @@ Verified (before Fred said to stop VM testing and move faster): 12 unit suites i
 
 Not verified: the real BRIO in the window on gus or vic (the VM used a stand-in picture, and opening Fred's camera needs his say-so), the full UI and libobs suites after this change (stopped on request), and vic (not updated this round).
 
+## "Connecting and dropping over and over": found, and the webcam window made real (2026-10-10, Fable 5.1)
+
+Fred, after switching to Fable 5.1 at xhigh effort: "Look around and make this work. I want the webcam PiP SUPER draggable during the stream." Looked around instead of guessing:
+
+- **Fred had been broadcasting from an OLD gus build** (16:17, no webcam window, no log); the new build ran once at 17:05 and quit 14 s after the screen was chosen. The old instance's socket to X sat in CLOSE-WAIT: X hung up on it.
+- **The network was fine** (about 280 Mbps up, X's ingest 33 ms away).
+- **A probe against X with a deliberately fake key** (new `MOBS_X_PROBE` scenario) reproduced his symptom exactly with both encoders: X accepts the connection, hangs up about 3 s later with no error, libobs reconnects forever. A key X does not accept looks like this.
+- **The key saved in MOBS did not match the one Fred gave me.** I had told him it "matched" after comparing only LENGTHS (12 characters each): that was wrong, and I own it. Content compared with `grep -x`: different. The key he pasted was installed on gus and vic (the old one kept as an owner-only `stream-key.previous`).
+- Changed so this cannot loop silently again: **3 quick drops in a row stop the retries and explain** (verified against real X with the fake key: connecting, live, reconnecting, live, reconnecting, live, then NOT LIVE with the advice). Also fixed a bug the probe exposed: after a reconnect the bitrate readout underflowed to -2147483648 kbps.
+- **"How will I know I'm live on X?"**: the recording screen now says LIVE means X is receiving the stream and that viewers see it only after Go live in Live Studio (link included); a badge in the webcam window (REC, LIVE, CONNECTING, RECONNECTING, NOT LIVE); desktop notifications for connected, dropped, not live and saved.
+- **The webcam window**: opens at 20% of the screen width (the 480 px default was a 180 px dot on his 5120 px ultrawide), remembers only a place he chose, logs the camera it opened and any camera error, and floats within 40 ms of opening (it was 150 ms).
+- **MOBS steps out of the picture while recording** (its window moves to a hidden workspace and returns), because a capture of the whole screen otherwise shows MOBS showing the stream (the "makes no sense" preview). Verified on a real Hyprland in the practice VM: ready (MOBS on workspace 1), recording (MOBS on `special:mobs`, webcam window still up), after the take (MOBS back on workspace 1).
+- Compatibility: no B-frames / no look-ahead for live ingest, dynamic bitrate.
+
+Not verified: a real broadcast with the corrected key (it goes to Fred's followers once he presses Go live; he is to try it), the real BRIO inside the webcam window, and vic (still on the previous build).
+

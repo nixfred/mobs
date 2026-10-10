@@ -83,10 +83,19 @@ Item {
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                 font.pixelSize: 13
                 color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.secondaryText : Omarchy.yellow
-                text: Engine.streamState === "live" ? "broadcasting at " + (Engine.streamKbps / 1000).toFixed(1) + " Mbps" + (Engine.streamDropped > 0 ? ", " + Engine.streamDropped + " frames dropped" : "")
+                text: Engine.streamState === "live" ? "X is receiving your stream (" + (Engine.streamKbps / 1000).toFixed(1) + " Mbps" + (Engine.streamDropped > 0 ? ", " + Engine.streamDropped + " frames dropped" : "") + ")"
                     : Engine.streamState === "failed" ? "NOT LIVE: " + Engine.streamProblem + ". The recording is still being saved."
                     : Engine.streamState === "reconnecting" ? Engine.streamProblem
                     : Engine.streamState === "connecting" ? "connecting to the server..." : ""
+            }
+            Txt {   // the one step MOBS cannot do for you: X only shows a stream to viewers after Go live is pressed in Live Studio
+                objectName: "liveStudioLink"
+                width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap   // wraps in the narrow column instead of running off it
+                visible: Engine.streamRequested && Engine.state !== "stopping"
+                text: Engine.streamState === "live" ? "viewers see it after you press Go live in X Live Studio" : "open X Live Studio"
+                font.pixelSize: 13; font.underline: true; color: Omarchy.accent
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: Qt.openUrlExternally("https://studio.x.com/live") }
             }
             Txt {
                 text: Engine.elapsedText; font.bold: true; width: controls.width; horizontalAlignment: Text.AlignHCenter
@@ -94,6 +103,7 @@ Item {
             }
             Txt {
                 text: Engine.message !== "" ? Engine.message : (App.pickName + (Engine.recordingMic ? ", " + Audio.name(Engine.recordingMicDevice) : ", mic off") + (Engine.recordingDesktop ? ", desktop sound" : "") + "  ·  saving to " + Engine.recordingFolder)
+                visible: !(Engine.streamRequested && Engine.message === "")   // while broadcasting the live lines above matter more than where the file goes
                 color: Omarchy.tertiaryText; font.pixelSize: 13
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
             }

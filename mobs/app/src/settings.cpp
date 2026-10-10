@@ -36,6 +36,7 @@ Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
     m_review = m_settings->value("reviewAfter", true).toBool();
     m_splash = m_settings->value("splash", true).toBool();
     m_pip = m_settings->value("pip", true).toBool();
+    m_stayOut = m_settings->value("stayOut", true).toBool();
     const QString url = m_settings->value("streamUrl").toString().trimmed();
     if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;
     m_streamQuality = qBound(0, m_settings->value("streamQuality", 2).toInt(), 2);
@@ -130,6 +131,13 @@ void Settings::setPip(bool on) {
     if (on == m_pip) return;
     m_pip = on;
     m_settings->setValue("pip", on); m_settings->sync();
+    emit changed();
+}
+
+void Settings::setStayOut(bool on) {
+    if (on == m_stayOut) return;
+    m_stayOut = on;
+    m_settings->setValue("stayOut", on); m_settings->sync();
     emit changed();
 }
 

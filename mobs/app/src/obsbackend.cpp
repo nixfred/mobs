@@ -324,6 +324,7 @@ void ObsBackend::tickGraph() {
     // A source's size is only known after its first frame. Logged once each: what MOBS really captured is the first thing to look at when a picture is wrong.
     if (m_video && !m_loggedScreen && obs_source_get_width(m_video) > 0) {
         m_loggedScreen = true;
+        emit captureSized(int(obs_source_get_width(m_video)), int(obs_source_get_height(m_video)));
         MobsLog::write("capture", QString("screen source is %1x%2 (%3)").arg(obs_source_get_width(m_video)).arg(obs_source_get_height(m_video)).arg(m_testScreen ? "test colour" : m_needGuest ? "screen or window" : "whole screen"));
     }
     if (m_camera && !m_loggedCamera && obs_source_get_width(m_camera) > 0) {
@@ -524,6 +525,7 @@ bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
     MobsLog::secret(s.key);                                              // from here on the key can never reach the log, whatever prints it
     MobsLog::write("stream", QString("starting: server %1, %2 kbps, %3p, %4").arg(s.url).arg(s.kbps).arg(s.height).arg(spec.hardware ? "NVIDIA" : "x264"));
     m_streamStop = 1; m_streamUp = false; m_streamRetrying = false; m_streamAsked = false; m_streamShown.clear();
+    m_health.reset(); m_streamAdvice.clear(); m_streamGaveUp = false; m_streamTime.start();
 
     obs_data_t *target = obs_data_create();
     obs_data_set_string(target, "server", s.url.toUtf8().constData());
@@ -539,7 +541,9 @@ bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
     obs_data_set_int(vs, "keyint_sec", 3);   // X recommends a keyframe every 3 seconds
     if (spec.hardware) {
         obs_data_set_string(vs, "preset", "p5");
+        obs_data_set_int(vs, "bf", 0); obs_data_set_bool(vs, "lookahead", false);   // live ingest: no B-frames and no look-ahead delay
     } else {
+        obs_data_set_string(vs, "x264opts", "bframes=0");
         obs_data_set_string(vs, "preset", "veryfast");   // live cannot wait for a slow preset, whatever the file uses
         obs_data_set_string(vs, "profile", "high");
         obs_data_set_bool(vs, "use_bufsize", true); obs_data_set_int(vs, "buffer_size", s.kbps);
@@ -557,6 +561,7 @@ bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
 
     obs_data_t *os = obs_data_create();
     obs_data_set_int(os, "max_shutdown_time_sec", 5);    // a dead network must not hold the saved file hostage
+    obs_data_set_bool(os, "dyn_bitrate", true);          // on a congested uplink lower the bitrate instead of dropping frames (and the connection)
     m_stream = obs_output_create("rtmp_output", "mobs stream", os, nullptr);
     obs_data_release(os);
     if (!m_stream) { *error = "could not create the stream output"; return false; }
@@ -598,7 +603,8 @@ void ObsBackend::stopStream() {
     m_spec.stream.key.clear();   // the password is forgotten as soon as the broadcast is over
 }
 
-// Runs every 100 ms on the Qt thread: turns what libobs reported from its own threads into one state, announced once.
+// Runs every 100 ms on the Qt thread: turns what libobs reported from its own threads into one state, announced once. It also notices X refusing
+// the stream: a connection that is accepted and then dropped within seconds, three times in a row, is not a hiccup (see StreamHealth).
 void ObsBackend::pollStream() {
     if (!m_stream) return;
     QString state, detail;
@@ -622,10 +628,31 @@ void ObsBackend::pollStream() {
     } else if (m_streamRetrying) {
         state = "reconnecting"; detail = "the connection dropped: trying again";
     } else state = m_streamUp ? "live" : "connecting";
-    if (state != m_streamShown) { m_streamShown = state; emit streamState(state, detail); }
+    if (m_streamGaveUp) { state = "failed"; detail = m_streamAdvice; }   // we stopped it ourselves, with a reason worth reading: nothing overrides that
+
+    const quint64 bytes = obs_output_get_total_bytes(m_stream);
+    if (state != m_streamShown) {
+        const QString before = m_streamShown;
+        if (state == "live") {
+            m_streamBytes = bytes;                                       // a new connection starts libobs's byte count again
+            m_health.connected(m_streamTime.elapsed(), bytes);
+            MobsLog::write("stream", QString("connected (the server answered in %1 ms)").arg(obs_output_get_connect_time_ms(m_stream)));
+        }
+        if (before == "live" && (state == "reconnecting" || state == "failed")) {
+            const StreamHealth::Verdict verdict = m_health.dropped(m_streamTime.elapsed(), bytes);
+            MobsLog::write("stream", "dropped: " + verdict.note + (detail.isEmpty() ? QString() : " (" + detail + ")"));
+            if (verdict.giveUp && !m_streamGaveUp) {
+                m_streamGaveUp = true; m_streamAdvice = verdict.advice;
+                state = "failed"; detail = verdict.advice;
+                MobsLog::write("stream", "giving up: " + verdict.advice);
+                obs_output_stop(m_stream);                            // cancels the retries; the recording carries on
+            }
+        }
+        m_streamShown = state; emit streamState(state, detail);
+    }
     if (state == "live" && m_streamClock.elapsed() >= 1000) {
-        const quint64 bytes = obs_output_get_total_bytes(m_stream);
         const double seconds = m_streamClock.restart() / 1000.0;
+        if (bytes < m_streamBytes) m_streamBytes = 0;                    // the counter restarted since the last look
         emit streamStats(int((bytes - m_streamBytes) * 8 / 1000 / seconds), obs_output_get_frames_dropped(m_stream));
         m_streamBytes = bytes;
     }

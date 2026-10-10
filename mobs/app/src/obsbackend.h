@@ -1,5 +1,6 @@
 #pragma once
 #include "recorderbackend.h"
+#include "streamhealth.h"
 #include <QElapsedTimer>
 #include <QImage>
 #include <QMutex>
@@ -112,7 +113,10 @@ private:
     std::atomic<int> m_streamStop{1};          // 1 = running; otherwise libobs's stop code
     std::atomic<bool> m_streamUp{false}, m_streamRetrying{false};
     bool m_streamAsked = false;                // end() asked it to stop: a stop is then an ending, not a failure
-    QElapsedTimer m_streamClock;
+    QElapsedTimer m_streamClock, m_streamTime;   // the first restarts every second for the bitrate; the second runs from the start of the broadcast
+    StreamHealth m_health;                       // quick drops in a row = X refusing the stream
+    QString m_streamAdvice;                      // what to tell the person when MOBS stops retrying
+    bool m_streamGaveUp = false;
     quint64 m_streamBytes = 0;
     // newest preview frame, handed from libobs's video thread to the Qt main thread
     QMutex m_frameMutex;

@@ -95,7 +95,16 @@ the ready screen).
   It shows whenever the picture is on (ready screen with the preview on, armed, or a take) and goes when it goes. MOBS finds its OWN window by title **and process id**, so it can
   never grab another window. In this mode libobs opens no camera of its own (one open camera, not two). EXPERT > recording has the toggle "webcam in a window on the screen"; with it off
   the webcam is composited into the picture by libobs instead, and the older **drag handle over the live picture** applies (it moves in the broadcast live, and a corner tap snaps it back).
-  Without Hyprland the window is an ordinary window to move yourself. **Keep MOBS's own window off the captured screen** (another workspace or monitor), or the preview shows a tunnel.
+  Without Hyprland the window is an ordinary window to move yourself. **MOBS steps out of the picture while a take records**: a screen capture shows everything on that screen, MOBS's own window included (a stream of MOBS showing the stream),
+  so when a take starts MOBS's window moves silently to a hidden workspace (`special:mobs`) and returns to its own workspace when the take ends (EXPERT toggle "hide MOBS from the picture
+  while recording"; only if it is on the monitor that is in the picture: the captured screen's size is matched to the monitor). **SUPER + SHIFT + V stops the take** while it is hidden, and
+  desktop notifications say when the stream connects, drops, is not live, and when the take is saved.
+- **The webcam window's size and place.** It opens at **20% of the screen's width (480 to 1024 px)**, so it stays visible once the broadcast is scaled to 1080p (a 480 px window on a 5120 px
+  ultrawide would be a 180 px dot). Only a place **you chose** (moved with SUPER + drag or resized) is remembered; where MOBS put it is recomputed for whatever screen is there next time.
+  A small badge in its corner says **REC**, **LIVE**, **CONNECTING**, **RECONNECTING** or **NOT LIVE**; the viewers see it too, which is how streams usually say LIVE.
+
+![the webcam window's badge in every state (a stand-in picture instead of the camera)](../../docs/app/pip-badges.png)
+![a real Hyprland in the practice VM, mid-take: MOBS has stepped out, so the picture is the desktop plus the webcam window](../../docs/app/pip-hidden-while-recording-vm.png)
 - **GO LIVE to X is always a bold red button** beside Record, whether or not a stream key is saved: without one it opens EXPERT > live (the key is per machine).
 
 ## The log
@@ -157,9 +166,20 @@ never remembered: it clears when the take ends, when MOBS restarts, and by itsel
 **While live** the recording screen shows a LIVE pill (CONNECTING, LIVE, RECONNECTING, or a red outlined NOT LIVE), the bitrate and any dropped frames, and the
 header says LIVE. **Pause is off while you broadcast**: viewers would keep watching while the saved file skipped that stretch.
 
+**Am I live on X? Two steps, and MOBS can only do the first.** (1) **LIVE in MOBS means X is receiving your stream**: the recording screen says "X is receiving your stream (9.0 Mbps). Viewers see
+it once you press Go live in X Live Studio", the webcam window's badge says LIVE, and a desktop notification says it. (2) **Viewers see nothing until you press "Go live" in X Live Studio**
+(studio.x.com/live, your livestream; the recording screen has an "open X Live Studio" link). MOBS cannot see that step.
+
 - **If the stream fails the recording does not.** A refused key or address, or a lost connection after 10 retries (the waits grow from 2 s to about 77 s: roughly four minutes), shows "NOT LIVE: the
   server did not accept the address or stream key. The recording is still being saved." and the take carries on to its file. A dropped connection is retried
   first (RECONNECTING). Once the stream is gone, pause works again.
+- **When X keeps hanging up** (Fred, 2026-10-10: "it's connecting and dropping over and over"). X's ingest gives **no error** for a stream key it does not accept: it takes the connection, shows you
+  as connected, and hangs up about 3 seconds later; libobs reconnects, forever. Measured against the real X ingest with a deliberately fake key, for both encoders: `connecting > live > reconnecting > live > reconnecting ...`
+  every ~5 s, exactly what Fred saw. So after **3 quick drops in a row** (each within 15 s of going live) MOBS **stops retrying** and says "X hung up within seconds, 3 times in a row. The usual cause:
+  X no longer accepts this stream key (a key stops working when its livestream ends). In X Live Studio create a New livestream with source RTMP, paste its new key in EXPERT > live, then press GO LIVE".
+  One long session in between starts the count over (`StreamHealth`, unit-tested). The same signature will also appear with a mistyped key. `MOBS_X_PROBE=1 ./tst_obsbackend xRefusalLooksLikeThisToMobs`
+  (`MOBS_X_PROBE_HARDWARE=1` for NVIDIA) reproduces it against X's ingest with a **fake** key (no account involved) and prints every state with times.
+- **Compatibility settings for live ingest**: no B-frames and no look-ahead delay on the NVIDIA encoder (`bframes=0` for x264), and **dynamic bitrate** (on a congested uplink lower the bitrate instead of dropping frames).
 - A stream that cannot even start (no encoder) stops the take before it begins, with the reason, instead of a take that quietly never went live.
 - The broadcast uses its own registered stream target (`mobs_rtmp` in `obsbackend.cpp`) and not OBS's `rtmp-services` module, because that module asks
   obsproject.com for a service list every time it loads. MOBS never phones home.

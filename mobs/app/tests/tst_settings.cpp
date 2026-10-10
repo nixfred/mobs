@@ -127,6 +127,11 @@ private slots:
         { QSettings s(f, QSettings::IniFormat); Settings c(&s); QVERIFY(c.pip()); QSignalSpy sp(&c, &Settings::changed); c.setPip(false); c.setPip(false); QCOMPARE(sp.count(), 1); }
         QSettings s(f, QSettings::IniFormat); QVERIFY(!Settings(&s).pip());
     }
+    void mobsHidesItselfFromThePictureByDefaultAndTheChoiceIsRemembered() {
+        QTemporaryDir d; const QString f = d.path() + "/s.ini";
+        { QSettings s(f, QSettings::IniFormat); Settings c(&s); QVERIFY(c.stayOut()); c.setStayOut(false); }
+        QSettings s(f, QSettings::IniFormat); QVERIFY(!Settings(&s).stayOut());
+    }
     // ---- going live
     void theStreamAddressMustBeRtmpAndIsRemembered() {
         QTemporaryDir d; const QString ini = d.path() + "/s.ini";

@@ -62,6 +62,27 @@ private slots:
         QCOMPARE(PipController::fitInside(QRect(2900, 900, 480, 270), m), QRect(1080 + 1920 - 480, 40 + (1080 - 40) - 270, 480, 270));   // hanging off the corner: pulled inside
         QVERIFY(PipController::fitInside(QRect(100, 100, 480, 270), m).isNull());          // that place is on ANOTHER monitor: not valid here
     }
+    void theDefaultSizeScalesWithTheScreenSoTheWebcamIsVisibleOnceTheBroadcastIsScaledTo1080p() {
+        const auto mon = [](int w, int h, double scale) { return QJsonObject{{"x", 0}, {"y", 0}, {"width", w}, {"height", h}, {"scale", scale}, {"reserved", QJsonArray{0, 43, 0, 0}}}; };
+        QCOMPARE(PipController::defaultSize(mon(5120, 2160, 1.0)), QSize(1024, 576));    // Fred's ultrawide: 20% of the width, capped
+        QCOMPARE(PipController::defaultSize(mon(1920, 1080, 1.0)), QSize(480, 270));     // a laptop screen: never smaller than 480
+        QCOMPARE(PipController::defaultSize(mon(3440, 1440, 1.0)), QSize(688, 387));
+        QCOMPARE(PipController::defaultSize(mon(2560, 1600, 1.6)), QSize(480, 270));     // measured in layout units, not pixels
+    }
+    void aPlaceIsRememberedAsTextAndBadTextIsRefused() {
+        QRect r; QString m;
+        QVERIFY(PipController::decodePlace(PipController::encodePlace(QRect(-300, 12, 640, 360), "DP-3"), &r, &m));
+        QCOMPARE(r, QRect(-300, 12, 640, 360)); QCOMPARE(m, QString("DP-3"));            // negative coordinates are real on a multi-monitor layout
+        for (const char *bad : {"", "1,2,3", "a,b,c,d,DP-3", "1,2,10,10,DP-3", "1,2,640,360,", "1,2,99999,360,DP-3"}) QVERIFY2(!PipController::decodePlace(bad, &r, &m), bad);
+    }
+    void mobsHidesItsOwnWindowOnlyWhenItIsOnTheMonitorThatIsInThePicture() {
+        const QJsonObject big{{"width", 5120}, {"height", 2160}}, small{{"width", 1920}, {"height", 1080}};
+        QVERIFY(PipController::shouldHide(big, QSize(5120, 2160), 2));                     // the picture is that monitor
+        QVERIFY(!PipController::shouldHide(small, QSize(5120, 2160), 2));                  // MOBS is on the OTHER monitor: leave it, you can see it
+        QVERIFY(PipController::shouldHide(small, QSize(), 1));                             // size not known yet, one monitor: no doubt
+        QVERIFY(!PipController::shouldHide(small, QSize(), 2));                            // ... but with two, do not guess
+        QVERIFY(!PipController::shouldHide({}, QSize(5120, 2160), 1));                     // no monitor, nothing to decide
+    }
     // ---- when the window is wanted
     void theWindowIsWantedExactlyWhenScreenPlusMeShowsItsPicture() {
         QSettings s(dir.path() + "/a.ini", QSettings::IniFormat); Settings prefs(&s); AppState st(&s, nullptr, [] { return oneCamera(); });

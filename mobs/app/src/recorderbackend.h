@@ -63,6 +63,7 @@ signals:
     void hardwareChecked(bool nvenc, const QString &message);
     void previewFrame(const QImage &image);     // ~15 per second while previewing, 640x360
     void previewFailed(const QString &why);    // preview failure leaves the recording state alone
+    void captureSized(int width, int height);  // the screen source's size, once its first frame arrives (which monitor is in the picture)
     // The broadcast, which can fail and come back without touching the file. state: "connecting", "live", "reconnecting", "failed", "ended".
     // detail is a plain sentence for "failed" and "reconnecting", empty otherwise.
     void streamState(const QString &state, const QString &detail);

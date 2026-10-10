@@ -42,7 +42,7 @@ Rectangle {
                 width: parent.width
                 spacing: 28
                 Column {
-                    width: (parent.width - parent.spacing) / 2; spacing: 12
+                    width: (parent.width - parent.spacing) / 2; spacing: 8
                     Txt { text: "picture quality"; font.pixelSize: 16; font.bold: true }
                     Flow {
                         width: parent.width; spacing: 8
@@ -61,8 +61,9 @@ Rectangle {
                     }
                     Toggle { label: "open editor after recording"; on: Prefs.reviewAfter; onToggled: Prefs.setReviewAfter(!Prefs.reviewAfter) }
                     Toggle { label: "live preview"; on: App.preview; onToggled: App.setPreview(!App.preview) }
-                    Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Preview starts capture and turns on the camera in camera modes. Screen capture may open the system picker."; font.pixelSize: 12; color: Omarchy.tertiaryText }
-                    Toggle { label: "webcam in a window on the screen (SUPER + drag)"; on: Prefs.pip; onToggled: Prefs.setPip(!Prefs.pip) }
+                    Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Preview opens the camera; it may ask for a screen."; font.pixelSize: 12; color: Omarchy.tertiaryText }
+                    Toggle { label: "webcam window (SUPER + drag)"; on: Prefs.pip; onToggled: Prefs.setPip(!Prefs.pip) }
+                    Toggle { label: "hide MOBS while recording"; on: Prefs.stayOut; onToggled: Prefs.setStayOut(!Prefs.stayOut) }
                 }
                 Column {
                     width: (parent.width - parent.spacing) / 2; spacing: 12
