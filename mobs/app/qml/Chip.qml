@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // A small pill showing one thing that will be recorded (display, mic, camera).
 Rectangle {

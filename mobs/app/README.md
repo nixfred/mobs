@@ -13,11 +13,26 @@ restore token itself (`~/.config/mobs/screen-token`), so later recordings are si
 diagram and the recording use the same rectangle (`src/placement.h`). The choice is remembered. MOBS asks the camera for 1280x720
 MJPEG when it supports it.
 
-**Not wired yet (labelled on screen):** the review screen, the Pro drawer, a live preview, the Hyprland bind on gus.
+**Not wired yet (labelled on screen):** the review screen, the Pro drawer, a live preview.
 
 Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a narrow interface: begin, pause, end).
 The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine
 be swapped for another language later (Fred chose C++17 + QML first, 2026-10-09).
+
+## Install: launcher entry, icon, hotkey launch
+
+```sh
+cmake --install build --prefix ~/.local     # binary, launcher entry, icon, D-Bus launch file
+```
+
+MOBS then shows up in the launcher (SUPER+SPACE, Omalaunch reads `.desktop` files live) as **MOBS** with its icon
+(`dist/mobs.svg`: a record ring and dot, viewfinder corners, and a webcam lens in the bottom-right where MOBS puts your
+webcam). Right-clicking offers *Start or stop recording* and *Pause or resume*. A test installs into a temporary folder
+and checks the paths and that the installed binary starts and draws, because an earlier build only worked next to its
+build folder. Re-run the command after rebuilding.
+
+**Getting back to the three choices (my screen / screen + me / just my camera):** click **change** next to the mode text on the
+ready screen, press **Esc**, or click the camera chip. They are shown full-screen on first run only.
 
 ## The hotkey (physical Alt + Shift + V)
 

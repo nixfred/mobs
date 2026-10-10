@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // The MOBS window. Screens so far: choose and ready. Everything follows the live Omarchy theme.
 Window {

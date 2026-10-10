@@ -44,9 +44,9 @@ int main(int argc, char *argv[]) {
     Control control(&recorder, &state);
     if (qEnvironmentVariable("MOBS_NO_HOTKEY") != "1") control.registerOnSessionBus();   // tests that run several copies set MOBS_NO_HOTKEY=1
 
-    qmlRegisterSingletonInstance("Mobs", 1, 0, "Omarchy", &palette);
-    qmlRegisterSingletonInstance("Mobs", 1, 0, "Engine", &recorder);
-    qmlRegisterSingletonInstance("Mobs", 1, 0, "App", &state);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Omarchy", &palette);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
 
     QQmlApplicationEngine engine;
     engine.loadFromModule("Mobs", "Main");

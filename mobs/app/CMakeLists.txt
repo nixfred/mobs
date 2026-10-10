@@ -10,6 +10,10 @@ enable_testing()
 
 find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick DBus Test)
 find_package(libobs REQUIRED)
+
+# QTP0001: embed the QML module under :/qt/qml/<URI>, where Qt's default import path looks. Without it the module's
+# qmldir says `prefer :/Mobs/` and an INSTALLED binary cannot find its own QML (it only worked next to the build folder).
+qt_policy(SET QTP0001 NEW)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
 add_library(mobs-core STATIC src/recorderbackend.h src/palette.cpp src/appstate.cpp src/camera.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp)
@@ -36,3 +40,13 @@ foreach(t palette appstate engine control camera obsbackend)
     set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   endif()
 endforeach()
+
+# ---- install: `cmake --install build --prefix ~/.local` puts MOBS in the launcher, with its icon, and makes the hotkey able
+# to start it (D-Bus launch file). Nothing here touches Hyprland: the key bind is a separate, explicit step (README).
+install(TARGETS mobs RUNTIME DESTINATION bin)
+install(FILES dist/mobs.svg DESTINATION share/icons/hicolor/scalable/apps)
+install(CODE "set(MOBS_SRC \"${CMAKE_CURRENT_SOURCE_DIR}\")")
+install(SCRIPT dist/install-templates.cmake)
+
+add_test(NAME install_paths COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DPREFIX=${CMAKE_BINARY_DIR}/install-test
+         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_install.cmake)

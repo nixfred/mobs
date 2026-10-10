@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // "What are we making, which webcam, and where does it sit." Opens from the camera chip (or by itself when a camera
 // recording is asked for without a camera). The diagram uses the SAME rectangle the recording uses.

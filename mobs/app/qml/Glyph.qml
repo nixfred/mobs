@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // One Nerd Font icon character.
 Text {

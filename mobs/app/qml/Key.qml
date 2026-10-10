@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // A keycap chip: how shortcuts are shown everywhere in MOBS.
 Rectangle {

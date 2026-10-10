@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // While recording: big timer, pause and stop. Starting shows what MOBS is waiting for (the screen dialog).
 Item {
@@ -52,7 +52,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 8
             Key { text: "Alt" } Key { text: "Shift" } Key { text: "V" }
-            Txt { text: "stop (hotkey not wired yet)"; color: Omarchy.tertiaryText; font.pixelSize: 13; leftPadding: 8; anchors.verticalCenter: parent.verticalCenter }
+            Txt { text: "stop"; color: Omarchy.tertiaryText; font.pixelSize: 13; leftPadding: 8; anchors.verticalCenter: parent.verticalCenter }
         }
     }
 }

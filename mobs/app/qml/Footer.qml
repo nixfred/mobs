@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // Bottom strip: the keys that work on this screen, always visible.
 Item {

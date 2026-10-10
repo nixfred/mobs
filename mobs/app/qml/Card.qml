@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // One of the three big choices on the first screen.
 Rectangle {

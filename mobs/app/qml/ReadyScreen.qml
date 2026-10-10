@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // One big record button, plain words, and what will be recorded.
 Item {
@@ -19,7 +19,19 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 6
             Txt { text: "ready to record"; font.pixelSize: 24; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
-            Txt { text: App.pickName + (App.pick === 3 ? "" : ", with mic"); color: Omarchy.secondaryText; font.pixelSize: 14; anchors.horizontalCenter: parent.horizontalCenter }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 10
+                Txt { text: App.pickName + (App.pick === 3 ? "" : ", with mic"); color: Omarchy.secondaryText; font.pixelSize: 14 }
+                Rectangle {   // the way back to "what are we making?": my screen / screen + me / just my camera
+                    width: changeLabel.implicitWidth + 22; height: 26; radius: 13
+                    color: "transparent"
+                    border.color: changeHover.hovered ? Omarchy.accent : Omarchy.selection; border.width: 1
+                    Txt { id: changeLabel; anchors.centerIn: parent; text: "change"; font.pixelSize: 12; color: Omarchy.accent }
+                    HoverHandler { id: changeHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: App.back() }
+                }
+            }
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -27,7 +39,7 @@ Item {
             Key { text: "Alt" }
             Key { text: "Shift" }
             Key { text: "V" }
-            Txt { text: "starts it from anywhere (hotkey not wired yet)"; color: Omarchy.tertiaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; leftPadding: 8 }
+            Txt { text: "starts it from anywhere"; color: Omarchy.tertiaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; leftPadding: 8 }
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter

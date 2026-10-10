@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // Text in the Omarchy mono font, themed.
 Text {

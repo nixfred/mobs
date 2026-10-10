@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // First run, and "new": three big choices.
 Item {

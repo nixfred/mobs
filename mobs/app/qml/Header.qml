@@ -1,5 +1,5 @@
 import QtQuick
-import Mobs
+import MobsCore
 
 // Top strip: the MOBS mark, the current state word, and the Pro door (not wired yet).
 Item {
