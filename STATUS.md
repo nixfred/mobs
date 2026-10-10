@@ -22,7 +22,7 @@
 
 ## Open
 
-- Wayland screen capture through the portal while OBS is hidden: no picker ever appeared in the VM. Needs one run on gus with a click.
+- Wayland screen capture through the portal: blockers understood (ADR 0005, spike 3b). The picker is a 1000x500 layer-shell overlay on the focused monitor; gus's portal had wedged and was restarted. Still needs one run with Fred at the desk to click the picker.
 - New dependency: qt6-websockets (not on gus yet).
 - Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).

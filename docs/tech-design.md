@@ -76,9 +76,10 @@ so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting i
 
 ## Risks and the next test
 
-- **Portal screen capture while OBS is hidden: the last unknown.** Spike 3 proved hidden OBS, websocket control,
-  record, pause, resume, stop and the file path (ADR 0005). In the VM no portal picker ever appeared, so real
-  screen capture is untested. Needs one run on real hardware where someone clicks the picker.
+- **Portal screen capture while hidden: understood, one click from proven.** Hiding OBS does not matter. The picker is a
+  layer-shell overlay centered on the focused monitor (invisible to `hyprctl clients`). gus's portal backend had wedged and
+  needed a restart (ADR 0005). MOBS must close portal sessions cleanly, tell the user before the first picker appears,
+  and rely on the restore token (`allow_token_by_default = true`) so later recordings are silent.
 - **Profile must set `RecQuality`** (not `Stream`) or pause silently does nothing; **wait for `RecordStateChanged`
   STOPPED** before opening a take, because `StopRecord` replies before a Hybrid MP4 is finalized.
 - **New dependency:** `qt6-websockets` (not installed on gus; installed in the VM for the spike).

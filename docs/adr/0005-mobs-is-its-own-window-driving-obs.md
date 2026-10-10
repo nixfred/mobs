@@ -42,7 +42,13 @@ OpenGL video output instead of the software-rendered workaround of ADR 0004.
     `Stream` (OBS's default). MOBS's profile sets `RecQuality=Small`.
   - `StopRecord` returns the path BEFORE a Hybrid MP4 is finalized (the file looked 0 bytes). Wait for the
     `RecordStateChanged` event with state STOPPED (about 0.7 s later) before opening the take.
-- NOT proven: Wayland screen capture through the portal while OBS is hidden. In the VM no picker window ever
-  appeared (cause unknown: the VM's portal, or the hidden OBS). Needs a real desktop and one click.
-- Beginner presets ("Record my screen", "Screen + my camera", "Just my camera") become scenes
-  MOBS creates over websocket, so beginners never see scenes or sources.
+- Portal screen capture: NOT yet proven end to end, but the blockers are understood (spike 3b, real gus hardware):
+  - OBS hidden vs visible makes no difference; hiding is not the problem.
+  - The xdph picker is a layer-shell overlay (`ch.wysbd.hyprland-preview-share-picker`, 1000x500, centered on the
+    focused monitor), so it never shows in `hyprctl clients`; look in `hyprctl layers`. xdph shows it during `SelectSources`.
+  - gus's xdg-desktop-portal-hyprland was wedged (100% CPU, no answers, running since Oct 6) until restarted with
+    `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal` (Fred approved). After the restart the
+    picker appeared. An abandoned portal request is the likeliest way to wedge it; a clean `Session.Close` left it at 0.1% CPU.
+  - Not yet seen: someone clicking the picker while hidden OBS captures (Fred was not at the desk for the run).
+  - `~/.config/hypr/xdph.conf` has `allow_token_by_default = true`, so after one pick OBS keeps a restore token and later
+    captures need no picker. MOBS's first run therefore needs one friendly "pick your screen" step; later runs are silent.
