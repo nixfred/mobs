@@ -26,6 +26,10 @@ A Qt program with libobs embedded recorded a valid file with pause, on native Wa
 
 Spike 4b, real gus hardware: in-process PipeWire screen capture works. First run opened the picker (Fred picked), recording with pause had real content (1,871 colours); MOBS saved the restore token itself and the second run needed no picker (2,279 colours). Watch: "Cannot create EGLImage" warnings (fallback worked).
 
+## Engine and real recording (mobs/app, 2026-10-09): works in the VM
+
+`Engine` (state machine) + `RecorderBackend` interface + `ObsBackend` (libobs in-process, RAII-ordered teardown, non-blocking start while the picker is open, restore token saved the moment the portal answers). 15 engine tests with a fake backend (a deliberate bug in the pause logic was first NOT caught, so I strengthened the test and re-proved it fails), 3 real-libobs integration tests on Wayland (record + pause with a duration check, record twice in one process, cancel before start). Driven like a user in the VM with real key presses (choose, Space, Space, Space, Enter): a 1920x1080 H.264 + AAC file of 6.40 s from 6.81 s key-timed recording with a 2.24 s pause cut out. Not yet run on gus's real screen through the app (needs one picker click).
+
 ## App skeleton (mobs/app, 2026-10-09)
 
 - Choose and ready screens in Qt Quick, split into components from the prototype; the live Omarchy palette (full colors.toml + Hyprland rounding via Monologue's theme.cpp, reused by path), remembered pick, real display name. 18 unit tests pass (palette parsing, live theme switch, theme folder replaced, contrast guard, app state).
@@ -36,5 +40,5 @@ Spike 4b, real gus hardware: in-process PipeWire screen capture works. First run
 
 - Wayland screen capture is PROVEN end to end on gus (ADR 0005, spike 3b): pre-seeded screen source, hidden OBS, one picker click, real frames, then a silent rerun with the saved restore token. Two cautions: a screen source created live over websocket never opens the picker (load it from a scene collection file instead), and a REGION selection recorded black frames (two runs) while another selection worked. Next to test: loading the collection with SetCurrentSceneCollection.
 - New dependency: qt6-websockets (not on gus yet).
-- Not built: the OBS link (websocket client), the hotkey, recording/review screens, the Pro drawer and its tabs, the recording pill, the first-run permission screen.
+- Not built: the Alt+Shift+V hotkey (D-Bus), camera sources, the review screen, the Pro drawer and its tabs, a live preview, the recording pill, the first-run permission screen, a real run of the app on gus.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).

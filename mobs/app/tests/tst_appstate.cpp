@@ -34,12 +34,17 @@ private slots:
         AppState a(&s); a.choose(0); a.choose(4);
         QCOMPARE(a.screen(), 1); QCOMPARE(a.pick(), 0);
     }
-    void recordSaysItIsNotWiredYet() {
+    void recordingShowsScreenThreeThenReturns() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
-        AppState a(&s); a.choose(1); a.record();
-        QVERIFY(a.note().contains("not wired"));
-        a.choose(1);   // choosing again clears the note
-        QVERIFY(a.note().isEmpty());
+        AppState a(&s); a.choose(1);
+        QSignalSpy sc(&a, &AppState::screenChanged);
+        a.setRecording(true);
+        QCOMPARE(a.screen(), 3);
+        a.setRecording(true);          // no change, no signal
+        QCOMPARE(sc.count(), 1);
+        a.setRecording(false);
+        QCOMPARE(a.screen(), 2);       // back on ready, with the pick kept
+        QCOMPARE(a.pick(), 1);
     }
 };
 QTEST_MAIN(AppStateTests)

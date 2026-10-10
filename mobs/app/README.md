@@ -3,19 +3,27 @@
 MOBS's own window (ADR 0005). Qt 6 Quick, GPLv2. It reuses Monologue's `theme.cpp` **by path** from
 `../../monologue/src`, so subtree pulls keep updating it.
 
-**What works now:** the choose and ready screens; the live Omarchy theme (full `colors.toml` palette plus Hyprland
-rounding), including theme switches and a contrast guard for dim text; remembering your pick between launches;
-the real display name and size. **Not wired yet (and labelled so on screen):** recording, the hotkey, mic and camera,
-the Pro drawer, full OBS, the OBS link.
+**What works now:** the choose, ready and recording screens; the live Omarchy theme (full palette, Hyprland rounding,
+theme switches, contrast guard); your pick remembered; the real display name; and **real recording with libobs inside
+this process** (ADR 0006): Space or the red button starts, Space pauses and resumes, Enter stops and saves an MP4
+(H.264 + AAC) under `~/Videos/mobs`. The first screen recording opens the system's screen picker once; MOBS saves the
+restore token itself (`~/.config/mobs/screen-token`), so later recordings are silent. **Not wired yet (labelled on screen):**
+the Alt + Shift + V hotkey, camera sources, the review screen, the Pro drawer, a live preview.
+
+Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a narrow interface: begin, pause, end).
+The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine
+be swapped for another language later (Fred chose C++17 + QML first, 2026-10-09).
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build
-QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure   # 18 tests, no window appears
+QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure   # unit tests, no window appears
+# real libobs recording test (needs a Wayland session, e.g. the Test Drive VM):
+QT_QPA_PLATFORM=wayland MOBS_LIBOBS_TEST=1 ./build/tst_obsbackend
 ./build/mobs
 ```
 
 Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "current" folder), `MOBS_SETTINGS` (settings file),
-`MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_GRAB=/path.png` (save the window's own pixels and quit).
+`MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`.
 
 Layout: `src/palette.*` (theme reader), `src/appstate.*` (screens and pick), `qml/` (components and screens), `tests/`.
 Screens are checked in the Test Drive practice VM, never on a live desktop; see `docs/app/`.

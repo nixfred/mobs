@@ -13,7 +13,7 @@ Item {
             Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: 4 }
             Rectangle { anchors.centerIn: parent; width: 128; height: 128; radius: 64; color: Omarchy.red }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: App.record() }
+            TapHandler { onTapped: Engine.start(App.pick) }
         }
         Column {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -27,7 +27,7 @@ Item {
             Key { text: "Alt" }
             Key { text: "Shift" }
             Key { text: "V" }
-            Txt { text: "starts it from anywhere (not wired yet)"; color: Omarchy.tertiaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; leftPadding: 8 }
+            Txt { text: "starts it from anywhere (hotkey not wired yet)"; color: Omarchy.tertiaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter; leftPadding: 8 }
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -37,8 +37,11 @@ Item {
             Chip { glyph: ""; text: App.pick === 1 ? "camera off" : "camera: not connected yet"; tint: Omarchy.tertiaryText }
         }
         Txt {
-            text: App.note
-            visible: App.note !== ""
+            text: Engine.message
+            visible: Engine.message !== ""
+            width: 640
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
             color: Omarchy.accent
             font.pixelSize: 13
             anchors.horizontalCenter: parent.horizontalCenter

@@ -27,14 +27,14 @@ void AppState::choose(int pick) {
     if (pick < 1 || pick > 3) return;
     if (pick != m_pick) { m_pick = pick; m_settings->setValue("pick", pick); m_settings->sync(); emit pickChanged(); }
     if (m_screen != 2) { m_screen = 2; emit screenChanged(); }
-    if (!m_note.isEmpty()) { m_note.clear(); emit noteChanged(); }
 }
 
 void AppState::back() {
     if (m_screen != 1) { m_screen = 1; emit screenChanged(); }
 }
 
-void AppState::record() {
-    m_note = "recording is not wired yet: it arrives with the OBS link";
-    emit noteChanged();
+void AppState::setRecording(bool recording) {
+    if (recording == m_recording) return;
+    m_recording = recording;
+    emit screenChanged();
 }

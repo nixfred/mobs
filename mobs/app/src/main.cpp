@@ -1,6 +1,10 @@
 #include "appstate.h"
+#include "engine.h"
+#include "obsbackend.h"
 #include "palette.h"
+#include <QDir>
 #include <QGuiApplication>
+#include <QStandardPaths>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QSettings>
@@ -21,7 +25,15 @@ int main(int argc, char *argv[]) {
     if (const int s = qEnvironmentVariableIntValue("MOBS_PICK"); s >= 1 && s <= 3 && state.screen() == 1) state.choose(s);
     if (qEnvironmentVariableIntValue("MOBS_SCREEN") == 1) state.back();
 
+    // Declared before the QML engine so libobs is shut down AFTER the UI is gone (see ObsBackend::~ObsBackend).
+    const QString cfg = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/mobs";
+    QDir().mkpath(cfg);
+    ObsBackend backend(qEnvironmentVariable("MOBS_TOKEN_FILE", cfg + "/screen-token"));
+    Engine recorder(&backend, qEnvironmentVariable("MOBS_REC_DIR", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/mobs"));
+    QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
+
     qmlRegisterSingletonInstance("Mobs", 1, 0, "Omarchy", &palette);
+    qmlRegisterSingletonInstance("Mobs", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("Mobs", 1, 0, "App", &state);
 
     QQmlApplicationEngine engine;

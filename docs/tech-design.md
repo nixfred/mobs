@@ -20,7 +20,7 @@ mobs  (one binary, one window, one process)
   │    ├─ screens        choose · ready · recording · review · Pro drawer     (docs/screen-design.md)
   │    ├─ Palette        live Omarchy theme (colors.toml) + Hyprland rounding + contrast guard   [built]
   │    ├─ AppState       screens, remembered pick                                                [built]
-  │    ├─ Engine         wraps libobs: startup, video/audio, scenes, sources, encoders, outputs  [spike 4]
+  │    ├─ Engine         state machine over a RecorderBackend; ObsBackend wraps libobs (swappable)   [built]
   │    ├─ Review         Monologue's edit.cpp, mediautils.cpp, thumbnails.cpp, EditBar.qml (by path)
   │    └─ Control        D-Bus org.mobs.Control (Toggle, Pause, Status) for the Alt+Shift+V bind
   ├─ libobs + engine plugins   built from the obs/ subtree with ENABLE_FRONTEND=OFF
@@ -88,6 +88,7 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 
 ## Next
 
-1. An `Engine` class in `mobs/app` wrapping spike 4, with tests, and the record button on screen 2 really recording.
+1. DONE in the VM (2026-10-09): `Engine` + `RecorderBackend` + `ObsBackend`, tests, and a record button that really records. Next: one real run on gus (picker once).
+1b. The Alt+Shift+V hotkey over D-Bus.
 2. A live preview inside the Qt Quick scene.
 3. The review screen with Monologue's editor; then the Pro drawer.

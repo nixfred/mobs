@@ -13,6 +13,6 @@ Item {
     }
     Txt {
         anchors { right: parent.right; rightMargin: 28; verticalCenter: parent.verticalCenter }
-        text: "alpha: not recording yet"; color: Omarchy.tertiaryText; font.pixelSize: 11; opacity: 0.8
+        text: "alpha"; color: Omarchy.tertiaryText; font.pixelSize: 11; opacity: 0.8
     }
 }

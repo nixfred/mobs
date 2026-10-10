@@ -1,0 +1,136 @@
+#include "engine.h"
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QtTest>
+
+// A backend that records nothing: the test plays the part of libobs by emitting its signals.
+class FakeBackend : public RecorderBackend {
+public:
+    void begin(int pick, const QString &path) override { began++; lastPick = pick; lastPath = path; }
+    void pause(bool p) override { pauseCalls++; lastPause = p; }
+    void end() override { ended++; }
+    int began = 0, ended = 0, pauseCalls = 0, lastPick = 0;
+    bool lastPause = false;
+    QString lastPath;
+};
+
+class EngineTests : public QObject {
+    Q_OBJECT
+    QTemporaryDir dir;
+private slots:
+    void startGoesStartingThenRecording() {
+        FakeBackend b; Engine e(&b, dir.path());
+        QCOMPARE(e.state(), QString("idle"));
+        e.start(1);
+        QCOMPARE(e.state(), QString("starting"));
+        QCOMPARE(b.began, 1);
+        QVERIFY(b.lastPath.startsWith(dir.path() + "/mobs "));
+        QVERIFY(b.lastPath.endsWith(".mp4"));
+        QVERIFY(e.active());
+        emit b.started();
+        QCOMPARE(e.state(), QString("recording"));
+    }
+    void elapsedFreezesWhilePaused() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); emit b.started();
+        QTest::qWait(400);
+        QVERIFY2(e.elapsedSeconds() >= 0.3, qPrintable(QString::number(e.elapsedSeconds())));
+        const double before = e.elapsedSeconds();
+        e.togglePause();
+        QCOMPARE(e.state(), QString("paused"));
+        QVERIFY(b.lastPause);
+        const double frozen = e.elapsedSeconds();
+        QVERIFY2(frozen >= before - 0.02, "pausing must KEEP the time already recorded");
+        QTest::qWait(400);
+        QVERIFY(qAbs(e.elapsedSeconds() - frozen) < 0.02);       // the clock must not run while paused
+        e.togglePause();
+        QCOMPARE(e.state(), QString("recording"));
+        QVERIFY(!b.lastPause);
+        QTest::qWait(300);
+        QVERIFY(e.elapsedSeconds() > frozen + 0.2);               // and it must carry on from where it stopped
+    }
+    void stopSavesTheFile() {
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy saved(&e, &Engine::saved);
+        e.start(1); emit b.started();
+        e.stop();
+        QCOMPARE(e.state(), QString("stopping"));
+        QCOMPARE(b.ended, 1);
+        emit b.finished("/tmp/x.mp4");
+        QCOMPARE(e.state(), QString("idle"));
+        QCOMPARE(e.lastFile(), QString("/tmp/x.mp4"));
+        QCOMPARE(saved.count(), 1);
+        QVERIFY(e.message().contains("saved"));
+    }
+    void cancellingBeforeTheFirstFrameSavesNothing() {
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy saved(&e, &Engine::saved);
+        e.start(1);
+        e.stop();                       // still "starting": the picker is open
+        QCOMPARE(b.ended, 1);
+        emit b.finished(QString());
+        QCOMPARE(e.state(), QString("idle"));
+        QCOMPARE(saved.count(), 0);
+        QVERIFY(e.message().contains("cancelled"));
+    }
+    void failureReturnsToIdleWithTheReason() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1);
+        emit b.failed("no encoder");
+        QCOMPARE(e.state(), QString("idle"));
+        QCOMPARE(e.message(), QString("no encoder"));
+        e.start(1);                     // and the user can simply try again
+        QCOMPARE(b.began, 2);
+    }
+    void failureWhileRecordingStopsTheClock() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); emit b.started(); QTest::qWait(250);
+        emit b.failed("disk full");
+        QCOMPARE(e.state(), QString("idle"));
+        const double t = e.elapsedSeconds();
+        QTest::qWait(300);
+        QCOMPARE(e.elapsedSeconds(), t);
+    }
+    void cameraPicksSayTheyAreNotWiredAndRecordNothing() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(2); QCOMPARE(b.began, 0); QVERIFY(e.message().contains("not wired")); QCOMPARE(e.state(), QString("idle"));
+        e.start(3); QCOMPARE(b.began, 0);
+    }
+    void startIsIgnoredWhileBusy() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); e.start(1);
+        QCOMPARE(b.began, 1);
+        emit b.started(); e.start(1);
+        QCOMPARE(b.began, 1);
+    }
+    void pauseOnlyWhenRecording() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.togglePause(); QCOMPARE(b.pauseCalls, 0);       // idle
+        e.start(1); e.togglePause(); QCOMPARE(b.pauseCalls, 0);   // starting
+    }
+    void toggleStartsThenStops() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.toggle(1); QCOMPARE(b.began, 1);
+        emit b.started();
+        e.toggle(1); QCOMPARE(b.ended, 1);                // the Alt+Shift+V behaviour
+    }
+    void stopWhileIdleOrStoppingDoesNothing() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.stop(); QCOMPARE(b.ended, 0);
+        e.start(1); emit b.started(); e.stop(); e.stop();
+        QCOMPARE(b.ended, 1);
+    }
+    void elapsedIsFormattedAsClockTime() {
+        QCOMPARE(Engine::formatElapsed(0), QString("00:00:00"));
+        QCOMPARE(Engine::formatElapsed(59.9), QString("00:00:59"));
+        QCOMPARE(Engine::formatElapsed(3725), QString("01:02:05"));
+    }
+    void aLateStartedSignalAfterStopIsIgnored() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.start(1); e.stop();
+        emit b.started();               // backend raced: must not resurrect the recording
+        QCOMPARE(e.state(), QString("stopping"));
+    }
+};
+QTEST_MAIN(EngineTests)
+#include "tst_engine.moc"
