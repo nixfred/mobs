@@ -217,3 +217,20 @@ Fred, after switching to Fable 5.1 at xhigh effort: "Look around and make this w
 
 Not verified: a real broadcast with the corrected key (it goes to Fred's followers once he presses Go live; he is to try it), the real BRIO inside the webcam window, and vic (still on the previous build).
 
+
+## A black picture while "streaming fine" (2026-10-10, evening)
+
+Fred streamed with MOBS: connected to X (9.1 Mbps, 0 frames dropped) but the live picture box and the whole 11-minute take were pure black, and X Live Studio showed no livestream. Proven with numbers, not by looking at his screen: the take measured brightness 16 (black) for all 667 s; three raw frames read straight off the portal PipeWire node were all zeros including alpha; grim captured the same area fine. So the portal or compositor delivered empty buffers. The picker had returned a dragged Region (5109x2153), which this code base already knew goes black on gus.
+
+- **New guard** (`Engine::onPreviewFrame`, `liveBlock`): after the screen source is up, 6 s of black sets `Engine.pictureProblem`; it shows on the live picture, on the ready screen and on the recording screen, fires a desktop notification mid-take, and an armed GO LIVE is refused while it lasts and until one real frame has been seen. It never stops a stream or a recording. Camera picks are never judged. Unit tests in tst_engine, UI scenarios in check_ui.py ("black").
+- **Portal restarted** (Fred approved) and the saved Region pick set aside (`screen-token-desktop.region-pick-2026-10-10`).
+- **Not settled**: whether the Region pick alone caused it or the portal was in a bad state (it had run 20 h and logged "DMA-BUF fixation failed" earlier); both were changed together. Confirm with his next launch.
+
+## The dock: guest above you, chat below you (2026-10-10, night)
+
+Fred asked for the live chat under his webcam, moving and resizing as one, then for a promoted viewer to join ABOVE his webcam with the chat continuing BELOW it. The webcam window is now ONE window with up to three stacked cards (guest, you, chat); full description in mobs/app/README.md "The dock".
+
+- **Built and verified**: `ChatModel` (read-only flow, 200 cap, dedupe, stable per-name colour; 10 unit tests), `qml/ChatPanel.qml` (glass card, slide-in, fade at the top), the stacked layout in `qml/PipWindow.qml` (videos keep 16:9 at the width; the chat takes the rest of the height; a short window squeezes the videos first), compositor-driven move and resize (`startSystemMove`, `startSystemResize`; no hyprctl per frame), `PipController` (default size with chat, its own remembered place, `withGuest` grows the window upward when there is room and downward otherwise), `Prefs.chat`, a surface with an alpha buffer so the seams can be see-through.
+- **Real Hyprland (Test Drive VM, 0.56.2)**: placed 480x490 floating and pinned; the gap between the cards is genuinely see-through; the resize grips are hidden until the pointer is over the window and then fade in; a guest card added a 278 px card above you (clamped downward there because the dock was at the top of a 800 px screen). Not testable there: an actual drag (no ydotool or wlrctl in the VM).
+- **Test hooks**: `MOBS_FAKE_CHAT=1` runs a made-up chat flow labelled DEMO; script steps `chatmsg=name|words`, `chatoff`, `guest=name|status`, `pipsize=WxH`, `checkpip`; 10 "dock:" UI scenarios at five window sizes.
+- **Not built**: the real chat feed (X push-only `broadcast.chat` webhook plus a relay MOBS polls; waits on X Livestream API access, unconfirmed for Live Studio RTMP), the guest call itself (no confirmed X guest feature for RTMP; Jitsi meet.jit.si needs a signed-in host, guests join by link; embedding it in the dock needs QtWebEngine), the promote button on a chat message, a chat toggle in EXPERT.

@@ -16,6 +16,7 @@ Engine::Engine(RecorderBackend *backend, QString recordingDir, QObject *parent)
     connect(backend, &RecorderBackend::waitingForUser, this, [this](const QString &w) { setMessage(w); });
     connect(backend, &RecorderBackend::previewFailed, this, [this](const QString &why) {
         if (m_previewing) { m_previewing = false; emit previewingChanged(); }
+        resetPicture(true);
         setMessage(why);
     });
     connect(backend, &RecorderBackend::audioLevels, this, [this](double micDb, double desktopDb, bool micFrames, bool desktopFrames, const QString &problem) {
@@ -30,6 +31,8 @@ Engine::Engine(RecorderBackend *backend, QString recordingDir, QObject *parent)
         m_hardwareKnown = true; m_nvencAvailable = nvenc; m_hardwareMessage = message; emit hardwareChanged();
     });
     connect(backend, &RecorderBackend::streamState, this, &Engine::onStreamState);
+    connect(backend, &RecorderBackend::captureSized, this, [this](int w, int h) { if (w > 0 && h > 0) m_screenSized = true; });
+    connect(backend, &RecorderBackend::previewFrame, this, &Engine::onPreviewFrame);
     connect(backend, &RecorderBackend::streamStats, this, [this](int kbps, int dropped) {
         if (!m_takeStreams || (kbps == m_streamKbps && dropped == m_streamDropped)) return;
         static qint64 lastLogged = 0; const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -119,6 +122,8 @@ void Engine::start(int pick) {
             emit liveSetupNeeded();
             return;
         }
+        const QString block = liveBlock(pick);
+        if (!block.isEmpty()) { setMessage(block); return; }   // still armed: it goes live as soon as there is a real picture
         stream.on = true;
     }
     const QString dir = m_folderFn ? m_folderFn() : m_dir;
@@ -197,6 +202,7 @@ void Engine::onStarted() {
 void Engine::forgetScreen() {
     if (active()) return;
     MobsLog::write("engine", "change screen: forgetting the chosen screen and guest window");
+    resetPicture(true);   // a new screen is a new picture: no verdict carries over
     m_backend->forgetCapture();
 }
 
@@ -236,6 +242,54 @@ bool Engine::looksBlack(const QByteArray &g) {
     return mx < 4;                                                        // every pixel is (almost) 0
 }
 
+// The live version of that check, on the preview frames: a screen share that delivers nothing but black (a dragged region on gus; a stuck
+// portal can do it too) must be said out loud before it reaches viewers. It waits until the screen source is up, so someone still choosing
+// in the picker is never told off, and the black has to last, so one dark moment is not a problem.
+void Engine::onPreviewFrame(const QImage &frame) {
+    const bool taking = m_state == Recording || m_state == Paused;
+    const int pick = taking ? m_recPick : m_previewPick;
+    if (!m_screenSized || pick == 3 || frame.isNull()) return;   // a camera can be covered on purpose; no screen source yet means nothing to judge
+    const QImage small = frame.scaled(32, 18, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_Grayscale8);
+    QByteArray gray;
+    for (int y = 0; y < small.height(); ++y) gray.append(reinterpret_cast<const char *>(small.constScanLine(y)), small.width());
+    if (!looksBlack(gray)) {
+        m_blackClock.invalidate();
+        m_sawPicture = true;
+        if (!m_pictureProblem.isEmpty()) {
+            m_pictureProblem.clear();
+            MobsLog::write("capture", "the screen picture is back");
+            emit pictureChanged();
+        }
+        return;
+    }
+    if (!m_blackClock.isValid()) { m_blackClock.start(); return; }
+    if (m_pictureProblem.isEmpty() && m_blackClock.elapsed() >= m_blackAfterMs) {
+        m_pictureProblem = "The picture is black: click (change) and pick your screen, not Region.";   // one line even in a small window: the ready screen has no room for more
+        MobsLog::write("capture", QString("the screen picture has been black for %1 ms: the screen share is delivering empty frames. A dragged Region does this; if a whole screen is black too, "
+                                          "the portal is stuck: systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal").arg(m_blackClock.elapsed()));
+        emit pictureChanged();
+    }
+}
+
+// screenToo: also forget that the screen source was ever up (a new screen, or a preview that failed). Otherwise only the verdict goes.
+void Engine::resetPicture(bool screenToo) {
+    if (screenToo) m_screenSized = false;
+    m_sawPicture = false;
+    m_blackClock.invalidate();
+    if (m_pictureProblem.isEmpty()) return;
+    m_pictureProblem.clear();
+    emit pictureChanged();
+}
+
+// Why an armed take must not start yet (empty = go ahead). Only screen picks have a picture to vouch for. Nothing is known until the
+// screen source reports its size, and then GO LIVE waits for one real frame: a share that is black from the start never goes out.
+QString Engine::liveBlock(int pick) const {
+    if (pick == 3 || !m_screenSized) return {};
+    if (!m_pictureProblem.isEmpty()) return m_pictureProblem;
+    if (!m_sawPicture) return "checking your screen's picture: press GO LIVE again in a moment";
+    return {};
+}
+
 // Some portal picks (a dragged REGION, on gus) record a valid file full of black frames. Say so instead of
 // leaving the user to find out later. A still from 1 s in, shrunk to 32x18 grey, is plenty to tell black from a screen.
 void Engine::checkPicture(const QString &path) {
@@ -261,6 +315,7 @@ void Engine::checkPicture(const QString &path) {
 
 void Engine::setPreview(bool wanted, int pick) {
     m_previewWish = wanted;
+    if (pick != m_previewPick) m_blackClock.invalidate();   // a different picture: black so far says nothing about it
     m_previewPick = pick;
     applyPreview();
 }
@@ -274,6 +329,7 @@ void Engine::applyPreview() {
     const bool on = (m_previewWish || live) && usable;
     const bool wasOn = m_previewing;
     if (on != m_previewing) { m_previewing = on; emit previewingChanged(); }
+    if (!on) resetPicture(false);   // no picture is being watched: the next one has to prove itself again
     if (on || wasOn) m_backend->setPreview(on, RecordSpec{pick, QString(), cam});
 }
 

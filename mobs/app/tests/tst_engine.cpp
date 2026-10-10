@@ -26,6 +26,10 @@ public:
     RecordSpec lastSpec;
 };
 
+static QImage solid(const QColor &c) { QImage img(640, 360, QImage::Format_RGB32); img.fill(c); return img; }
+// Black frames with a real pause between them, as the preview delivers them: the first starts the clock, the one after the pause can end it.
+static void blackFor(FakeBackend &b, int ms) { emit b.previewFrame(solid(Qt::black)); QTest::qWait(ms); emit b.previewFrame(solid(Qt::black)); }
+
 class EngineTests : public QObject {
     Q_OBJECT
     QTemporaryDir dir;
@@ -564,6 +568,68 @@ private slots:
         FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
         e.start(1); emit b.started();
         e.setStreamArmed(true); QVERIFY(!e.streamArmed());
+    }
+    // ---- a screen picture that is nothing but black
+    void aBlackScreenPictureIsCalledOutOnlyOnceTheScreenIsUpAndItStaysBlack() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setBlackAfter(200); QSignalSpy changed(&e, &Engine::pictureChanged);
+        e.setPreview(true, 1);
+        blackFor(b, 250);                                       // the picker is still open: no screen source yet, so no verdict
+        QVERIFY(e.pictureProblem().isEmpty());
+        emit b.captureSized(1920, 1080);
+        emit b.previewFrame(solid(Qt::black)); emit b.previewFrame(solid(Qt::black));   // black, but not for long
+        QVERIFY(e.pictureProblem().isEmpty());
+        QTest::qWait(250); emit b.previewFrame(solid(Qt::black));
+        QVERIFY(e.pictureProblem().contains("black")); QVERIFY(e.pictureProblem().contains("(change)")); QCOMPARE(changed.count(), 1);
+        emit b.previewFrame(solid(Qt::black)); QCOMPARE(changed.count(), 1);            // said once, not on every frame
+        emit b.previewFrame(solid(QColor("#3050f0")));
+        QVERIFY(e.pictureProblem().isEmpty()); QCOMPARE(changed.count(), 2);
+    }
+    void aDarkCameraIsNeverCalledAProblem() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setBlackAfter(100);
+        e.setCameraProvider([] { CameraSpec c; c.path = "fake:cam"; return c; });
+        e.setPreview(true, 3); emit b.captureSized(1920, 1080);
+        blackFor(b, 150);
+        QVERIFY(e.pictureProblem().isEmpty());
+    }
+    void goLiveIsRefusedWhileThePictureIsBlackAndSaysWhy() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setBlackAfter(200); e.setStreamProvider([] { return target(); });
+        e.setPreview(true, 1); emit b.captureSized(1920, 1080);
+        blackFor(b, 250);
+        QVERIFY(!e.pictureProblem().isEmpty());
+        e.setStreamArmed(true); e.start(1);
+        QCOMPARE(b.began, 0); QCOMPARE(e.state(), QString("idle")); QVERIFY(e.message().contains("black")); QVERIFY(e.streamArmed());
+        e.setStreamArmed(false); e.start(1);                    // a plain recording stays the person's choice
+        QCOMPARE(b.began, 1); QVERIFY(!b.lastSpec.stream.on);
+    }
+    void goLiveWaitsForOneRealPictureOfTheScreen() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setPreview(true, 1); emit b.captureSized(1920, 1080);
+        e.setStreamArmed(true); e.start(1);
+        QCOMPARE(b.began, 0); QVERIFY(e.message().contains("picture")); QVERIFY(e.streamArmed());
+        emit b.previewFrame(solid(QColor("#3050f0")));
+        e.start(1);
+        QCOMPARE(b.began, 1); QVERIFY(b.lastSpec.stream.on);
+    }
+    void withoutAScreenSizeGoLiveIsNeverBlocked() {   // a backend that cannot say what it captures must not lock the button
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1);
+        QCOMPARE(b.began, 1); QVERIFY(b.lastSpec.stream.on);
+    }
+    void aPictureThatTurnsBlackMidBroadcastIsFlaggedAndTheBroadcastCarriesOn() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setBlackAfter(200); e.setStreamProvider([] { return target(); });
+        e.setPreview(true, 1); emit b.captureSized(1920, 1080); emit b.previewFrame(solid(QColor("#3050f0")));
+        e.setStreamArmed(true); e.start(1); emit b.started(); emit b.streamState("live", QString());
+        blackFor(b, 250);
+        QVERIFY(e.pictureProblem().contains("black"));
+        QCOMPARE(e.state(), QString("recording")); QCOMPARE(e.streamState(), QString("live"));   // told, never cut off
+    }
+    void changingTheScreenForgetsTheVerdict() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setBlackAfter(200);
+        e.setPreview(true, 1); emit b.captureSized(1920, 1080);
+        blackFor(b, 250); QVERIFY(!e.pictureProblem().isEmpty());
+        e.forgetScreen();
+        QVERIFY(e.pictureProblem().isEmpty());
+        blackFor(b, 250); QVERIFY(e.pictureProblem().isEmpty());   // the new screen is not sized yet: nothing to judge
     }
     void pauseIsOffWhileBroadcastingAndComesBackWhenTheBroadcastFails() {
         FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });

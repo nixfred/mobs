@@ -1,5 +1,6 @@
 #include "pipcontroller.h"
 #include "appstate.h"
+#include "chatmodel.h"
 #include "engine.h"
 #include "mobslog.h"
 #include "settings.h"
@@ -39,6 +40,57 @@ PipController::~PipController() { if (m_mainHidden) restoreMain(); }
 
 // Wanted whenever "screen + me" is showing its picture (ready with the preview on, armed, or a take in progress): Engine::previewing is exactly that.
 bool PipController::wanted() const { return m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera() && m_engine->previewing(); }
+
+// The chat card under the webcam: only where there is a chat feed to show (X's relay, or the demo) and the person has not turned it off.
+bool PipController::chatWanted() const { return wanted() && m_prefs->chat() && m_chat && m_chat->configured(); }
+
+void PipController::setChat(ChatModel *chat) {
+    m_chat = chat;
+    if (m_chat) connect(m_chat, &ChatModel::statusChanged, this, &PipController::changed);
+}
+
+int PipController::guestExtra(int width) { return width * 9 / 16 + 8; }
+
+QRect PipController::withGuest(const QRect &dock, const QJsonObject &monitor, bool on, bool *grewUp) {
+    const QRect area = usableArea(monitor);
+    const int extra = guestExtra(dock.width());
+    QRect r = dock;
+    if (on) {
+        const bool up = dock.top() - extra >= area.top();
+        if (up) r.setTop(dock.top() - extra); else r.setBottom(dock.bottom() + extra);
+        if (grewUp) *grewUp = up;
+        const QRect fitted = area.isEmpty() ? QRect() : fitInside(r, monitor);
+        return fitted.isNull() ? r : fitted;
+    }
+    if (grewUp && *grewUp) r.setTop(dock.top() + extra); else r.setBottom(dock.bottom() - extra);   // give back what was taken, from the same side
+    return r;
+}
+
+void PipController::setGuest(const QString &name, const QString &status) {
+    const bool was = guestOn();
+    m_guestName = name.simplified(); m_guestStatus = status;
+    MobsLog::write("pip", m_guestName.isEmpty() ? QString("the guest left the dock") : QString("guest \"%1\": %2").arg(m_guestName, status));
+    if (guestOn() != was) resizeForGuest(guestOn());
+    emit changed();
+}
+
+void PipController::resizeForGuest(bool on) {
+    if (!m_shown || !onHyprland()) return;
+    const QJsonArray clients = hyprJson({"clients", "-j"}).array();
+    const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
+    const QJsonObject c = clientAt(clients, address);
+    if (c.isEmpty()) return;
+    const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
+    const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
+    if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
+    const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
+    const QRect next = withGuest(now, monitor, on, &m_guestGrewUp);
+    const QString win = QString("window=\"address:%1\"").arg(address);
+    hyprEval(QString("hl.dispatch(hl.dsp.window.resize({x=%1,y=%2,%3}))").arg(next.width()).arg(next.height()).arg(win));
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({x=%1,y=%2,%3}))").arg(next.x()).arg(next.y()).arg(win));
+    m_placed = next;   // where WE put it, not a place the person chose
+    MobsLog::write("pip", QString("dock %1 a guest card: now %2,%3 %4x%5").arg(on ? "gained" : "lost").arg(next.x()).arg(next.y()).arg(next.width()).arg(next.height()));
+}
 
 bool PipController::testPattern() const {
     return !qEnvironmentVariable("MOBS_TEST_CAMERA").isEmpty() || m_state->camera().startsWith("fake:");
@@ -144,13 +196,18 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
     const QString win = QString("window=\"address:%1\"").arg(address);
     const auto dsp = [&](const QString &call) { return hyprEval("hl.dispatch(hl.dsp." + call + ")"); };
 
+    const bool chatOn = chatWanted();   // the dock has a chat card under the video: its size and its remembered place differ from the video alone
+    m_placeKey = chatOn ? QStringLiteral("pipPlaceChat") : QStringLiteral("pipPlace");
     // Where: where the person last left it (if that monitor is still there), else the top-right of MOBS's own monitor, sized for the broadcast.
     QRect saved; QString savedMonitor;
     QJsonObject monitor;
     QRect rect;
-    if (decodePlace(m_store->value("pipPlace").toString(), &saved, &savedMonitor)) {
+    if (decodePlace(m_store->value(m_placeKey).toString(), &saved, &savedMonitor)) {
         monitor = monitorByName(monitors, savedMonitor);
-        if (!monitor.isEmpty()) rect = fitInside(saved, monitor);
+        if (!monitor.isEmpty()) {
+            if (chatOn && saved.height() < saved.width() * 9 / 16 + 160) saved.setHeight(saved.width() * 9 / 16 + chatHeightFor(saved.width()));   // too short to hold a chat card: give it one
+            rect = fitInside(saved, monitor);
+        }
     }
     if (rect.isNull()) {
         monitor = {};
@@ -160,7 +217,7 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
         }
         if (monitor.isEmpty()) for (const QJsonValue &v : monitors) if (v.toObject().value("focused").toBool()) monitor = v.toObject();
         if (monitor.isEmpty() && !monitors.isEmpty()) monitor = monitors.first().toObject();
-        if (!monitor.isEmpty()) rect = defaultRect(monitor, defaultSize(monitor));
+        if (!monitor.isEmpty()) rect = defaultRect(monitor, defaultSize(monitor, chatOn));
     }
 
     if (!client.value("floating").toBool()) dsp(QString("window.float({action=\"set\",%1})").arg(win));
@@ -189,7 +246,7 @@ void PipController::windowHidden() {
     const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
     // Only a place the person CHOSE is remembered (a move or a resize); where MOBS put it by itself is recomputed next time, for whatever screen is there then.
     if (m_placed.isValid() && (std::abs(now.x() - m_placed.x()) > 4 || std::abs(now.y() - m_placed.y()) > 4 || std::abs(now.width() - m_placed.width()) > 4 || std::abs(now.height() - m_placed.height()) > 4)) {
-        m_store->setValue("pipPlace", encodePlace(now, monitor.value("name").toString())); m_store->sync();
+        m_store->setValue(m_placeKey, encodePlace(now, monitor.value("name").toString())); m_store->sync();
         MobsLog::write("pip", QString("webcam window left at %1,%2 %3x%4 on %5: remembered, you moved it").arg(now.x()).arg(now.y()).arg(now.width()).arg(now.height()).arg(monitor.value("name").toString()));
     } else MobsLog::write("pip", "webcam window closed where MOBS put it");
     m_prevActive.clear();
@@ -259,9 +316,11 @@ QJsonObject PipController::monitorByName(const QJsonArray &monitors, const QStri
     return {};
 }
 
-QSize PipController::defaultSize(const QJsonObject &monitor) {
+int PipController::chatHeightFor(int width) { return qBound(220, int(width * 9 / 16 * 0.65), 480); }
+
+QSize PipController::defaultSize(const QJsonObject &monitor, bool withChat) {
     const int w = qBound(480, int(usableArea(monitor).width() * 0.20), 1024);
-    return QSize(w, w * 9 / 16);
+    return QSize(w, w * 9 / 16 + (withChat ? chatHeightFor(w) : 0));   // the video keeps its 16:9; the chat card is added underneath
 }
 
 QRect PipController::defaultRect(const QJsonObject &monitor, const QSize &size, int margin) {

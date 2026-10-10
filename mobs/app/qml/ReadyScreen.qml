@@ -21,7 +21,7 @@ Item {
                 + (hotkeys.visible ? hotkeys.height : 0) + (micMeter.visible ? micMeter.height : 0)
                 + (warningText.visible ? warningText.height : 0) + (noticeText.visible ? noticeText.height : 0)
                 + readyColumn.spacing * (3 + extraRows) + 12
-            previewWidth: Math.min(480, Math.max(160, (root.height - reservedHeight - captionHeight) * 16 / 9))
+            previewWidth: Math.min(480, Math.max(96, (root.height - reservedHeight - captionHeight) * 16 / 9))   // a small window with several rows shrinks the picture, never pushes it off the top
         }
         Row {
             id: startRow
@@ -151,12 +151,12 @@ Item {
         Txt {
             id: noticeText
             objectName: "readyNotice"
-            text: [Engine.message, Engine.audioProblem].filter((message, index, all) => message !== "" && all.indexOf(message) === index).join("\n")
-            visible: Engine.audioProblem !== "" || Engine.message !== ""
+            text: [Engine.message, Engine.audioProblem, Engine.pictureProblem].filter((message, index, all) => message !== "" && all.indexOf(message) === index).join("\n")
+            visible: Engine.audioProblem !== "" || Engine.message !== "" || Engine.pictureProblem !== ""
             width: Math.min(640, root.width - 48)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
-            color: Omarchy.accent
+            color: Engine.pictureProblem !== "" ? Omarchy.red : Omarchy.accent   // a black picture is the one notice that must not look routine
             font.pixelSize: 13
             anchors.horizontalCenter: parent.horizontalCenter
         }

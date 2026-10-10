@@ -123,6 +123,25 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("arming to go live always shows the picture, even with the preview chip off", "pick=1,expect=previewing:0,arm=1,expect=previewing:1,expect=previewFrame:1,arm=0,expect=previewing:0", fake_backend=True)
     check("the close EXPERT button on the live page leaves EXPERT", live_setup + "pro=1,tab=6,wait=0.1,click=closeLive,expect=pro:0", fake_backend=True)
     check("a take that is not live shows no broadcast", "pick=1,start,expect=state:recording,wait=0.6,expect=broadcasting:0,expect=streamState:off,checklayout", fake_backend=True)
+    # A screen share that delivers nothing but black (a dragged Region does this on gus) is named, and it never goes live.
+    black = {"MOBS_BLACK_AFTER_MS": "300"}
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("a black screen picture is named on the ready screen and fits", "pick=1,preview=1,wait=0.2,blackpicture=1,wait=0.8,expect=pictureProblem:black,checklayout", size, True, extra_env=black)
+    check("GO LIVE refuses a black picture and says why", live_setup + "pick=1,preview=1,wait=0.2,blackpicture=1,wait=0.8,click=goLiveButton,expect=state:idle,expect=notice:black,wait=0.1,checklayout", fake_backend=True, extra_env=black)
+    check("a black picture that comes back lets GO LIVE through",
+          live_setup + "pick=1,preview=1,wait=0.2,blackpicture=1,wait=0.8,expect=pictureProblem:black,blackpicture=0,wait=0.4,expect=pictureProblemEmpty:1,click=goLiveButton,expect=state:recording,expect=broadcasting:1", fake_backend=True, extra_env=black)
+    for size in ("860x560", "1024x768", "900x1600"):
+        check("a live take that turns black keeps going and says so and fits",
+              live_setup + "pick=1,preview=1,blackpicture=0,wait=0.4,click=goLiveButton,expect=state:recording,wait=0.8,expect=streamState:live,blackpicture=1,wait=0.8,expect=pictureProblem:black,expect=state:recording,expect=streamState:live,checklayout", size, True, extra_env=black)
+    # The dock: your webcam with the chat card under it and a guest's card above it, in ONE window.
+    dock = "pick=2,preview=1,wait=0.4,"
+    check("dock: the webcam alone has no chat card and no guest card", dock + "expect=chatWanted:0,expect=guestOn:0,checkpip", fake_backend=True)
+    check("dock: a chat feed adds the chat card under the webcam and it fits", dock + "chatmsg=ana|hello,chatmsg=bo|what theme is that?,expect=chatWanted:1,expect=chatCount:2,wait=0.5,checkpip", fake_backend=True)
+    check("dock: a promoted guest joins above the webcam and leaves again", dock + "chatmsg=ana|hello,guest=Marlow|joining,expect=guestOn:1,wait=0.4,checkpip,guest=,expect=guestOn:0,wait=0.3,checkpip", fake_backend=True)
+    check("dock: a guest with no chat fits", dock + "guest=Marlow|joining,expect=guestOn:1,expect=chatWanted:0,wait=0.4,checkpip", fake_backend=True)
+    for size in ("200x300", "360x420", "480x520", "700x900", "480x300"):
+        check(f"dock: guest, webcam and chat stay stacked and inside when the window is {size}", dock + f"chatmsg=ana|hello,chatmsg=bo|what theme is that?,guest=Marlow|joining,pipsize={size},wait=0.5,checkpip", fake_backend=True)
+    check("dock: a chat that goes away takes its card with it", dock + "chatmsg=ana|hi,expect=chatWanted:1,chatoff,expect=chatWanted:0,wait=0.3,checkpip", fake_backend=True)
     check("audio shortcut opens inputs", "pick=1,openaudio,expect=pro:1,expect=audioTab:2")
     check("invalid folder preserves saved destination", "pro=1,foldertext=relative/path,applyfolder,expect=folderDefault:1,wait=0.1,checklayout")
     check("preview error still fits", "pick=1,preview=1,wait=0.1,checklayout")

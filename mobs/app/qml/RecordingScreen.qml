@@ -76,6 +76,13 @@ Item {
                     }
                 }
             }
+            Txt {   // a black screen picture while taking: viewers (and the saved file) get nothing, so this is the loudest line on the page
+                objectName: "blackPictureNotice"
+                visible: Engine.pictureProblem !== "" && Engine.state !== "stopping"
+                width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                font.pixelSize: 13; font.bold: true; color: Omarchy.red
+                text: (Engine.streamRequested ? "THE PICTURE IS BLACK: viewers on X see nothing. " : "THE PICTURE IS BLACK: this recording is empty. ") + "Stop, click (change) and pick your screen."
+            }
             Txt {
                 id: liveStatus
                 objectName: "liveStatus"

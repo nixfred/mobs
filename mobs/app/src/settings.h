@@ -24,6 +24,7 @@ class Settings : public QObject {
     Q_PROPERTY(bool splash READ splash NOTIFY changed)                // play the opening screen when MOBS starts
     Q_PROPERTY(bool stayOut READ stayOut NOTIFY changed)              // MOBS's own window hides itself from the picture while a take records
     Q_PROPERTY(bool pip READ pip NOTIFY changed)                      // "screen + me": the webcam is a window ON the screen (move it with SUPER + drag)
+    Q_PROPERTY(bool chat READ chat NOTIFY changed)                    // the chat card under the webcam window, when the broadcast has a chat feed
     Q_PROPERTY(QString streamUrl READ streamUrl NOTIFY changed)       // where a live take is also sent (rtmp:// or rtmps://)
     Q_PROPERTY(bool streamKeySaved READ streamKeySaved NOTIFY changed)   // a stream key is on disk; QML can never read it back
     Q_PROPERTY(bool streamReady READ streamReady NOTIFY changed)       // both the address and the key are set
@@ -56,6 +57,7 @@ public:
     bool splash() const { return m_splash; }
     bool pip() const { return m_pip; }
     bool stayOut() const { return m_stayOut; }
+    bool chat() const { return m_chat; }
     QString aboutText() const;
     QString streamUrl() const { return m_streamUrl; }
     bool streamKeySaved() const { return m_keySaved; }
@@ -83,6 +85,7 @@ public:
     Q_INVOKABLE void setSplash(bool on);
     Q_INVOKABLE void setPip(bool on);
     Q_INVOKABLE void setStayOut(bool on);
+    Q_INVOKABLE void setChat(bool on);
     Q_INVOKABLE QString problem(const QString &folder) const { return problemWith(folder); }   // for the folder field in QML
     Q_INVOKABLE void openFolder();        // show the recordings folder in the file manager
     // Empty string if the folder can be used, otherwise a sentence saying why not (created if missing).
@@ -96,7 +99,7 @@ private:
     QString m_folder;
     AudioSpec m_audio;
     bool m_hardware = false;
-    bool m_mic = true, m_review = true, m_splash = true, m_pip = true, m_stayOut = true;
+    bool m_mic = true, m_review = true, m_splash = true, m_pip = true, m_stayOut = true, m_chat = true;
     QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
     int m_streamQuality = 2;

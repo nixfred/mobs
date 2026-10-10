@@ -40,6 +40,8 @@ class Engine : public QObject {
     Q_PROPERTY(QString streamProblem READ streamProblem NOTIFY streamChanged)
     Q_PROPERTY(int streamKbps READ streamKbps NOTIFY streamStatsChanged)
     Q_PROPERTY(int streamDropped READ streamDropped NOTIFY streamStatsChanged)
+    // A screen picture that is nothing but black (a dragged region does this on gus, a stuck portal can too): said out loud, and never sent to X unnoticed.
+    Q_PROPERTY(QString pictureProblem READ pictureProblem NOTIFY pictureChanged)
 public:
     explicit Engine(RecorderBackend *backend, QString recordingDir, QObject *parent = nullptr);
     QString state() const;
@@ -78,6 +80,8 @@ public:
     QString streamProblem() const { return m_streamProblem; }
     int streamKbps() const { return m_streamKbps; }
     int streamDropped() const { return m_streamDropped; }
+    QString pictureProblem() const { return m_pictureProblem; }
+    void setBlackAfter(int ms) { m_blackAfterMs = ms; }   // how long the screen picture may stay black before it is called a problem (tests shorten it)
     // Arming is a deliberate step before a take, and only then (never during one). Safe to call again; it never starts anything.
     Q_INVOKABLE void setStreamArmed(bool armed);
     void setStreamProvider(std::function<StreamSpec()> provider) { m_streamFn = std::move(provider); }
@@ -118,6 +122,7 @@ signals:
     void cameraNeeded();                   // the user asked for a camera recording but has not chosen a camera
     void streamChanged();
     void streamStatsChanged();
+    void pictureChanged();                 // the screen picture went black for good, or came back
     void liveSetupNeeded();                // go live was armed but the server address or stream key is missing
 private:
     enum State { Idle, Starting, Recording, Paused, Stopping };
@@ -151,12 +156,19 @@ private:
     void applyPreview();
     void onStreamState(const QString &state, const QString &detail);
     void endBroadcast();
+    void onPreviewFrame(const QImage &frame);
+    void resetPicture(bool screenToo);
+    QString liveBlock(int pick) const;
     std::function<StreamSpec()> m_streamFn;
     QTimer m_armTimer;
     int m_armTimeoutMs = 15 * 60 * 1000;
     bool m_streamArmed = false, m_takeStreams = false;
     QString m_streamState = "off", m_streamProblem;
     int m_streamKbps = 0, m_streamDropped = 0;
+    QString m_pictureProblem;
+    QElapsedTimer m_blackClock;                  // runs while the screen picture has been black without a break
+    bool m_screenSized = false, m_sawPicture = false;   // the screen source is up / a real (not black) frame has been seen since
+    int m_blackAfterMs = 6000;
     QElapsedTimer m_clock;
     qint64 m_banked = 0;   // ms recorded before the current running stretch
     QTimer m_tick;

@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <memory>
 #include <QtQml/qqml.h>
+#include "chatmodel.h"
 
 // Development-script fixture for rendering active UI states offscreen. It never creates media.
 // Both MOBS_SCRIPT and MOBS_FAKE_BACKEND must be explicit; ordinary launches always use libobs.
@@ -48,14 +49,24 @@ public:
         emit audioLevels(-60, -60, false, false, QString()); emit finished(QString());
     }
     bool m_streams = false;
+    ScriptBackend() {
+        m_frames.setInterval(100);
+        connect(&m_frames, &QTimer::timeout, this, [this] { QImage f(640, 360, QImage::Format_RGB32); f.fill(m_black ? QColor(Qt::black) : QColor("#3050f0")); emit previewFrame(f); });
+    }
+    // blackpicture=1: the screen source is up and delivers nothing but black, frame after frame, as a broken screen share does. 0: a real picture again.
+    void showBlack(bool black) { m_black = black; m_framesOn = true; emit captureSized(1920, 1080); m_frames.start(); }
+    bool m_black = false, m_framesOn = false;
+    QTimer m_frames;
     void setMicCheck(bool on, const AudioSpec &) override { emit audioLevels(on ? -18 : -60, -60, on, false, QString()); }
     void setPreview(bool on, const RecordSpec &) override {
-        if (!on) return;
+        if (!on) { m_frames.stop(); return; }
+        if (m_framesOn) m_frames.start();
         // MOBS_FAKE_PREVIEW=/path.png serves that picture instead of the flat colour, so the real window can be drawn with a mock-up picture inside.
         const QString fakePicture = qEnvironmentVariable("MOBS_FAKE_PREVIEW");
         QImage frame = fakePicture.isEmpty() ? QImage() : QImage(fakePicture);
         if (frame.isNull()) { frame = QImage(640, 360, QImage::Format_RGB32); frame.fill(QColor("#3050f0")); }
         else frame = frame.scaled(640, 360, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
+        if (m_framesOn && m_black) frame.fill(Qt::black);   // a broken share stays black whenever the preview is asked for again (arming asks)
         emit previewFrame(frame);
     }
 };
@@ -66,6 +77,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("mobs");
     app.setOrganizationName("mobs");
     app.setDesktopFileName("mobs");
+    QQuickWindow::setDefaultAlphaBuffer(true);   // the webcam dock is see-through between its cards once a chat or a guest joins: a surface made opaque cannot become see-through later
     MobsLog::init();   // first, so Qt's own warnings and everything below land in ~/.local/state/mobs/mobs.log
 
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
@@ -159,7 +171,9 @@ int main(int argc, char *argv[]) {
     for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged})
         QObject::connect(&state, sig, &state, syncPreview);
     QObject::connect(&prefs, &Settings::changed, &state, syncPreview);   // the webcam window on or off rebuilds the picture (the backend ignores a repeat)
+    ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
+    pip.setChat(&chat);
     QObject::connect(backend.get(), &RecorderBackend::captureSized, &pip, &PipController::setCaptureSize);   // which monitor is in the picture
     // A person working in another window needs to be TOLD: connected (and the one step left for them), dropped, not live, saved. Each state once.
     QObject::connect(&recorder, &Engine::streamChanged, &state, [&, last = QString("off")]() mutable {
@@ -171,6 +185,22 @@ int main(int argc, char *argv[]) {
         else if (now == "failed") Notifier::send("MOBS: NOT LIVE", recorder.streamProblem().left(220) + ". The recording is still being saved.", true);
     });
     QObject::connect(&recorder, &Engine::saved, &state, [](const QString &path) { Notifier::send("MOBS: take saved", path); });
+    // A picture that turns black while people watch is the one thing worth interrupting for.
+    QObject::connect(&recorder, &Engine::pictureChanged, &state, [&] {
+        if (!recorder.pictureProblem().isEmpty() && recorder.active())
+            Notifier::send("MOBS: the picture is BLACK", recorder.broadcasting() ? "Viewers on X see black. Stop and pick your screen again." : "This recording is black. Stop and pick your screen again.", true);
+    });
+    if (const int ms = qEnvironmentVariableIntValue("MOBS_BLACK_AFTER_MS"); ms > 0) recorder.setBlackAfter(ms);   // tests shorten how long black must last
+    // MOBS_FAKE_CHAT=1: a made-up chat flow, labelled DEMO in the panel, so the dock can be seen and tried without X. Never on by default.
+    if (qEnvironmentVariable("MOBS_FAKE_CHAT") == "1") {
+        chat.setConfigured(true, true); chat.setStatus(true, QString());
+        static const QStringList names{"sunny", "pixelpete", "dana", "tuxedo", "kiwi", "marlow"};
+        static const QStringList lines{"love this setup", "what theme is that?", "can you show the terminal for a sec?", "the sound is crisp", "first time here, hi everyone",
+                                       "that was smooth", "how long did that take to build?", "ok that is actually really cool"};
+        auto *demo = new QTimer(&app);
+        QObject::connect(demo, &QTimer::timeout, &chat, [&chat, n = 0]() mutable { const int k = ++n; chat.add(QString::number(k), names.at(k % names.size()), lines.at((k * 3) % lines.size())); });
+        demo->start(1400);
+    }
 
     QObject::connect(&prefs, &Settings::changed, &recorder, [&, previousAudio = prefs.audioSpec(), previousMic = prefs.micOn()]() mutable {
         const auto current = prefs.audioSpec();
@@ -197,6 +227,7 @@ int main(int argc, char *argv[]) {
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Pip", &pip);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Chat", &chat);
 
     QStringList qmlWarnings;
     QQmlApplicationEngine engine;
@@ -258,7 +289,7 @@ int main(int argc, char *argv[]) {
             };
             (*poll)();
         };
-        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -408,6 +439,11 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "streamState") ok = recorder.streamState() == condition[1];
                 else if (ok && condition[0] == "streamReady") ok = prefs.streamReady() == (condition[1] == "1");
                 else if (ok && condition[0] == "streamProblem") ok = recorder.streamProblem().contains(condition[1]);
+                else if (ok && condition[0] == "pictureProblem") ok = recorder.pictureProblem().contains(condition[1]);
+                else if (ok && condition[0] == "pictureProblemEmpty") ok = recorder.pictureProblem().isEmpty() == (condition[1] == "1");
+                else if (ok && condition[0] == "chatCount") ok = chat.count() == condition[1].toInt();
+                else if (ok && condition[0] == "chatWanted") ok = pip.chatWanted() == (condition[1] == "1");
+                else if (ok && condition[0] == "guestOn") ok = pip.guestOn() == (condition[1] == "1");
                 else if (ok && condition[0] == "messageEmpty") ok = recorder.message().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "audioTab") ok = window->findChild<QObject *>("expertPanel")->property("tab").toInt() == condition[1].toInt();
                 else if (ok && condition[0] == "splashDone") { auto *splash = window->findChild<QObject *>("splash"); ok = splash && splash->property("done").toBool() == (condition[1] == "1"); }
@@ -457,6 +493,41 @@ int main(int argc, char *argv[]) {
             else if (st == "streamdrop" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("failed", "the connection to the server was lost"); QTimer::singleShot(0, &app, *run); }
             else if (st == "streamretry" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("reconnecting", "the connection dropped: trying again"); QTimer::singleShot(0, &app, *run); }
             else if (st == "streamback" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("live", QString()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("blackpicture=") && dynamic_cast<ScriptBackend *>(backend.get())) { static_cast<ScriptBackend *>(backend.get())->showBlack(st.mid(13) == "1"); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("chatmsg=")) {   // chatmsg=name|words: a chat feed appears (the demo kind) and says something
+                const QStringList p = st.mid(8).split('|');
+                chat.setConfigured(true, true); chat.setStatus(true, QString());
+                chat.add(QString::number(1000 + chat.count()), p.value(0), p.value(1));
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st == "chatoff") { chat.setConfigured(false); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("guest=")) { const QStringList p = st.mid(6).split('|'); pip.setGuest(p.value(0), p.value(1)); QTimer::singleShot(0, &app, *run); }   // guest=name|status; guest= sends them away
+            else if (st == "checkpip") {   // the dock's own layout: everything inside the window, and the cards stacked without overlapping
+                QQuickWindow *pw = nullptr;
+                for (QWindow *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) pw = qobject_cast<QQuickWindow *>(w);
+                if (!pw) { std::fprintf(stderr, "script: no webcam window to check\n"); app.exit(4); return; }
+                QStringList problems; QList<QRectF> cards;
+                std::function<void(QQuickItem *)> inspect = [&](QQuickItem *item) {
+                    if (!item->isVisible()) return;
+                    const QString name = item->objectName(), text = item->property("text").toString();
+                    const QRectF box = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+                    if (name == "pipGuestCard" || name == "pipVideoCard" || name == "chatPanel") cards.append(box);
+                    if ((!text.isEmpty() || !name.isEmpty()) && (box.left() < -1 || box.top() < -1 || box.right() > pw->width() + 1 || box.bottom() > pw->height() + 1))
+                        problems.append(name.isEmpty() ? text.left(60) : name);
+                    if (name == "chatList") return;   // older messages sit scrolled out of sight inside it, on purpose
+                    for (auto *child : item->childItems()) inspect(child);
+                };
+                inspect(pw->contentItem());
+                std::sort(cards.begin(), cards.end(), [](const QRectF &a, const QRectF &b) { return a.top() < b.top(); });
+                for (int i = 1; i < cards.size(); ++i) if (cards[i].top() < cards[i - 1].bottom() - 0.5) problems.append("cards overlap");
+                if (!problems.isEmpty()) { std::fprintf(stderr, "dock layout (%dx%d): %s\n", pw->width(), pw->height(), qPrintable(problems.join(" | "))); app.exit(5); return; }
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st.startsWith("pipsize=")) {   // the webcam window dragged to another size (WxH)
+                const QStringList wh = st.mid(8).split('x');
+                for (auto *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle) w->resize(wh.value(0).toInt(), wh.value(1).toInt());
+                QTimer::singleShot(0, &app, *run);
+            }
             else if (st.startsWith("mic=")) { prefs.setMicOn(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("review=")) { std::printf("script: review %d\n", int(review.open(st.mid(7)))); waitFor([&] { return !review.loading(); }, 35000, "the recording to open"); }
             else if (st.startsWith("savedtake=") && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->finished(st.mid(10)); QTimer::singleShot(0, &app, *run); }

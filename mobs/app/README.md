@@ -106,6 +106,35 @@ the ready screen).
 ![the webcam window's badge in every state (a stand-in picture instead of the camera)](../../docs/app/pip-badges.png)
 ![a real Hyprland in the practice VM, mid-take: MOBS has stepped out, so the picture is the desktop plus the webcam window](../../docs/app/pip-hidden-while-recording-vm.png)
 - **GO LIVE to X is always a bold red button** beside Record, whether or not a stream key is saved: without one it opens EXPERT > live (the key is per machine).
+- **A black picture is caught before it reaches X** (Fred, 2026-10-10: the live picture box and a whole take were pure black while MOBS said the stream was fine). The portal can hand
+  MOBS a screen share whose frames are all zeros: on gus a dragged **Region** did it, and a stuck portal can too. MOBS now watches the live picture. Once the screen source is up and
+  the picture stays black for 6 s it says so in red on the picture and on the ready screen and **refuses GO LIVE** until the picture is real (GO LIVE also waits for one real frame
+  after the screen is chosen). If a live picture turns black mid-broadcast, the recording screen says so and a desktop notification fires; MOBS never cuts the stream or the recording
+  by itself. Fix: click **(change)** and pick your screen on the **Screens** tab, never Region. Still black: `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal`
+  (that ends other apps' screen shares). A camera-only pick is never judged, since a covered lens is the person's choice. The log line is `[capture] the screen picture has been black for ... ms`.
+
+## The dock: a guest above you, the chat below you
+
+Fred, 2026-10-10: "put the chat from the live session connected to the bottom of the webcam so I can see myself and the chat going on and move it all at once together. Make the video
+resizable and the chat separately resizable but connected as one", then "their video should be joined above my video pip with the chat room continuing below my webcam pip". The
+webcam window (`qml/PipWindow.qml`) is therefore **one window with up to three stacked cards**, so one move carries them all:
+
+1. **A guest's card above you** (a viewer you promoted: their video, never their screen). It is a placeholder for now (their name and who is coming); the call itself is stage 2.
+   When a guest arrives the window grows by one card **upward when there is room, so your own picture does not move on the screen**, and gives it back when they leave.
+2. **Your own camera** in the middle.
+3. **The chat card below you**: read-only (you answer with your voice and video, so there is nothing to type into). A glass card with a pulsing "connected" dot; messages slide in at the
+   bottom, older ones drift up and fade out at the top; each name gets its own stable colour and an avatar letter. Before the first message, or when the feed is down, it says what is going on.
+
+**Sizes.** The videos keep 16:9 at whatever width the window has, so *resizing the width resizes the videos and the chat card's width with them*, and *resizing the height resizes the chat card
+alone*. A short window squeezes the videos (they crop) before the chat card goes. **A plain drag anywhere moves the stack** (SUPER + drag still works); the bottom edge, the right edge and the
+corner resize it, and their grips fade in only while the pointer is over the window (the compositor does the move and resize itself: `xdg_toplevel` move/resize, no `hyprctl` per frame).
+The dock with chat remembers its own place (`pipPlaceChat`), separate from the camera alone (`pipPlace`). It is captured with the rest of the screen, so **viewers see the chat card too**.
+
+**Where the chat comes from.** `ChatModel` only keeps and shows messages; a feed fills it. There is **no feed by default**, and then there is no chat card. `MOBS_FAKE_CHAT=1 mobs` runs a
+made-up flow labelled **DEMO** so the dock can be seen and tried without X. The real feed has to be X's official Livestream API (research, 2026-10-10): chat is **push-only**, an
+Activity API `broadcast.chat` event delivered to a public HTTPS webhook (OAuth 2.0 PKCE, scope `broadcast.read`), the API is open only to whitelisted apps, and the docs never say whether a
+broadcast started from Live Studio over RTMP is covered. There is no confirmed chat-only pop-out URL, the old Periscope chat socket is reported closed, and X's developer guidelines forbid
+scraping, browser automation and iframing X pages. So the plan is a small relay that receives the webhook and that MOBS polls; that waits on X's access.
 
 ## The log
 

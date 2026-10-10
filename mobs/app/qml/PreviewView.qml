@@ -33,6 +33,20 @@ Item {
             color: Qt.alpha(Omarchy.darkBackground, 0.62)
             Txt { anchors.centerIn: parent; text: root.overlay; font.pixelSize: Math.max(14, Math.min(28, root.previewWidth / 18)); font.bold: true; color: Omarchy.foreground }
         }
+        Rectangle {   // a black screen picture is named right on the picture: this is what viewers get
+            objectName: "blackPictureBanner"
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
+            height: blackText.implicitHeight + 10
+            visible: Engine.pictureProblem !== ""
+            color: Qt.alpha(Omarchy.red, 0.92)
+            Txt {
+                id: blackText
+                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 8 }
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                font.pixelSize: 12; font.bold: true; color: Omarchy.accentForeground
+                text: root.previewWidth < 300 ? "BLACK PICTURE" : "BLACK PICTURE: viewers see nothing"   // a tiny picture has no room for the long form
+            }
+        }
         Repeater {   // the picture is square: paint the four outside-corners in the window colour so it follows the rounded outline
             model: [
                 { px: 0, py: 0, path: "M0 0 H R A R R 0 0 0 0 R Z" },
