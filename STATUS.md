@@ -22,7 +22,7 @@
 
 ## Open
 
-- Wayland screen capture through the portal: blockers understood (ADR 0005, spike 3b). The picker is a 1000x500 layer-shell overlay on the focused monitor; gus's portal had wedged and was restarted. Still needs one run with Fred at the desk to click the picker.
+- Wayland screen capture: root cause found (ADR 0005, spike 3b). A screen source created via websocket CreateInput never opens the portal picker; one pre-seeded in the scene collection does. MOBS must load a collection file for the screen source. Still to see: a click on the picker while hidden OBS then records real frames, and SetCurrentSceneCollection as the loading route.
 - New dependency: qt6-websockets (not on gus yet).
 - Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).

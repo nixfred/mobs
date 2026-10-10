@@ -42,13 +42,21 @@ OpenGL video output instead of the software-rendered workaround of ADR 0004.
     `Stream` (OBS's default). MOBS's profile sets `RecQuality=Small`.
   - `StopRecord` returns the path BEFORE a Hybrid MP4 is finalized (the file looked 0 bytes). Wait for the
     `RecordStateChanged` event with state STOPPED (about 0.7 s later) before opening the take.
-- Portal screen capture: NOT yet proven end to end, but the blockers are understood (spike 3b, real gus hardware):
-  - OBS hidden vs visible makes no difference; hiding is not the problem.
-  - The xdph picker is a layer-shell overlay (`ch.wysbd.hyprland-preview-share-picker`, 1000x500, centered on the
-    focused monitor), so it never shows in `hyprctl clients`; look in `hyprctl layers`. xdph shows it during `SelectSources`.
-  - gus's xdg-desktop-portal-hyprland was wedged (100% CPU, no answers, running since Oct 6) until restarted with
-    `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal` (Fred approved). After the restart the
-    picker appeared. An abandoned portal request is the likeliest way to wedge it; a clean `Session.Close` left it at 0.1% CPU.
-  - Not yet seen: someone clicking the picker while hidden OBS captures (Fred was not at the desk for the run).
-  - `~/.config/hypr/xdph.conf` has `allow_token_by_default = true`, so after one pick OBS keeps a restore token and later
-    captures need no picker. MOBS's first run therefore needs one friendly "pick your screen" step; later runs are silent.
+- Portal screen capture (spike 3b, real gus hardware). Not yet seen with a human click, but the cause of every
+  earlier failure is now known and it changes how MOBS must build the screen source:
+  - **A PipeWire screen source created through obs-websocket `CreateInput` never opens the picker.** A D-Bus capture
+    shows OBS sends `CreateSession`, the portal replies, and OBS never sends `SelectSources`; OBS's log never says
+    "Screencast session created". Four runs, same result. (The one picker I saw earlier was a leftover of my own direct test.)
+  - **The same source created at OBS load (pre-seeded in the scene collection JSON) works:** OBS logged "Screencast
+    session created", sent `SelectSources` 0.08 s after `CreateSession`, and the picker stayed up until answered.
+    Likely mechanism (inferred, not proven): OBS's portal reply is handled on the thread that created the source;
+    the UI and scene-load paths run on the main loop, the websocket worker thread has none.
+  - So MOBS must put the screen source in a scene collection file and load it (OBS reads it on its main thread), not
+    create it live. Switching collections (`SetCurrentSceneCollection`) is the thing to test next.
+  - Hiding OBS makes no difference. The picker is a layer-shell overlay (`ch.wysbd.hyprland-preview-share-picker`,
+    1000x500, centered on the focused monitor), invisible to `hyprctl clients`; look in `hyprctl layers`.
+  - gus's xdg-desktop-portal-hyprland had wedged (100% CPU, no answers) and was restarted with Fred's OK:
+    `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal`. Abandoned portal requests are the likely
+    cause; kill nothing mid-picker. An orphaned picker left by a killed client stays on screen until its process is closed.
+  - `~/.config/hypr/xdph.conf` has `allow_token_by_default = true`: after one pick OBS keeps a restore token, so later
+    captures need no picker. MOBS's first run needs one friendly "pick your screen" step; later runs are silent.

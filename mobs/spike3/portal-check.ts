@@ -56,6 +56,10 @@ for (let s = 0; s < 120; s++) {
   const r = await req("GetSourceScreenshot", { sourceName: "my screen", imageFormat: "png", imageWidth: 320, imageCompressionQuality: -1 }, 5000);
   const data: string = r.responseData?.imageData ?? "";
   sized = data.length;
+  if (s % 5 === 0) {
+    const st = await req("GetInputSettings", { inputName: "my screen" }, 3000);
+    log(`   t=${s}s screenshot: result=${r.requestStatus?.result} code=${r.requestStatus?.code} ${r.requestStatus?.comment ?? ""} payload=${sized}; RestoreToken set: ${!!st.responseData?.inputSettings?.RestoreToken}`);
+  }
   if (sized > 9000) { approvedAfter = s; writeFileSync(out, Buffer.from(data.split(",")[1] ?? "", "base64")); break; }
   await sleep(1000);
 }

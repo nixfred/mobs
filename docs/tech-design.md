@@ -76,10 +76,12 @@ so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting i
 
 ## Risks and the next test
 
-- **Portal screen capture while hidden: understood, one click from proven.** Hiding OBS does not matter. The picker is a
-  layer-shell overlay centered on the focused monitor (invisible to `hyprctl clients`). gus's portal backend had wedged and
-  needed a restart (ADR 0005). MOBS must close portal sessions cleanly, tell the user before the first picker appears,
-  and rely on the restore token (`allow_token_by_default = true`) so later recordings are silent.
+- **Screen source must come from a scene collection file, not websocket `CreateInput`.** A PipeWire source created
+  live over websocket never reaches the portal's `SelectSources` (D-Bus capture, 4 runs); the same source pre-seeded in the
+  collection JSON does, and the picker opens. MOBS writes the collection and loads it (next to test: `SetCurrentSceneCollection`),
+  then drives everything else over websocket. The picker is a layer overlay centered on the focused monitor; after one pick
+  the restore token makes later recordings silent (`allow_token_by_default = true`). MOBS must say "pick your screen" first.
+  Still unseen: a human clicking the picker while hidden OBS then captures real frames.
 - **Profile must set `RecQuality`** (not `Stream`) or pause silently does nothing; **wait for `RecordStateChanged`
   STOPPED** before opening a take, because `StopRecord` replies before a Hybrid MP4 is finalized.
 - **New dependency:** `qt6-websockets` (not installed on gus; installed in the VM for the spike).

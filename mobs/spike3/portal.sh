@@ -10,6 +10,10 @@ printf '[General]\nLastVersion=537001986\nMaxLogs=10\n' > "$CFG/obs-studio/globa
 printf '[General]\nWarnedAboutClosingDocks=true\n' > "$CFG/obs-studio/user.ini"
 printf '[General]\nName=Untitled\n[SimpleOutput]\nRecQuality=Small\nRecFormat2=hybrid_mp4\n' > "$CFG/obs-studio/basic/profiles/Untitled/basic.ini"
 printf '{"current_program_scene":"Scene","current_scene":"Scene","name":"Untitled","scene_order":[{"name":"Scene"}],"sources":[{"id":"scene","versioned_id":"scene","name":"Scene","uuid":"22222222-2222-4222-8222-222222222222","enabled":true,"settings":{"id_counter":0,"items":[]}}]}' > "$CFG/obs-studio/basic/scenes/Untitled.json"
+if [ -n "${PRESEED:-}" ]; then
+  # Source created at LOAD (OBS main thread) instead of via websocket CreateInput (websocket thread).
+  printf '{"current_program_scene":"MOBS","current_scene":"MOBS","name":"Untitled","scene_order":[{"name":"MOBS"}],"sources":[{"id":"pipewire-screen-capture-source","versioned_id":"pipewire-screen-capture-source","name":"my screen","uuid":"33333333-3333-4333-8333-333333333333","enabled":true,"muted":false,"volume":1.0,"flags":0,"mixers":0,"settings":{"ShowCursor":true}},{"id":"scene","versioned_id":"scene","name":"MOBS","uuid":"22222222-2222-4222-8222-222222222222","enabled":true,"settings":{"id_counter":1,"items":[{"name":"my screen","source_uuid":"33333333-3333-4333-8333-333333333333","visible":true,"locked":false,"id":1,"pos":{"x":0.0,"y":0.0},"scale":{"x":1.0,"y":1.0},"rot":0.0,"align":5,"bounds_type":0,"bounds":{"x":0.0,"y":0.0},"bounds_align":0,"crop_left":0,"crop_top":0,"crop_right":0,"crop_bottom":0}]}}]}' > "$CFG/obs-studio/basic/scenes/Untitled.json"
+fi
 printf '{"alerts_enabled":false,"auth_required":true,"first_load":false,"server_enabled":true,"server_password":"%s","server_port":4455}' "$PASS" > "$CFG/obs-studio/plugin_config/obs-websocket/config.json"
 
 XDG_CONFIG_HOME=$CFG obs --disable-shutdown-check --disable-missing-files-check >"$W/obs.out" 2>&1 </dev/null &
@@ -29,7 +33,8 @@ CL=$!
 for t in $(seq 1 110); do
   sleep 1
   if [ -z "${NOTIFIED:-}" ] && grep -q PICKER "$W/client.log" 2>/dev/null; then NOTIFIED=1; notify-send -u critical "MOBS portal test" "A screen-share dialog should be open now. Pick your screen." 2>/dev/null; echo "-- notified at t=${t}s"; fi
-  if [ $((t % 6)) = 1 ]; then echo "-- t=${t}s layers:" $(hyprctl layers -j | python3 -c "
+  if hyprctl layers -j | grep -q share-picker; then [ -z "${PK_FIRST:-}" ] && PK_FIRST=$t; PK_LAST=$t; fi
+  if [ $((t % 6)) = 1 ] && [ -z "${QUIET:-}" ]; then echo "-- t=${t}s layers:" $(hyprctl layers -j | python3 -c "
 import json,sys
 ns=set()
 for mon in json.load(sys.stdin).values():
@@ -42,7 +47,7 @@ for c in json.load(sys.stdin):
   kill -0 $CL 2>/dev/null || break
 done
 kill -0 $CL 2>/dev/null && { echo "client still running after 150 s, stopping it"; kill $CL; }
-echo "== client log"; cat "$W/client.log"
+echo "== picker overlay was visible from t=${PK_FIRST:-never}s to t=${PK_LAST:-never}s"; echo "== client log"; cat "$W/client.log"
 read ADDR WS < <(find_win); echo "== end: OBS on '$WS', alive: $(kill -0 $OBS 2>/dev/null && echo yes || echo NO)"
 F=$(ls -t "$REC"/* 2>/dev/null | head -1)
 if [ -n "$F" ]; then
