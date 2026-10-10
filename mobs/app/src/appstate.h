@@ -42,6 +42,7 @@ public:
     bool preview() const { return m_preview; }
     int expertTab() const { return m_expertTab; }
     Q_INVOKABLE void openAudio();
+    Q_INVOKABLE void openLive();         // EXPERT > live: the server address and stream key
     bool pro() const { return m_pro; }
     CameraSpec cameraSpec() const;       // what the recorder needs; invalid when no connected camera is chosen
     Q_INVOKABLE void choose(int pick);   // 1 my screen, 2 screen + me, 3 just my camera

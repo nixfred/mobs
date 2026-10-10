@@ -22,9 +22,14 @@ class Settings : public QObject {
     Q_PROPERTY(bool hardware READ hardware NOTIFY changed)
     Q_PROPERTY(bool reviewAfter READ reviewAfter NOTIFY changed)      // open the editor after each recording
     Q_PROPERTY(bool splash READ splash NOTIFY changed)                // play the opening screen when MOBS starts
+    Q_PROPERTY(QString streamUrl READ streamUrl NOTIFY changed)       // where a live take is also sent (rtmp:// or rtmps://)
+    Q_PROPERTY(bool streamKeySaved READ streamKeySaved NOTIFY changed)   // a stream key is on disk; QML can never read it back
+    Q_PROPERTY(bool streamReady READ streamReady NOTIFY changed)       // both the address and the key are set
+    Q_PROPERTY(int streamQuality READ streamQuality NOTIFY changed)    // 0 light 720p 3 Mbps, 1 standard 1080p 6 Mbps, 2 high 1080p 9 Mbps
     Q_PROPERTY(QString aboutText READ aboutText CONSTANT)
 public:
-    explicit Settings(QSettings *settings, QObject *parent = nullptr);
+    // streamKeyFile is where the stream key is kept (owner-only). Empty = nowhere, so a test can never write into a real config.
+    explicit Settings(QSettings *settings, QObject *parent = nullptr, QString streamKeyFile = QString());
     int quality() const { return m_quality; }
     int crf() const { return m_customCrf < 0 ? crfFor(m_quality) : m_customCrf; }
     bool customQuality() const { return m_customCrf >= 0; }
@@ -48,6 +53,18 @@ public:
     bool reviewAfter() const { return m_review; }
     bool splash() const { return m_splash; }
     QString aboutText() const;
+    QString streamUrl() const { return m_streamUrl; }
+    bool streamKeySaved() const { return m_keySaved; }
+    bool streamReady() const { return m_keySaved && !m_streamUrl.isEmpty(); }
+    int streamQuality() const { return m_streamQuality; }
+    // What a live take needs, key included. C++ only, on purpose: the key is never a property QML (or a screenshot) can reach.
+    StreamSpec streamSpec() const;
+    // Both return a sentence saying what is wrong, or "" when the value was saved.
+    Q_INVOKABLE QString setStreamUrl(const QString &url);
+    Q_INVOKABLE QString setStreamKey(const QString &key);
+    Q_INVOKABLE void clearStreamKey();
+    Q_INVOKABLE void setStreamQuality(int quality);
+    static QString streamUrlProblem(const QString &url);
     static QString defaultFolder();
     static int crfFor(int quality);       // x264 constant rate factor: lower = bigger and better
     Q_INVOKABLE void setQuality(int quality);
@@ -72,4 +89,8 @@ private:
     AudioSpec m_audio;
     bool m_hardware = false;
     bool m_mic = true, m_review = true, m_splash = true;
+    QString m_streamUrl, m_streamKeyFile;
+    bool m_keySaved = false;
+    int m_streamQuality = 1;
+    QString readStreamKey() const;
 };

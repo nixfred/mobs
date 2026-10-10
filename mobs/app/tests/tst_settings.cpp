@@ -122,6 +122,58 @@ private slots:
         c.setReviewAfter(false);
         QCOMPARE(sp.count(), 2);
     }
+    // ---- going live
+    void theStreamAddressMustBeRtmpAndIsRemembered() {
+        QTemporaryDir d; const QString ini = d.path() + "/s.ini";
+        { QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
+          QVERIFY(c.streamUrl().isEmpty());
+          QVERIFY(!c.setStreamUrl("").isEmpty());
+          QVERIFY(c.setStreamUrl("https://x.com/live").contains("rtmp://"));
+          QVERIFY(!c.setStreamUrl("rtmp://").isEmpty());
+          QVERIFY(!c.setStreamUrl("rtmp://has space/x").isEmpty());
+          QVERIFY(c.streamUrl().isEmpty());                                     // nothing bad was kept
+          QVERIFY(c.setStreamUrl("  rtmps://live.example:443/x ").isEmpty());
+          QCOMPARE(c.streamUrl(), QString("rtmps://live.example:443/x")); }
+        QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
+        QCOMPARE(c.streamUrl(), QString("rtmps://live.example:443/x"));
+        QSettings bad(d.path() + "/bad.ini", QSettings::IniFormat); bad.setValue("streamUrl", "javascript:alert(1)"); bad.sync();
+        QVERIFY(Settings(&bad, nullptr, d.path() + "/key").streamUrl().isEmpty());   // a hand-edited bad value is ignored
+    }
+    void theStreamKeyLivesInAPrivateFileNeverInTheSettings() {
+        QTemporaryDir d; const QString ini = d.path() + "/s.ini", keyFile = d.path() + "/sub/key";
+        QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, keyFile);
+        QSignalSpy changed(&c, &Settings::changed);
+        QVERIFY(!c.streamKeySaved()); QVERIFY(!c.streamReady());
+        QVERIFY(c.setStreamKey("  abcd-1234-EFGH \n").isEmpty());
+        QVERIFY(c.streamKeySaved()); QVERIFY(changed.count() >= 1);
+        const auto mode = QFile::permissions(keyFile);                                      // Qt reports the owner bits twice (Owner and User)
+        QVERIFY(mode & QFile::ReadOwner); QVERIFY(mode & QFile::WriteOwner);
+        QVERIFY(!(mode & (QFile::ExeOwner | QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther)));   // owner only: 0600
+        c.setStreamUrl("rtmp://live.example/x"); s.sync();
+        QVERIFY(c.streamReady());
+        QCOMPARE(c.streamSpec().key, QString("abcd-1234-EFGH")); QCOMPARE(c.streamSpec().url, QString("rtmp://live.example/x"));
+        QFile text(ini); QVERIFY(text.open(QIODevice::ReadOnly)); QVERIFY(!text.readAll().contains("abcd-1234"));   // never in the ini
+        QVERIFY(c.property("streamKey").isNull());                                          // and not a property QML can read back
+        Settings again(&s, nullptr, keyFile); QVERIFY(again.streamKeySaved());              // remembered across runs
+        c.clearStreamKey();
+        QVERIFY(!c.streamKeySaved()); QVERIFY(!QFileInfo::exists(keyFile)); QVERIFY(!c.streamReady()); QVERIFY(c.streamSpec().key.isEmpty());
+    }
+    void aBadStreamKeyIsRefusedAndKeepsTheOldOne() {
+        QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
+        QVERIFY(c.setStreamKey("good-key").isEmpty());
+        QVERIFY(!c.setStreamKey("").isEmpty()); QVERIFY(!c.setStreamKey("two words").isEmpty()); QVERIFY(!c.setStreamKey(QString(600, 'a')).isEmpty());
+        QCOMPARE(c.streamSpec().key, QString("good-key"));
+        Settings nowhere(&s); QVERIFY(!nowhere.setStreamKey("abc").isEmpty());              // no key file path: a test can never write a real one
+    }
+    void streamQualityPicksTheBitrateAndSize() {
+        QTemporaryDir d; const QString ini = d.path() + "/s.ini";
+        { QSettings s(ini, QSettings::IniFormat); Settings c(&s, nullptr, d.path() + "/key");
+          QCOMPARE(c.streamQuality(), 1); QCOMPARE(c.streamSpec().kbps, 6000); QCOMPARE(c.streamSpec().height, 1080);
+          c.setStreamQuality(0); QCOMPARE(c.streamSpec().kbps, 3000); QCOMPARE(c.streamSpec().height, 720);
+          c.setStreamQuality(2); QCOMPARE(c.streamSpec().kbps, 9000); QCOMPARE(c.streamSpec().height, 1080);
+          c.setStreamQuality(7); QCOMPARE(c.streamQuality(), 2); }
+        QSettings s(ini, QSettings::IniFormat); QCOMPARE(Settings(&s, nullptr, d.path() + "/key").streamQuality(), 2);
+    }
     void aboutNamesTheEngineAndTheLicence() {
         QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat);
         Settings c(&s);

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <memory>
 
 // Integration fixtures never capture the real microphone.
 static RecordSpec silentSpec(int pick, const QString &path) {
@@ -75,6 +76,21 @@ static double audioRms(const QString &file) {
     for (int i = 0; i + 4 <= bytes.size(); i += 4) { float sample; std::memcpy(&sample, bytes.constData() + i, 4); sum += sample * sample; }
     return bytes.size() >= 4 ? std::sqrt(sum / (bytes.size() / 4)) : -1;
 }
+
+// A pretend X: ffmpeg waiting on this machine for one RTMP publisher, so a test broadcast never leaves the computer.
+struct RtmpReceiver {
+    QProcess p;
+    RtmpReceiver(const QString &file, int port, const QString &key) {
+        p.start("ffmpeg", {"-nostdin", "-v", "warning", "-listen", "1", "-i", QString("rtmp://127.0.0.1:%1/live/%2").arg(port).arg(key), "-c", "copy", "-f", "flv", file});
+        p.waitForStarted(5000); QTest::qWait(800);
+    }
+    ~RtmpReceiver() { if (p.state() != QProcess::NotRunning) { p.kill(); p.waitForFinished(2000); } }
+};
+static QString probe(const QString &file, const QStringList &args) {
+    QProcess p; p.start("ffprobe", QStringList{"-v", "error"} + args + QStringList{file});
+    p.waitForFinished(15000); return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+}
+static QStringList statesOf(const QSignalSpy &spy) { QStringList out; for (const auto &a : spy) out << a[0].toString(); return out; }
 
 class ObsBackendTests : public QObject {
     Q_OBJECT
@@ -432,6 +448,114 @@ private slots:
         QVERIFY2(failed.first().first().toString().contains("camera"), qPrintable(failed.first().first().toString()));
         QCOMPARE(started.count(), 0);
         QVERIFY(!QFileInfo(spec.path).exists() || QFileInfo(spec.path).size() < 1000);
+    }
+    void aTakeBroadcastsToAnRtmpServerAndStillSavesItsFile() {
+        AudioFixture fixture; QVERIFY(fixture.valid);
+        QTemporaryDir d; const QString recv = d.path() + "/recv.flv", path = d.path() + "/t.mp4";
+        RtmpReceiver server(recv, 19351, "test-key-abc");
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        QSignalSpy state(&b, &RecorderBackend::streamState), stats(&b, &RecorderBackend::streamStats);
+        RecordSpec spec = silentSpec(1, path); spec.mic = true;
+        spec.stream.on = true; spec.stream.url = "rtmp://127.0.0.1:19351/live"; spec.stream.key = "test-key-abc"; spec.stream.kbps = 3000; spec.stream.height = 720;
+        b.begin(spec);
+        QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).contains("live"), 10000);
+        QTest::qWait(5000);
+        b.end();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 25000);
+        QVERIFY2(failed.isEmpty(), "backend reported a failure");
+        QTRY_VERIFY2_WITH_TIMEOUT(server.p.state() == QProcess::NotRunning, "the server never saw the broadcast end", 15000);   // not waitForFinished(): it says false for a process that already ended
+        QCOMPARE(statesOf(state), (QStringList{"connecting", "live", "ended"}));              // each state announced once, in order
+        QVERIFY(stats.count() >= 2); QVERIFY2(stats.last()[0].toInt() > 500, qPrintable(QString("kbps %1").arg(stats.last()[0].toInt())));
+        // what the server received: H.264 + AAC at the size that was asked for, with a keyframe about every 2 s
+        QCOMPARE(probe(recv, {"-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0"}), QString("h264,1280,720"));
+        QCOMPARE(probe(recv, {"-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"}), QString("aac"));
+        const QStringList keys = probe(recv, {"-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "csv=p=0"}).split('\n', Qt::SkipEmptyParts);
+        QVERIFY2(keys.size() >= 2, qPrintable(keys.join(",")));
+        QVERIFY2(keys.last().toDouble() - keys.first().toDouble() < 2.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
+        QVERIFY2(audioRms(recv) > 0.02, qPrintable(QString("rms %1").arg(audioRms(recv))));   // the tone really went out
+        // and the saved copy is the full-quality file, unaffected by the broadcast's 720p
+        QCOMPARE(probe(path, {"-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0"}), QString("1920,1080"));
+        QVERIFY2(durationOf(path) > 4.0, qPrintable(QString("duration %1").arg(durationOf(path))));
+    }
+    void aBroadcastToNowhereFailsLoudlyAndTheFileCarriesOn() {
+        QTemporaryDir d; const QString path = d.path() + "/t.mp4";
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed), state(&b, &RecorderBackend::streamState);
+        RecordSpec spec = silentSpec(1, path);
+        spec.stream.on = true; spec.stream.url = "rtmp://127.0.0.1:19352/live"; spec.stream.key = "test-key-abc";   // nothing listens there
+        b.begin(spec);
+        QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).contains("failed"), 15000);
+        QVERIFY(!statesOf(state).contains("live"));
+        QString why; for (const auto &a : state) if (a[0].toString() == "failed") why = a[1].toString();
+        QVERIFY2(why.contains("connect"), qPrintable(why));
+        QVERIFY2(!why.contains("test-key-abc"), "the stream key must never appear in an error");
+        QTest::qWait(2500);                                                   // the recording did not notice
+        QVERIFY(failed.isEmpty());
+        b.end();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+        QVERIFY2(durationOf(path) > 2.0, qPrintable(QString("duration %1").arg(durationOf(path))));
+    }
+    void aBroadcastThatIsNotAskedForCreatesNothing() {
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), state(&b, &RecorderBackend::streamState);
+        b.begin(silentSpec(1, d.path() + "/t.mp4"));
+        QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QVERIFY(!obs_get_output_by_name("mobs stream"));
+        QTest::qWait(800); b.end();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+        QVERIFY(state.isEmpty());
+    }
+    void aHardwareBroadcastEitherGoesLiveOrExplainsItself() {
+        QTemporaryDir d; const QString recv = d.path() + "/recv.flv";
+        RtmpReceiver server(recv, 19353, "test-key-abc");
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy checked(&b, &RecorderBackend::hardwareChecked); b.checkHardware(); QCOMPARE(checked.count(), 1);
+        if (!checked.first()[0].toBool()) QSKIP("no NVIDIA H.264 on this machine");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed), state(&b, &RecorderBackend::streamState);
+        auto spec = silentSpec(1, d.path() + "/gpu.mp4"); spec.hardware = true;
+        spec.stream.on = true; spec.stream.url = "rtmp://127.0.0.1:19353/live"; spec.stream.key = "test-key-abc"; spec.stream.kbps = 6000;
+        b.begin(spec);
+        QTRY_VERIFY_WITH_TIMEOUT(started.count() == 1 || failed.count() == 1, 15000);
+        QVERIFY2(failed.isEmpty(), qPrintable(failed.isEmpty() ? QString() : failed.first().first().toString()));
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).contains("live"), 10000);
+        QTest::qWait(5000); b.end();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 25000);
+        QTRY_VERIFY_WITH_TIMEOUT(server.p.state() == QProcess::NotRunning, 15000);
+        QCOMPARE(probe(recv, {"-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0"}), QString("h264,1920,1080"));
+        const QStringList keys = probe(recv, {"-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "csv=p=0"}).split('\n', Qt::SkipEmptyParts);
+        QVERIFY2(keys.size() >= 2 && keys.last().toDouble() - keys.first().toDouble() < 2.6 * (keys.size() - 1), qPrintable("keyframes " + keys.join(",")));
+        QVERIFY(durationOf(spec.path) > 4.0);
+    }
+    void aDroppedConnectionReconnectsAndTheFileNeverNoticed() {
+        QTemporaryDir d; const QString path = d.path() + "/t.mp4";
+        auto server = std::make_unique<RtmpReceiver>(d.path() + "/one.flv", 19354, "test-key-abc");
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed), state(&b, &RecorderBackend::streamState);
+        RecordSpec spec = silentSpec(1, path);
+        spec.stream.on = true; spec.stream.url = "rtmp://127.0.0.1:19354/live"; spec.stream.key = "test-key-abc"; spec.stream.kbps = 3000;
+        b.begin(spec);
+        QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).contains("live"), 10000);
+        QTest::qWait(1500);
+        server.reset();                                                       // the "internet" goes away mid-broadcast
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).contains("reconnecting"), 20000);
+        QVERIFY(failed.isEmpty());                                            // the saved file did not notice
+        QString why; for (const auto &a : state) if (a[0].toString() == "reconnecting") why = a[1].toString();
+        QVERIFY2(why.contains("trying again"), qPrintable(why));
+        auto again = std::make_unique<RtmpReceiver>(d.path() + "/two.flv", 19354, "test-key-abc");   // and comes back
+        QTRY_VERIFY_WITH_TIMEOUT(statesOf(state).last() == "live", 40000);
+        QTest::qWait(3000);
+        b.end();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 25000);
+        QVERIFY(failed.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(again->p.state() == QProcess::NotRunning, 15000);
+        QCOMPARE(probe(d.path() + "/two.flv", {"-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"}), QString("h264"));   // video flows again
+        QVERIFY2(durationOf(path) > 6.0, qPrintable(QString("duration %1").arg(durationOf(path))));           // the file ran through the whole outage
+        QCOMPARE(statesOf(state).last(), QString("ended"));
     }
     void cancelBeforeStartIsClean() {
         QTemporaryDir d;

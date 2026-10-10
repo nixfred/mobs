@@ -31,13 +31,20 @@
 class ScriptBackend final : public RecorderBackend {
 public:
     void begin(const RecordSpec &spec) override {
+        m_streams = spec.stream.on;
         emit started(); emit audioLevels(-18, -24, spec.mic, spec.audio.desktop, QString());
+        if (m_streams) {   // a pretend broadcast: connecting first, live a moment later (the steps below then break it on purpose)
+            emit streamState("connecting", QString());
+            QTimer::singleShot(400, this, [this] { if (m_streams) { emit streamState("live", QString()); emit streamStats(5800, 0); } });
+        }
     }
     void pause(bool) override {}
     void end() override {
         if (qEnvironmentVariable("MOBS_FAKE_STOP_HANG") == "1") return;
+        if (m_streams) { m_streams = false; emit streamState("ended", QString()); }
         emit audioLevels(-60, -60, false, false, QString()); emit finished(QString());
     }
+    bool m_streams = false;
     void setMicCheck(bool on, const AudioSpec &) override { emit audioLevels(on ? -18 : -60, -60, on, false, QString()); }
     void setPreview(bool on, const RecordSpec &) override {
         if (on) { QImage frame(640, 360, QImage::Format_RGB32); frame.fill(QColor("#3050f0")); emit previewFrame(frame); }
@@ -54,7 +61,10 @@ int main(int argc, char *argv[]) {
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
     Palette palette(qEnvironmentVariable("MOBS_THEME_DIR"));
     QSettings settings(qEnvironmentVariable("MOBS_SETTINGS", QSettings().fileName()), QSettings::IniFormat);
-    Settings prefs(&settings);
+    const QString cfg = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/mobs";
+    QDir().mkpath(cfg);
+    // The stream key lives in its own owner-only file, never in the settings file. Scripted runs use a throwaway one (MOBS_STREAM_KEY_FILE).
+    Settings prefs(&settings, nullptr, qEnvironmentVariable("MOBS_STREAM_KEY_FILE", cfg + "/stream-key"));
     AudioDevices audio; audio.refresh();
     // MOBS_FAKE_CAMERAS=1: two sample cameras, for screenshots and tests on a machine without a webcam.
     const QString fakeCameras = qEnvironmentVariable("MOBS_FAKE_CAMERAS");
@@ -70,8 +80,6 @@ int main(int argc, char *argv[]) {
     if (qEnvironmentVariableIntValue("MOBS_SCREEN") == 1) state.back();
 
     // Declared before the QML engine so libobs is shut down AFTER the UI is gone (see ObsBackend::~ObsBackend).
-    const QString cfg = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/mobs";
-    QDir().mkpath(cfg);
     std::unique_ptr<RecorderBackend> backend;
     if (qEnvironmentVariable("MOBS_FAKE_BACKEND") == "1" && !qEnvironmentVariable("MOBS_SCRIPT").isEmpty())
         backend = std::make_unique<ScriptBackend>();
@@ -86,10 +94,12 @@ int main(int argc, char *argv[]) {
     recorder.setOptionsProvider([&] { return std::make_pair(prefs.crf(), prefs.micOn()); });
     recorder.setAudioProvider([&] { return prefs.audioSpec(); });
     recorder.setHardwareProvider([&] { return prefs.hardware(); });
+    recorder.setStreamProvider([&] { return prefs.streamSpec(); });
     recorder.setMicGuard([&] { auto spec = prefs.audioSpec(); spec.desktop = false; return !prefs.micOn() ? QString("turn on the microphone first") : audio.problem(spec, true); });
     recorder.setPresetProvider([&] { return prefs.encoderPreset(); });
     recorder.setCameraProvider([&] { return state.cameraSpec(); });
     QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); state.setCameraPanel(true); });
+    QObject::connect(&recorder, &Engine::liveSetupNeeded, &state, [&] { state.openLive(); });
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
 
     Control control(&recorder, &state);
@@ -192,6 +202,7 @@ int main(int argc, char *argv[]) {
     //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
     //   grabpreview=/path.png   (save the newest live-preview frame; for checks)
     //   pro=0/1 | tab=N (drawer)   quality=N | mic=0/1
+    //   arm=0/1 | streamurl=URL | streamkey=KEY | streamquality=N   (going live; with the fake backend: streamdrop | streamretry | streamback)
     //   review=/path.mp4 | split=SECONDS | cut=INDEX | savereview | waitsaved | closereview   (the editor, for checks)
     // e.g. MOBS_SCRIPT=start,waitrec,wait=3,pause,wait=2,resume,wait=2,stop,waitidle,quit   (for tests and checks only)
     if (const QString script = qEnvironmentVariable("MOBS_SCRIPT"); !script.isEmpty()) {
@@ -314,6 +325,11 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "preview") ok = state.preview() == (condition[1] == "1");
                 else if (ok && condition[0] == "previewing") ok = recorder.previewing() == (condition[1] == "1");
                 else if (ok && condition[0] == "message") ok = recorder.message().contains(condition[1]);
+                else if (ok && condition[0] == "armed") ok = recorder.streamArmed() == (condition[1] == "1");
+                else if (ok && condition[0] == "broadcasting") ok = recorder.broadcasting() == (condition[1] == "1");
+                else if (ok && condition[0] == "streamState") ok = recorder.streamState() == condition[1];
+                else if (ok && condition[0] == "streamReady") ok = prefs.streamReady() == (condition[1] == "1");
+                else if (ok && condition[0] == "streamProblem") ok = recorder.streamProblem().contains(condition[1]);
                 else if (ok && condition[0] == "messageEmpty") ok = recorder.message().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "audioTab") ok = window->findChild<QObject *>("expertPanel")->property("tab").toInt() == condition[1].toInt();
                 else if (ok && condition[0] == "splashDone") { auto *splash = window->findChild<QObject *>("splash"); ok = splash && splash->property("done").toBool() == (condition[1] == "1"); }
@@ -336,7 +352,7 @@ int main(int argc, char *argv[]) {
                         if (button && button->isVisible() && item->mapRectToItem(window->contentItem(), item->boundingRect()).intersects(button->mapRectToItem(window->contentItem(), button->boundingRect())))
                             problems.append("live preview overlaps Record");
                     }
-                    if ((!text.isEmpty() && !item->inherits("QQuickTextInput")) || item->objectName() == "recordButton" || item->objectName() == "readyPreview" || item->objectName() == "recordingPreview") {
+                    if ((!text.isEmpty() && !item->inherits("QQuickTextInput")) || item->objectName() == "recordButton" || item->objectName() == "readyPreview" || item->objectName() == "recordingPreview" || item->objectName() == "liveBadge") {
                         const QRectF box = item->mapRectToItem(window->contentItem(), QRectF(0, 0, item->width(), item->height()));
                         if (box.left() < area.left() - 1 || box.top() < area.top() - 1 || box.right() > area.right() + 1 || box.bottom() > area.bottom() + 1)
                             problems.append(text.isEmpty() ? item->objectName() : text.left(100));
@@ -356,6 +372,13 @@ int main(int argc, char *argv[]) {
             else if (st == "hardwarecheck") { recorder.checkHardware(); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("hardware=")) { prefs.setHardware(st.mid(9) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("quality=")) { prefs.setQuality(st.mid(8).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("arm=")) { recorder.setStreamArmed(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("streamurl=")) { const QString why = prefs.setStreamUrl(st.mid(10)); if (!why.isEmpty()) std::fprintf(stderr, "script: %s\n", qPrintable(why)); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("streamkey=")) { prefs.setStreamKey(st.mid(10)); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("streamquality=")) { prefs.setStreamQuality(st.mid(14).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st == "streamdrop" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("failed", "the connection to the server was lost"); QTimer::singleShot(0, &app, *run); }
+            else if (st == "streamretry" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("reconnecting", "the connection dropped: trying again"); QTimer::singleShot(0, &app, *run); }
+            else if (st == "streamback" && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->streamState("live", QString()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("mic=")) { prefs.setMicOn(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("review=")) { std::printf("script: review %d\n", int(review.open(st.mid(7)))); waitFor([&] { return !review.loading(); }, 35000, "the recording to open"); }
             else if (st.startsWith("savedtake=") && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->finished(st.mid(10)); QTimer::singleShot(0, &app, *run); }

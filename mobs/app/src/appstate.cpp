@@ -152,3 +152,8 @@ void AppState::openAudio() {
     m_expertTab = 2;
     if (m_pro) emit proChanged(); else setPro(true);
 }
+
+void AppState::openLive() {
+    m_expertTab = 6;
+    if (m_pro) emit proChanged(); else setPro(true);
+}

@@ -27,6 +27,17 @@ Engine::Engine(RecorderBackend *backend, QString recordingDir, QObject *parent)
     connect(backend, &RecorderBackend::hardwareChecked, this, [this](bool nvenc, const QString &message) {
         m_hardwareKnown = true; m_nvencAvailable = nvenc; m_hardwareMessage = message; emit hardwareChanged();
     });
+    connect(backend, &RecorderBackend::streamState, this, &Engine::onStreamState);
+    connect(backend, &RecorderBackend::streamStats, this, [this](int kbps, int dropped) {
+        if (!m_takeStreams || (kbps == m_streamKbps && dropped == m_streamDropped)) return;
+        m_streamKbps = kbps; m_streamDropped = dropped; emit streamStatsChanged();
+    });
+    m_armTimer.setSingleShot(true);
+    connect(&m_armTimer, &QTimer::timeout, this, [this] {
+        if (!m_streamArmed || m_state != Idle) return;
+        setStreamArmed(false);
+        setMessage("go live was switched off: it was armed for " + QString::number(m_armTimeoutMs / 60000) + " minutes and no take started");
+    });
     connect(backend, &RecorderBackend::started, this, &Engine::onStarted);
     connect(backend, &RecorderBackend::failed, this, &Engine::onFailed);
     connect(backend, &RecorderBackend::finished, this, &Engine::onFinished);
@@ -64,6 +75,7 @@ void Engine::setState(State s) {
     // Only on a CHANGE, so the backend is not nagged on every pause/resume. Never while starting: the scene may still be
     // waiting for the screen picker, and a second build of it must not race the recording's own.
     if (livenessChanged) applyPreview();
+    if (s == Idle) endBroadcast();
 }
 void Engine::setMessage(const QString &m) {
     if (m == m_message) return;
@@ -92,6 +104,16 @@ void Engine::start(int pick) {
         emit cameraNeeded();
         return;
     }
+    StreamSpec stream;
+    if (m_streamArmed) {
+        stream = m_streamFn ? m_streamFn() : StreamSpec{};
+        if (stream.url.isEmpty() || stream.key.isEmpty()) {
+            setMessage("go live needs the server address and stream key: set them in EXPERT > live");
+            emit liveSetupNeeded();
+            return;
+        }
+        stream.on = true;
+    }
     const QString dir = m_folderFn ? m_folderFn() : m_dir;
     if (!QDir().mkpath(dir) || !QFileInfo(dir).isWritable()) {
         setMessage("cannot save to " + dir + ": choose another folder in EXPERT > recording");
@@ -108,6 +130,12 @@ void Engine::start(int pick) {
     if (m_presetFn) spec.encoderPreset = m_presetFn();
     if (m_audioFn) spec.audio = m_audioFn();
     if (m_hardwareFn) spec.hardware = m_hardwareFn();
+    spec.stream = stream;
+    m_takeStreams = stream.on;
+    m_streamState = stream.on ? "connecting" : "off"; m_streamProblem.clear(); m_streamKbps = 0; m_streamDropped = 0;
+    m_armTimer.stop();
+    m_streamArmed = false;   // armed means "the next take"; this IS that take
+    if (stream.on) { emit streamChanged(); emit streamStatsChanged(); }
     m_currentAudio = spec.audio;
     m_currentFolder = dir;
     m_currentMic = spec.mic;
@@ -122,6 +150,8 @@ void Engine::toggle(int pick) {
 }
 
 void Engine::togglePause() {
+    // A live picture cannot be paused: viewers would keep watching while the saved file quietly skipped the same stretch.
+    if (broadcasting()) { setMessage("you are live: pause is off while you broadcast"); return; }
     if (m_state == Recording) {
         m_banked += m_clock.elapsed();
         m_clock.invalidate();
@@ -244,4 +274,32 @@ void Engine::checkMic(bool on) {
     }
     m_micChecking = on; m_audioProblem.clear(); emit audioChanged();
     m_backend->setMicCheck(on, m_audioFn ? m_audioFn() : AudioSpec{});
+}
+
+// ---------------------------------------------------------------- going live
+
+void Engine::setStreamArmed(bool armed) {
+    if (m_state != Idle) armed = false;   // a take in progress is what it is; arming is for the next one
+    if (armed == m_streamArmed) return;
+    m_streamArmed = armed;
+    if (armed) m_armTimer.start(m_armTimeoutMs); else m_armTimer.stop();
+    emit streamChanged();
+}
+
+void Engine::onStreamState(const QString &state, const QString &detail) {
+    if (!m_takeStreams) return;   // a late word from a broadcast that is already over
+    const QString problem = (state == "failed" || state == "reconnecting") ? detail : QString();
+    if (state == m_streamState && problem == m_streamProblem) return;
+    m_streamState = state; m_streamProblem = problem;
+    if (state != "live") { m_streamKbps = 0; emit streamStatsChanged(); }
+    emit streamChanged();
+}
+
+// The take is over: whatever happened to the broadcast, the next take starts from "not live" and un-armed.
+void Engine::endBroadcast() {
+    const bool changed = m_streamArmed || m_takeStreams || m_streamState != "off";
+    m_streamArmed = false; m_takeStreams = false; m_streamState = "off"; m_streamProblem.clear();
+    m_streamKbps = 0; m_streamDropped = 0;
+    m_armTimer.stop();
+    if (changed) { emit streamChanged(); emit streamStatsChanged(); }
 }

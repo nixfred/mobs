@@ -77,6 +77,43 @@ the microphone, and where recordings go. Every colour comes from the live Omarch
 ![the finished opening screen](../../docs/app/splash-final.png)
 ![on a light, a neon and an orange Omarchy theme](../../docs/app/splash-themes.png)
 
+## Going live to X
+
+MOBS can broadcast a take to X (or any RTMP/RTMPS server) while it records. **The saved file is always the full-quality 1080p copy**, whatever happens
+to the broadcast; the stream is a second, constant-bitrate encode of the same picture and sound.
+
+**Set it up once** (EXPERT > live): the server address and the stream key X gives you (studio.x.com/live > New livestream > RTMP; X may need Premium
+and Live Studio is in beta, so check X's page), and a stream quality: light (720p, 3 Mbps), standard (1080p, 6 Mbps, the default) or high (1080p, 9 Mbps).
+**The stream key is a password.** It is kept in its own owner-only file (`~/.config/mobs/stream-key`, mode 0600), never in the settings file, never shown
+again after saving, never printed, and scrubbed out of any error text. QML has no way to read it back.
+
+**Going live is a deliberate step every time.** On the ready screen click the **go live** chip (it opens the setup page if nothing is saved yet). It turns red
+("LIVE: armed"), the title reads "ready to go LIVE" and a red line says "Record BROADCASTS to X: this screen is public until you stop." Then Record. Arming is
+never remembered: it clears when the take ends, when MOBS restarts, and by itself after 15 minutes if no take starts.
+
+**While live** the recording screen shows a LIVE pill (CONNECTING, LIVE, RECONNECTING, or a red outlined NOT LIVE), the bitrate and any dropped frames, and the
+header says LIVE. **Pause is off while you broadcast**: viewers would keep watching while the saved file skipped that stretch.
+
+- **If the stream fails the recording does not.** A refused key or address, or a lost connection after 10 retries (the waits grow from 2 s to about 77 s: roughly four minutes), shows "NOT LIVE: the
+  server did not accept the address or stream key. The recording is still being saved." and the take carries on to its file. A dropped connection is retried
+  first (RECONNECTING). Once the stream is gone, pause works again.
+- A stream that cannot even start (no encoder) stops the take before it begins, with the reason, instead of a take that quietly never went live.
+- The broadcast uses its own registered stream target (`mobs_rtmp` in `obsbackend.cpp`) and not OBS's `rtmp-services` module, because that module asks
+  obsproject.com for a service list every time it loads. MOBS never phones home.
+- The stream encoder is x264 (veryfast, constant bitrate, keyframe every 2 s) or NVIDIA H.264 when the hardware page says so, plus AAC at 128 kbps: the settings X
+  documents for Live Studio (H.264 + AAC-LC, at most 12 Mbps, 1080p30 or 720p60, keyframe at most 3 s apart).
+- Quitting the window while live stops the take, and with it the broadcast, the same as Stop.
+
+![ready screen armed to go live](../../docs/app/golive-ready-armed.png)
+![live](../../docs/app/golive-recording.png)
+![the connection was lost: not live, still recording](../../docs/app/golive-not-live.png)
+![the setup page](../../docs/app/golive-setup.png)
+
+Tested without X: a stand-in server (`ffmpeg -listen 1 -i rtmp://127.0.0.1:PORT/live/KEY`) on this machine. `tst_obsbackend` has three real-libobs scenarios
+(a broadcast the server receives and decodes: H.264 + AAC, size, keyframe spacing, tone present, and the full-quality file beside it; a broadcast to a port
+nobody listens on, which must say so and leave the file alone; and a take that did not ask for one, which creates nothing) plus a hardware one on a
+machine with NVIDIA H.264. The first real broadcast to X is Fred's to start, because it goes to his followers.
+
 ## Install: launcher entry, icon, hotkey launch
 
 ```sh
@@ -121,6 +158,7 @@ Test and screenshot switches (env vars): `MOBS_THEME_DIR` (a fake Omarchy "curre
 `MOBS_SCREEN=1` / `MOBS_PICK=1..3` (start screen), `MOBS_WINDOW_SIZE=860x560`, `MOBS_GRAB=/path.png` (save the window's own pixels and quit), `MOBS_TEST_SOURCE=colour` (record a test colour instead of the screen, no picker), `MOBS_REC_DIR`, `MOBS_TOKEN_FILE`, `MOBS_TEST_CAMERA=colour` (a green stand-in webcam), `MOBS_FAKE_CAMERAS=1` (two sample cameras for screenshots), `MOBS_NO_HOTKEY=1`, `MOBS_VERBOSE=1` (libobs logs warnings and errors only otherwise). Script steps also include `pick=N`, `corner=N`, `size=N`, `panel=0/1`, `preview=0/1`, `grabpreview=`, `review=`, `split=`, `cut=`, `savereview`, `waitsaved`, `closereview`, `pro=0/1`, `tab=0..5`, `checklayout`, `key=P/Space/Esc`, `focusfolder`, `foldertext=`, `applyfolder`, `closewindow`, and `expect=state:idle` (also `pro`, `screen`, `confirmQuit`, `folderDefault`). Script `quit` explicitly exits without asking about unsaved test edits.
 
 Script condition `expect=previewing:0|1` reads whether the live picture is running (the fake backend serves a flat colour frame for it).
+Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted runs use a throwaway one). Script steps `arm=0/1`, `streamurl=`, `streamkey=`, `streamquality=N`, and with the fake backend `streamdrop` / `streamretry` / `streamback`; conditions `expect=armed|broadcasting|streamReady:0|1`, `expect=streamState:live` and `expect=streamProblem:text`. EXPERT tab 6 is the live page (`tab=0..6`).
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.
 Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=file:/path.wav` and `MOBS_TEST_DESKTOP_AUDIO=file:/path.wav` supply generated sound to native tests. `MOBS_FAKE_BACKEND=1` is accepted only with `MOBS_SCRIPT` and exercises QML without capture. EXPERT tabs are `tab=0..5`; scripts also support `openaudio`, `audiodetails=0/1`, `micdevice=`, `desktop=0/1`, `miccheck=0/1`, `micgain=`, and `hardware=0/1`.
 

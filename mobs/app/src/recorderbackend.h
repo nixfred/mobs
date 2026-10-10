@@ -17,6 +17,14 @@ struct AudioSpec {
     QString desktopDevice = "default";
     int desktopGainDb = -6;
 };
+// Where a live take is also sent. The key is a password: it lives only in this struct, in memory, for the length of one take.
+struct StreamSpec {
+    bool on = false;
+    QString url;             // rtmp:// or rtmps:// server address
+    QString key;             // the stream key; never logged, never shown
+    int kbps = 6000;         // constant video bitrate (the server wants a fixed rate, unlike the file's quality-based one)
+    int height = 1080;       // 720 or 1080 (16:9); the file is always 1080
+};
 struct RecordSpec {
     int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
     QString path;            // the file to write
@@ -26,6 +34,7 @@ struct RecordSpec {
     QString encoderPreset = "veryfast"; // x264 CPU/compression tradeoff
     AudioSpec audio;
     bool hardware = false;
+    StreamSpec stream;       // when on, the take is also broadcast; the file is still saved as the backup
 };
 
 // The narrow door between MOBS and whatever actually records. Today the only real implementation is libobs
@@ -49,6 +58,10 @@ signals:
     void hardwareChecked(bool nvenc, const QString &message);
     void previewFrame(const QImage &image);     // ~15 per second while previewing, 640x360
     void previewFailed(const QString &why);    // preview failure leaves the recording state alone
+    // The broadcast, which can fail and come back without touching the file. state: "connecting", "live", "reconnecting", "failed", "ended".
+    // detail is a plain sentence for "failed" and "reconnecting", empty otherwise.
+    void streamState(const QString &state, const QString &detail);
+    void streamStats(int kbps, int droppedFrames);   // about once a second while live
     void waitingForUser(const QString &what);   // e.g. the screen picker is open
     void started();                             // frames are really being recorded
     void failed(const QString &why);            // nothing is recording any more

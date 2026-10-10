@@ -56,7 +56,7 @@ add_test(NAME install_paths COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_ui.py $<TARGET_FILE:mobs>)
-set_tests_properties(ui PROPERTIES TIMEOUT 420)
+set_tests_properties(ui PROPERTIES TIMEOUT 600)
 
 # The NVIDIA plugin locates its capability helper beside the host executable, not through PATH.
 find_program(MOBS_NVENC_TEST obs-nvenc-test)

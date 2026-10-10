@@ -14,6 +14,7 @@
 #include <linux/videodev2.h>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -31,6 +32,37 @@ QString readToken(const QString &file) {
 void writeToken(const QString &file, const QString &token) {
     QFile f(file);
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { f.write(token.toUtf8()); f.write("\n"); f.setPermissions(QFile::ReadOwner | QFile::WriteOwner); }
+}
+
+// The broadcast target: a server address and a key. OBS's own "custom server" service lives in its rtmp-services module, which
+// also asks obsproject.com for a service list every time it loads. MOBS never phones home, so it registers this tiny one instead.
+struct StreamTarget { std::string url, key; };
+const char *targetName(void *) { return "MOBS stream target"; }
+void *targetCreate(obs_data_t *settings, obs_service_t *) {
+    auto *t = new StreamTarget;
+    t->url = obs_data_get_string(settings, "server");
+    t->key = obs_data_get_string(settings, "key");
+    return t;
+}
+void targetDestroy(void *data) { delete static_cast<StreamTarget *>(data); }
+const char *targetUrl(void *data) { return static_cast<StreamTarget *>(data)->url.c_str(); }
+const char *targetKey(void *data) { return static_cast<StreamTarget *>(data)->key.c_str(); }
+const char *targetProtocol(void *data) { return std::strncmp(targetUrl(data), "rtmps://", 8) == 0 ? "RTMPS" : "RTMP"; }
+const char *targetInfo(void *data, uint32_t type) {
+    switch (type) {
+    case OBS_SERVICE_CONNECT_INFO_SERVER_URL: return targetUrl(data);
+    case OBS_SERVICE_CONNECT_INFO_STREAM_ID: return targetKey(data);
+    default: return nullptr;
+    }
+}
+bool targetCanConnect(void *data) { return targetUrl(data)[0] != '\0'; }
+void registerStreamTarget() {
+    static obs_service_info info{};
+    info.id = "mobs_rtmp";
+    info.get_name = targetName; info.create = targetCreate; info.destroy = targetDestroy;
+    info.get_url = targetUrl; info.get_key = targetKey; info.get_protocol = targetProtocol;
+    info.get_connect_info = targetInfo; info.can_try_to_connect = targetCanConnect;
+    obs_register_service(&info);
 }
 }
 
@@ -77,6 +109,7 @@ bool ObsBackend::ensureStarted(QString *error) {
     }
     base_set_log_handler(obsLogHandler, nullptr);   // before obs_startup, so even its first lines are filtered
     if (!obs_startup("en-US", nullptr, nullptr)) { *error = "the recording engine would not start"; return false; }
+    registerStreamTarget();
     obs_add_data_path("/usr/share/obs/libobs/");
     obs_add_module_path("/usr/lib/obs-plugins/", "/usr/share/obs/obs-plugins/%module%");
 
@@ -288,6 +321,12 @@ bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
         return false;
     }
     reservation.close();
+    // The broadcast goes first: if it cannot even start, nothing was recorded and the user is told, instead of a take that
+    // quietly never went live. The file is the safety net and is started right behind it.
+    if (spec.stream.on && !startStream(spec, error)) {
+        if (QFileInfo(spec.path).size() == 0) QFile::remove(spec.path);
+        return false;
+    }
     if (!obs_output_start(m_out)) {
         const QString why = QString::fromUtf8(obs_output_get_last_error(m_out));
         *error = why.isEmpty() ? "the recording would not start" : why;
@@ -296,6 +335,128 @@ bool ObsBackend::startOutput(const RecordSpec &spec, QString *error) {
         return false;
     }
     return true;
+}
+
+// ---------------------------------------------------------------- the broadcast (its own encoders and RTMP output)
+
+QString ObsBackend::redacted(QString text) const {
+    if (!m_streamKey.isEmpty()) text.replace(m_streamKey, "***");
+    return text;
+}
+
+void ObsBackend::streamStarted(void *self, calldata *) { static_cast<ObsBackend *>(self)->m_streamUp = true; }
+void ObsBackend::streamReconnecting(void *self, calldata *) { static_cast<ObsBackend *>(self)->m_streamRetrying = true; }
+void ObsBackend::streamReconnected(void *self, calldata *) { static_cast<ObsBackend *>(self)->m_streamRetrying = false; }
+void ObsBackend::streamStopped(void *self, calldata *data) { static_cast<ObsBackend *>(self)->m_streamStop = int(calldata_int(data, "code")); }
+
+bool ObsBackend::startStream(const RecordSpec &spec, QString *error) {
+    const StreamSpec &s = spec.stream;
+    m_streamKey = s.key;
+    m_streamStop = 1; m_streamUp = false; m_streamRetrying = false; m_streamAsked = false; m_streamShown.clear();
+
+    obs_data_t *target = obs_data_create();
+    obs_data_set_string(target, "server", s.url.toUtf8().constData());
+    obs_data_set_string(target, "key", s.key.toUtf8().constData());
+    m_service = obs_service_create("mobs_rtmp", "mobs stream target", target, nullptr);
+    obs_data_release(target);
+    if (!m_service) { *error = "could not set up the stream target"; return false; }
+
+    // A server wants a steady bitrate and a keyframe every couple of seconds; the file's quality-based encoder gives neither.
+    obs_data_t *vs = obs_data_create();
+    obs_data_set_string(vs, "rate_control", "CBR");
+    obs_data_set_int(vs, "bitrate", s.kbps);
+    obs_data_set_int(vs, "keyint_sec", 2);
+    if (spec.hardware) {
+        obs_data_set_string(vs, "preset", "p5");
+    } else {
+        obs_data_set_string(vs, "preset", "veryfast");   // live cannot wait for a slow preset, whatever the file uses
+        obs_data_set_string(vs, "profile", "high");
+        obs_data_set_bool(vs, "use_bufsize", true); obs_data_set_int(vs, "buffer_size", s.kbps);
+    }
+    m_svenc = obs_video_encoder_create(spec.hardware ? "obs_nvenc_h264_tex" : "obs_x264", "mobs stream video", vs, nullptr);
+    obs_data_release(vs);
+    obs_data_t *as = obs_data_create();
+    obs_data_set_int(as, "bitrate", 128);
+    m_saenc = obs_audio_encoder_create("ffmpeg_aac", "mobs stream audio", as, 0, nullptr);
+    obs_data_release(as);
+    if (!m_svenc || !m_saenc) { *error = spec.hardware ? "NVIDIA H.264 is unavailable for the stream; choose software in EXPERT > hardware" : "no video or audio encoder is available for the stream"; return false; }
+    obs_encoder_set_video(m_svenc, obs_get_video());
+    if (s.height == 720) obs_encoder_set_scaled_size(m_svenc, 1280, 720);
+    obs_encoder_set_audio(m_saenc, obs_get_audio());
+
+    obs_data_t *os = obs_data_create();
+    obs_data_set_int(os, "max_shutdown_time_sec", 5);    // a dead network must not hold the saved file hostage
+    m_stream = obs_output_create("rtmp_output", "mobs stream", os, nullptr);
+    obs_data_release(os);
+    if (!m_stream) { *error = "could not create the stream output"; return false; }
+    obs_output_set_service(m_stream, m_service);
+    obs_output_set_video_encoder(m_stream, m_svenc);
+    obs_output_set_audio_encoder(m_stream, m_saenc, 0);
+    obs_output_set_reconnect_settings(m_stream, 10, 2); // a dropped connection is retried with growing waits (2 s, 3 s, 4.5 s ... about 77 s): roughly four minutes, then it says so; the file is unaffected
+    signal_handler_t *sh = obs_output_get_signal_handler(m_stream);
+    signal_handler_connect(sh, "start", &ObsBackend::streamStarted, this);
+    signal_handler_connect(sh, "reconnect", &ObsBackend::streamReconnecting, this);
+    signal_handler_connect(sh, "reconnect_success", &ObsBackend::streamReconnected, this);
+    signal_handler_connect(sh, "stop", &ObsBackend::streamStopped, this);
+    if (!obs_output_start(m_stream)) {
+        const QString why = redacted(QString::fromUtf8(obs_output_get_last_error(m_stream)));
+        *error = why.isEmpty() ? "the stream would not start: check the server address and stream key" : "the stream would not start: " + why;
+        return false;
+    }
+    m_streamShown = "connecting";
+    m_streamClock.start(); m_streamBytes = 0;
+    emit streamState("connecting", QString());
+    return true;
+}
+
+void ObsBackend::stopStream() {
+    if (m_stream) {
+        signal_handler_t *sh = obs_output_get_signal_handler(m_stream);
+        signal_handler_disconnect(sh, "start", &ObsBackend::streamStarted, this);
+        signal_handler_disconnect(sh, "reconnect", &ObsBackend::streamReconnecting, this);
+        signal_handler_disconnect(sh, "reconnect_success", &ObsBackend::streamReconnected, this);
+        signal_handler_disconnect(sh, "stop", &ObsBackend::streamStopped, this);
+        if (obs_output_active(m_stream)) obs_output_force_stop(m_stream);   // a graceful stop was already asked for by end()
+        obs_output_release(m_stream); m_stream = nullptr;
+    }
+    if (m_svenc) { obs_encoder_release(m_svenc); m_svenc = nullptr; }
+    if (m_saenc) { obs_encoder_release(m_saenc); m_saenc = nullptr; }
+    if (m_service) { obs_service_release(m_service); m_service = nullptr; }
+    m_streamKey.clear();
+    m_spec.stream.key.clear();   // the password is forgotten as soon as the broadcast is over
+}
+
+// Runs every 100 ms on the Qt thread: turns what libobs reported from its own threads into one state, announced once.
+void ObsBackend::pollStream() {
+    if (!m_stream) return;
+    QString state, detail;
+    const int code = m_streamStop.load();
+    if (code != 1) {
+        if (m_streamAsked || code == OBS_OUTPUT_SUCCESS) state = "ended";
+        else {
+            state = "failed";
+            switch (code) {
+            case OBS_OUTPUT_BAD_PATH: detail = "the server address is not valid"; break;
+            case OBS_OUTPUT_CONNECT_FAILED: detail = "could not connect to the server: check the address and your internet"; break;
+            case OBS_OUTPUT_INVALID_STREAM: detail = "the server did not accept the address or stream key"; break;
+            case OBS_OUTPUT_DISCONNECTED: detail = "the connection to the server was lost"; break;
+            case OBS_OUTPUT_UNSUPPORTED: detail = "the server does not support this kind of stream"; break;
+            case OBS_OUTPUT_ENCODE_ERROR: detail = "the stream encoder failed"; break;
+            default: detail = QString("the stream stopped (code %1)").arg(code);
+            }
+            const QString more = redacted(QString::fromUtf8(obs_output_get_last_error(m_stream))).left(160);
+            if (!more.isEmpty() && !detail.contains(more)) detail += " (" + more + ")";
+        }
+    } else if (m_streamRetrying) {
+        state = "reconnecting"; detail = "the connection dropped: trying again";
+    } else state = m_streamUp ? "live" : "connecting";
+    if (state != m_streamShown) { m_streamShown = state; emit streamState(state, detail); }
+    if (state == "live" && m_streamClock.elapsed() >= 1000) {
+        const quint64 bytes = obs_output_get_total_bytes(m_stream);
+        const double seconds = m_streamClock.restart() / 1000.0;
+        emit streamStats(int((bytes - m_streamBytes) * 8 / 1000 / seconds), obs_output_get_frames_dropped(m_stream));
+        m_streamBytes = bytes;
+    }
 }
 
 namespace {
@@ -366,6 +527,12 @@ void ObsBackend::checkHardware() {
 }
 
 void ObsBackend::stopOutput() {
+    if (m_stream) {
+        // The take is over, so the broadcast is too. Say so once, unless it already said "failed" or "ended".
+        if (m_streamShown != "failed" && m_streamShown != "ended") emit streamState("ended", QString());
+        m_streamShown = "ended";
+        stopStream();
+    }
     if (m_out) {
         signal_handler_disconnect(obs_output_get_signal_handler(m_out), "stop", &ObsBackend::outputStopped, this);
         obs_output_release(m_out); m_out = nullptr;
@@ -429,6 +596,7 @@ void ObsBackend::poll() {
             fail("nothing was chosen in the screen dialog, so recording was cancelled");
         }
     } else if (m_phase == Running || m_phase == Stopping) {
+        pollStream();
         const int code = m_stopCode.load();
         if (code != 1 && !obs_output_active(m_out)) {
             if (code != OBS_OUTPUT_SUCCESS) {
@@ -459,6 +627,8 @@ void ObsBackend::end() {
         emit finished(QString());
     } else if (m_phase == Running) {
         m_phase = Stopping;
+        m_streamAsked = true;
+        if (m_stream) obs_output_stop(m_stream);   // the broadcast ends now; the file below may take a moment longer
         obs_output_stop(m_out);       // finishes asynchronously; poll() reports when the file is complete
     }
 }

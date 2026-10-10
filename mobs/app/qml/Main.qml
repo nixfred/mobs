@@ -48,7 +48,7 @@ Window {
         enabled: !win.confirmQuit && !win.confirmStopQuit
         id: header
         anchors { top: parent.top; left: parent.left; right: parent.right }
-        stateWord: App.screen === 1 ? "new" : App.screen === 3 ? Engine.state : App.screen === 4 ? "review" : "ready"
+        stateWord: App.screen === 1 ? "new" : App.screen === 3 ? (Engine.broadcasting && Engine.state === "recording" ? "LIVE" : Engine.state) : App.screen === 4 ? "review" : "ready"
     }
     ChooseScreen {
         objectName: "contentScreen"

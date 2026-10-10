@@ -10,6 +10,7 @@ struct obs_scene;
 struct obs_source;
 struct obs_output;
 struct obs_encoder;
+struct obs_service;
 struct obs_scene_item;
 struct video_data;
 struct calldata;
@@ -41,6 +42,14 @@ private:
     void dropGraph();
     bool startOutput(const RecordSpec &spec, QString *error);
     void stopOutput();
+    bool startStream(const RecordSpec &spec, QString *error);
+    void stopStream();
+    void pollStream();
+    QString redacted(QString text) const;
+    static void streamStarted(void *self, calldata *data);
+    static void streamReconnecting(void *self, calldata *data);
+    static void streamReconnected(void *self, calldata *data);
+    static void streamStopped(void *self, calldata *data);
     bool startMic(const AudioSpec &audio, QString *error);
     void stopAudio();
     void pollAudio();
@@ -76,6 +85,18 @@ private:
     obs_source *m_video = nullptr, *m_camera = nullptr, *m_mic = nullptr;
     obs_encoder *m_venc = nullptr, *m_aenc = nullptr;
     obs_output *m_out = nullptr;
+    // The broadcast, when the take has one: its own constant-rate encoders and RTMP output, beside the file's. libobs reports
+    // its progress from its own threads into these atomics; pollStream() turns them into signals on the Qt thread.
+    obs_encoder *m_svenc = nullptr, *m_saenc = nullptr;
+    obs_output *m_stream = nullptr;
+    obs_service *m_service = nullptr;
+    QString m_streamKey;                       // kept only to scrub it out of any error text
+    QString m_streamShown;                     // the last state sent up, so a state is announced once
+    std::atomic<int> m_streamStop{1};          // 1 = running; otherwise libobs's stop code
+    std::atomic<bool> m_streamUp{false}, m_streamRetrying{false};
+    bool m_streamAsked = false;                // end() asked it to stop: a stop is then an ending, not a failure
+    QElapsedTimer m_streamClock;
+    quint64 m_streamBytes = 0;
     // newest preview frame, handed from libobs's video thread to the Qt main thread
     QMutex m_frameMutex;
     QImage m_latest;

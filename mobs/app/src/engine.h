@@ -32,6 +32,14 @@ class Engine : public QObject {
     Q_PROPERTY(QString lastFile READ lastFile NOTIFY lastFileChanged)
     Q_PROPERTY(QString warning READ warning NOTIFY warningChanged)
     Q_PROPERTY(bool previewing READ previewing NOTIFY previewingChanged)
+    // Going live. Armed means "the NEXT take is also broadcast"; it is never remembered, and it clears when that take ends.
+    Q_PROPERTY(bool streamArmed READ streamArmed NOTIFY streamChanged)
+    Q_PROPERTY(bool streamRequested READ streamRequested NOTIFY streamChanged)   // this take was started to broadcast
+    Q_PROPERTY(bool broadcasting READ broadcasting NOTIFY streamChanged)         // connecting, live or reconnecting right now
+    Q_PROPERTY(QString streamState READ streamState NOTIFY streamChanged)        // off, connecting, live, reconnecting, failed, ended
+    Q_PROPERTY(QString streamProblem READ streamProblem NOTIFY streamChanged)
+    Q_PROPERTY(int streamKbps READ streamKbps NOTIFY streamStatsChanged)
+    Q_PROPERTY(int streamDropped READ streamDropped NOTIFY streamStatsChanged)
 public:
     explicit Engine(RecorderBackend *backend, QString recordingDir, QObject *parent = nullptr);
     QString state() const;
@@ -62,6 +70,17 @@ public:
     QString lastFile() const { return m_lastFile; }
     QString warning() const { return m_warning; }
     bool previewing() const { return m_previewing; }
+    bool streamArmed() const { return m_streamArmed; }
+    bool streamRequested() const { return m_takeStreams; }
+    bool broadcasting() const { return m_takeStreams && (m_streamState == "connecting" || m_streamState == "live" || m_streamState == "reconnecting"); }
+    QString streamState() const { return m_streamState; }
+    QString streamProblem() const { return m_streamProblem; }
+    int streamKbps() const { return m_streamKbps; }
+    int streamDropped() const { return m_streamDropped; }
+    // Arming is a deliberate step before a take, and only then (never during one). Safe to call again; it never starts anything.
+    Q_INVOKABLE void setStreamArmed(bool armed);
+    void setStreamProvider(std::function<StreamSpec()> provider) { m_streamFn = std::move(provider); }
+    void setArmTimeout(int ms) { m_armTimeoutMs = ms; }   // how long "go live" stays armed with no take started (tests shorten it)
     // True when a still from the file is (nearly) pure black. Static so tests and other code can reuse it.
     static bool looksBlack(const QByteArray &gray32x18);
 
@@ -96,6 +115,9 @@ signals:
     void checkedFile(const QString &path, bool black);   // after the saved file was inspected
     void saved(const QString &path);
     void cameraNeeded();                   // the user asked for a camera recording but has not chosen a camera
+    void streamChanged();
+    void streamStatsChanged();
+    void liveSetupNeeded();                // go live was armed but the server address or stream key is missing
 private:
     enum State { Idle, Starting, Recording, Paused, Stopping };
     void setState(State s);
@@ -126,6 +148,14 @@ private:
     bool m_previewWish = false;                  // what the ready screen asked for
     int m_previewPick = 0, m_recPick = 0;        // the pick that wish was made for, and the pick of the take in progress
     void applyPreview();
+    void onStreamState(const QString &state, const QString &detail);
+    void endBroadcast();
+    std::function<StreamSpec()> m_streamFn;
+    QTimer m_armTimer;
+    int m_armTimeoutMs = 15 * 60 * 1000;
+    bool m_streamArmed = false, m_takeStreams = false;
+    QString m_streamState = "off", m_streamProblem;
+    int m_streamKbps = 0, m_streamDropped = 0;
     QElapsedTimer m_clock;
     qint64 m_banked = 0;   // ms recorded before the current running stretch
     QTimer m_tick;

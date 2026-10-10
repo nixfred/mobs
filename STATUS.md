@@ -8,7 +8,7 @@
 ## Decided (Fred, 2026-10-09; details in README.md)
 
 - For: Fred only, on his Omarchy machines (gus, vic).
-- Destination: all of OBS's and Monologue's features in one app. Left out: Windows and macOS, voice dictation and transcripts. Not ruled out: live streaming, packaging.
+- Destination: all of OBS's and Monologue's features in one app. Left out: Windows and macOS, voice dictation and transcripts. Live streaming: built 2026-10-10 (to X or any RTMP server, see "Going live to X" below). Not ruled out: packaging.
 - Hotkey: physical Alt + Shift + V starts/stops (pause: Ctrl + Alt + Shift + V). Alt + Shift + R was taken (Rename workspace).
 - Interface: "super easy for beginners, satisfy experts, not too much like OBS, Omarchy feel." MOBS is its own application in the live Omarchy theme. **Fred, later the same day: "I don't want an overlay. I want a new product."** So MOBS is one program with libobs (the OBS engine) embedded in-process, no OBS app, no websocket, nothing hidden (ADR 0006, replaces ADR 0005 and 0003). Beginner: three cards then one Record button. Expert: a Pro drawer that grows to cover what OBS can do.
 
@@ -139,3 +139,20 @@ Caught on the way: my first rewrite of RecordingScreen.qml silently dropped the 
 Not verified: a real screen or webcam on gus (the VM uses test sources, and opening a capture on Fred's desktop needs his OK), and CPU cost of the 15 fps copy during a long take on real hardware. Known limit, by nature: recording a screen that shows MOBS makes a tunnel (documented in the README).
 
 ![the real libobs backend in the practice VM](docs/app/recording-preview-real-libobs.png)
+
+## Going live to X (2026-10-10)
+
+Fred asked whether MOBS could live stream to X. It could not (only a file output existed); now **a take can also be broadcast over RTMP/RTMPS while the full-quality file is saved beside it**. Details and screenshots: mobs/app/README.md, "Going live to X".
+
+Built: a second pair of encoders (constant bitrate, keyframe every 2 s, x264 or NVIDIA) and an `rtmp_output` beside the file output, with MOBS's own tiny stream target instead of OBS's `rtmp-services` module (which phones obsproject.com on every load). Engine owns the rules (arming per take, pause off while live, a failed broadcast never ends the recording, nothing stays armed), Settings keeps the address and the key (owner-only file, never in the ini, QML cannot read it), and the screens show it: a "go live" chip and red warning on the ready screen, a LIVE / NOT LIVE pill and bitrate on the recording screen, "LIVE" in the header, and EXPERT > live for the address, key and quality.
+
+Safety choices: going live is armed deliberately before every take and clears afterwards (and after 15 minutes idle); the key is scrubbed from error text; a sync failure to start the stream stops the take before it begins.
+
+Verified: engine and settings unit tests (10 new engine, 4 new settings), 28 new UI scenarios at up to five window sizes, and **real libobs in the Test Drive VM against a local ffmpeg RTMP server**: the server received H.264 + AAC at 1280x720, keyframes about 2 s apart, the tone present, states connecting, live, ended in order, and the 1080p file beside it intact; a broadcast to a closed port said "could not connect to the server" and the file carried on; a take with no broadcast created nothing. The hardware (NVENC) path was run on gus with synthetic sources against the same local server: H.264 1920x1080, keyframes about 2 s. No key appeared in the verbose libobs log.
+
+Caught on the way: my first live page overflowed the smallest window (the layout check said so, text shortened); a settings test said the key file was mode 6600 (Qt reports the owner bits twice; the check now compares group and other bits); and `QProcess::waitForFinished` returns false for a process that already ended, which looked like "the server never saw the stream end".
+
+Not verified: a real broadcast to X (needs Fred's account, his stream key and his say-so, because it goes to his followers; X's own current Live Studio specs were not found separately from the older Producer page), long-run CPU cost of two encodes, and a real network drop (reconnect is covered by the fake backend, not by pulling a cable).
+
+![ready screen armed to go live](docs/app/golive-ready-armed.png)
+![live](docs/app/golive-recording.png)

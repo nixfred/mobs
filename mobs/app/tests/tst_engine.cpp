@@ -499,6 +499,93 @@ private slots:
         QCOMPARE(b.lastSpec.crf, 23);
         QVERIFY(b.lastSpec.mic);
     }
+    // ---- going live
+    static StreamSpec target() { StreamSpec s; s.url = "rtmp://live.example/x"; s.key = "secret-key-1"; s.kbps = 6000; s.height = 1080; return s; }
+    void aTakeNeverGoesLiveUnlessItWasArmed() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.start(1);
+        QVERIFY(!b.lastSpec.stream.on); QVERIFY(b.lastSpec.stream.key.isEmpty());
+        QVERIFY(!e.streamRequested()); QVERIFY(!e.broadcasting()); QCOMPARE(e.streamState(), QString("off"));
+    }
+    void anArmedTakeBroadcastsToTheConfiguredServerAndDisarms() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        QSignalSpy changes(&e, &Engine::streamChanged);
+        e.setStreamArmed(true); QVERIFY(e.streamArmed());
+        e.start(1);
+        QVERIFY(b.lastSpec.stream.on);
+        QCOMPARE(b.lastSpec.stream.url, QString("rtmp://live.example/x")); QCOMPARE(b.lastSpec.stream.key, QString("secret-key-1"));
+        QCOMPARE(b.lastSpec.stream.kbps, 6000);
+        QVERIFY(!e.streamArmed());                       // armed means "the next take": this is it
+        QVERIFY(e.streamRequested()); QVERIFY(e.broadcasting()); QCOMPARE(e.streamState(), QString("connecting"));
+        emit b.started();
+        emit b.streamState("live", QString()); emit b.streamStats(5700, 3);
+        QCOMPARE(e.streamState(), QString("live")); QCOMPARE(e.streamKbps(), 5700); QCOMPARE(e.streamDropped(), 3);
+        QVERIFY(changes.count() >= 2);
+    }
+    void armedWithoutAnAddressOrKeyRefusesAndSaysWhere() {
+        FakeBackend b; Engine e(&b, dir.path()); StreamSpec s = target(); s.key.clear();
+        e.setStreamProvider([&] { return s; }); QSignalSpy needed(&e, &Engine::liveSetupNeeded);
+        e.setStreamArmed(true); e.start(1);
+        QCOMPARE(b.began, 0); QCOMPARE(e.state(), QString("idle")); QCOMPARE(needed.count(), 1);
+        QVERIFY(e.message().contains("EXPERT > live"));
+        QVERIFY(e.streamArmed());                        // still armed: fix the setup and try again
+        s = target(); s.url.clear(); e.start(1); QCOMPARE(b.began, 0);
+        s = target(); e.start(1); QCOMPARE(b.began, 1);
+    }
+    void armingDuringATakeDoesNothing() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.start(1); emit b.started();
+        e.setStreamArmed(true); QVERIFY(!e.streamArmed());
+    }
+    void pauseIsOffWhileBroadcastingAndComesBackWhenTheBroadcastFails() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1); emit b.started(); emit b.streamState("live", QString());
+        e.togglePause();
+        QCOMPARE(e.state(), QString("recording")); QCOMPARE(b.pauseCalls, 0); QVERIFY(e.message().contains("you are live"));
+        emit b.streamState("failed", "the connection to the server was lost");
+        e.togglePause();                                 // nothing is broadcasting any more, so the file may pause
+        QCOMPARE(e.state(), QString("paused")); QCOMPARE(b.pauseCalls, 1);
+    }
+    void aFailedBroadcastNeverEndsTheRecording() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1); emit b.started(); emit b.streamState("live", QString()); emit b.streamStats(5000, 0);
+        emit b.streamState("failed", "the server did not accept the address or stream key");
+        QCOMPARE(e.state(), QString("recording")); QCOMPARE(e.streamState(), QString("failed"));
+        QVERIFY(e.streamProblem().contains("stream key")); QVERIFY(!e.broadcasting()); QVERIFY(e.streamRequested());
+        QCOMPARE(e.streamKbps(), 0);
+    }
+    void aDroppedConnectionIsShownAndClearsWhenItComesBack() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1); emit b.started(); emit b.streamState("live", QString());
+        emit b.streamState("reconnecting", "the connection dropped: trying again");
+        QCOMPARE(e.streamState(), QString("reconnecting")); QVERIFY(e.broadcasting()); QVERIFY(e.streamProblem().contains("trying again"));
+        emit b.streamState("live", QString());
+        QVERIFY(e.streamProblem().isEmpty()); QCOMPARE(e.streamState(), QString("live"));
+    }
+    void theBroadcastEndsWithTheTakeAndTheNextTakeStartsNotLive() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1); emit b.started(); emit b.streamState("live", QString()); emit b.streamStats(5000, 1);
+        e.stop(); emit b.streamState("ended", QString()); emit b.finished(QString());
+        QCOMPARE(e.state(), QString("idle"));
+        QCOMPARE(e.streamState(), QString("off")); QVERIFY(!e.streamRequested()); QVERIFY(!e.streamArmed()); QCOMPARE(e.streamKbps(), 0);
+        emit b.streamState("live", QString());           // a straggler from the broadcast that is over
+        QCOMPARE(e.streamState(), QString("off"));
+        e.start(1); QVERIFY(!b.lastSpec.stream.on); QVERIFY(!e.broadcasting());
+    }
+    void aFailedStartLeavesNothingArmedOrLive() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setStreamProvider([] { return target(); });
+        e.setStreamArmed(true); e.start(1);
+        emit b.failed("the stream would not start: check the server address and stream key");
+        QCOMPARE(e.state(), QString("idle")); QVERIFY(e.message().contains("stream key"));
+        QVERIFY(!e.streamArmed()); QVERIFY(!e.streamRequested()); QCOMPARE(e.streamState(), QString("off"));
+    }
+    void armedGoesOffByItselfIfNoTakeStarts() {
+        FakeBackend b; Engine e(&b, dir.path()); e.setArmTimeout(60);
+        e.setStreamArmed(true); QVERIFY(e.streamArmed());
+        QTRY_VERIFY_WITH_TIMEOUT(!e.streamArmed(), 2000);
+        QVERIFY(e.message().contains("switched off"));
+        e.setStreamProvider([] { return target(); }); e.start(1); QVERIFY(!b.lastSpec.stream.on);
+    }
     void aLateStartedSignalAfterStopIsIgnored() {
         FakeBackend b; Engine e(&b, dir.path());
         e.start(1); e.stop();

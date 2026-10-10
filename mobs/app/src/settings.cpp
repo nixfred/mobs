@@ -1,14 +1,17 @@
 #include "settings.h"
 #include <QDesktopServices>
 #include <QDir>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QUrl>
 #include <obs.h>
 
-Settings::Settings(QSettings *settings, QObject *parent) : QObject(parent), m_settings(settings) {
+Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
+    : QObject(parent), m_settings(settings), m_streamKeyFile(std::move(streamKeyFile)) {
     m_quality = qBound(0, m_settings->value("quality", 1).toInt(), 2);
     bool crfOk = false;
     const int custom = m_settings->value("customCrf", -1).toInt(&crfOk);
@@ -31,6 +34,10 @@ Settings::Settings(QSettings *settings, QObject *parent) : QObject(parent), m_se
     m_hardware = m_settings->value("hardware", false).toBool();
     m_review = m_settings->value("reviewAfter", true).toBool();
     m_splash = m_settings->value("splash", true).toBool();
+    const QString url = m_settings->value("streamUrl").toString().trimmed();
+    if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;
+    m_streamQuality = qBound(0, m_settings->value("streamQuality", 1).toInt(), 2);
+    m_keySaved = !readStreamKey().isEmpty();
 }
 
 QString Settings::defaultFolder() { return QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/mobs"; }
@@ -144,4 +151,68 @@ void Settings::setDesktopOn(bool on) {
 void Settings::setHardware(bool on) {
     if (on == m_hardware) return;
     m_hardware = on; m_settings->setValue("hardware", on); m_settings->sync(); emit changed();
+}
+
+// ---------------------------------------------------------------- going live: the address is a setting, the key is a secret
+
+QString Settings::streamUrlProblem(const QString &url) {
+    const QString u = url.trimmed();
+    if (u.isEmpty()) return "type the server address X gives you";
+    if (!u.startsWith("rtmp://") && !u.startsWith("rtmps://")) return "the address starts with rtmp:// or rtmps://";
+    if (u.size() > 512 || u.contains(QRegularExpression("\\s")) || u.mid(u.indexOf("//") + 2).isEmpty()) return "that is not a usable server address";
+    return {};
+}
+
+QString Settings::readStreamKey() const {
+    if (m_streamKeyFile.isEmpty()) return {};
+    QFile f(m_streamKeyFile);
+    return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readLine()).trimmed() : QString();
+}
+
+StreamSpec Settings::streamSpec() const {
+    static const int kbps[] = {3000, 6000, 9000}, height[] = {720, 1080, 1080};
+    StreamSpec s;
+    s.url = m_streamUrl; s.key = readStreamKey();
+    s.kbps = kbps[m_streamQuality]; s.height = height[m_streamQuality];
+    return s;
+}
+
+QString Settings::setStreamUrl(const QString &url) {
+    const QString clean = url.trimmed();
+    if (const QString why = streamUrlProblem(clean); !why.isEmpty()) return why;
+    if (clean == m_streamUrl) return {};
+    m_streamUrl = clean;
+    m_settings->setValue("streamUrl", clean); m_settings->sync();
+    emit changed();
+    return {};
+}
+
+QString Settings::setStreamKey(const QString &key) {
+    const QString clean = key.trimmed();
+    if (m_streamKeyFile.isEmpty()) return "there is nowhere to keep a stream key here";
+    if (clean.isEmpty()) return "paste the stream key X gives you";
+    if (clean.size() > 512 || clean.contains(QRegularExpression("[\\s\\x00-\\x1f]"))) return "that does not look like a stream key";
+    QDir().mkpath(QFileInfo(m_streamKeyFile).absolutePath());
+    QSaveFile f(m_streamKeyFile);                       // written to a private temporary file first: never readable by others, not even briefly
+    if (!f.open(QIODevice::WriteOnly)) return "MOBS cannot save the key: " + f.errorString();
+    f.setPermissions(QFile::ReadOwner | QFile::WriteOwner);
+    f.write(clean.toUtf8()); f.write("\n");
+    if (!f.commit()) return "MOBS cannot save the key: " + f.errorString();
+    m_keySaved = true;
+    emit changed();
+    return {};
+}
+
+void Settings::clearStreamKey() {
+    if (!m_streamKeyFile.isEmpty()) QFile::remove(m_streamKeyFile);
+    if (!m_keySaved) return;
+    m_keySaved = false;
+    emit changed();
+}
+
+void Settings::setStreamQuality(int quality) {
+    if (quality < 0 || quality > 2 || quality == m_streamQuality) return;
+    m_streamQuality = quality;
+    m_settings->setValue("streamQuality", quality); m_settings->sync();
+    emit changed();
 }

@@ -8,7 +8,7 @@ Rectangle {
     property int tab: 0
     visible: App.pro
     onVisibleChanged: if (visible) tab = App.expertTab
-    Connections { target: App; function onProChanged() { if (App.pro && App.expertTab === 2) drawer.tab = 2 } }
+    Connections { target: App; function onProChanged() { if (App.pro && (App.expertTab === 2 || App.expertTab === 6)) drawer.tab = App.expertTab } }
     color: Omarchy.darkBackground
     Column {
         anchors { fill: parent; margins: 24 }
@@ -18,13 +18,13 @@ Rectangle {
             spacing: 12
             Txt { text: "EXPERT"; font.pixelSize: 20; font.bold: true; color: Omarchy.accent }
             Txt { text: Engine.active ? Engine.state + " " + Engine.elapsedText + " · next take settings" : "your choices are remembered"; color: Omarchy.secondaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
-            Button { visible: Engine.state === "recording" || Engine.state === "paused"; text: Engine.state === "paused" ? "resume" : "pause"; onClicked: Engine.togglePause() }
+            Button { visible: Engine.state === "recording" || Engine.state === "paused"; enabled: !Engine.broadcasting; text: Engine.state === "paused" ? "resume" : "pause"; onClicked: Engine.togglePause() }
             Button { visible: Engine.active; text: "stop & save"; primary: true; onClicked: Engine.stop() }
         }
         Row {
             spacing: 10
             Repeater {
-                model: ["recording", "encoding", "audio", "keys", "about", "hardware"]
+                model: ["recording", "encoding", "audio", "keys", "about", "hardware", "live"]
                 Button {
                     required property string modelData
                     required property int index
@@ -158,6 +158,100 @@ Rectangle {
                 Button { text: "check hardware"; onClicked: Engine.checkHardware() }
                 Txt { width: parent.width; wrapMode: Text.WordWrap; text: Engine.hardwareKnown ? Engine.hardwareMessage : "Check hardware to detect NVIDIA support. This initializes the recording engine without opening the screen picker, camera or microphone."; font.pixelSize: 13; color: Omarchy.secondaryText }
                 Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Software is the reliable default. NVIDIA uses less CPU and needs a supported GPU and driver. Your choice applies to the next recording."; font.pixelSize: 13; color: Omarchy.tertiaryText }
+            }
+            Row {
+                visible: drawer.tab === 6; width: parent.width; spacing: 28
+                Column {
+                    width: (parent.width - parent.spacing) / 2; spacing: 10
+                    Txt { text: "go live to X"; font.pixelSize: 16; font.bold: true }
+                    Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "On X: studio.x.com/live, New livestream, RTMP. Copy its server address and stream key here. X may need Premium; Live Studio is in beta." }
+                    Rectangle {
+                        width: parent.width; height: 40; radius: 10; color: Omarchy.lighterBackground
+                        border.color: liveProblem.text !== "" ? Omarchy.red : Omarchy.selection
+                        TextInput {
+                            id: urlInput
+                            objectName: "streamUrlInput"
+                            anchors { fill: parent; margins: 12 }
+                            verticalAlignment: TextInput.AlignVCenter
+                            font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 13
+                            color: Omarchy.foreground; selectionColor: Omarchy.accent; selectedTextColor: Omarchy.accentForeground
+                            clip: true; text: Prefs.streamUrl
+                            onTextEdited: liveProblem.text = ""
+                            onAccepted: saveLive.clicked()
+                            Keys.onEscapePressed: { text = Prefs.streamUrl; liveProblem.text = ""; App.setPro(false) }
+                            Connections { target: Prefs; function onChanged() { if (!urlInput.activeFocus) urlInput.text = Prefs.streamUrl } }
+                        }
+                        Txt {
+                            anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                            visible: urlInput.text === ""
+                            text: "server address: rtmp://... or rtmps://..."
+                            color: Omarchy.tertiaryText; font.pixelSize: 13
+                        }
+                    }
+                    Rectangle {
+                        width: parent.width; height: 40; radius: 10; color: Omarchy.lighterBackground
+                        border.color: Omarchy.selection
+                        TextInput {
+                            id: keyInput
+                            objectName: "streamKeyInput"
+                            anchors { fill: parent; margins: 12 }
+                            verticalAlignment: TextInput.AlignVCenter
+                            echoMode: TextInput.Password
+                            font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 13
+                            color: Omarchy.foreground; selectionColor: Omarchy.accent; selectedTextColor: Omarchy.accentForeground
+                            clip: true
+                            onTextEdited: liveProblem.text = ""
+                            onAccepted: saveLive.clicked()
+                            Keys.onEscapePressed: { text = ""; liveProblem.text = ""; App.setPro(false) }
+                        }
+                        Txt {
+                            anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                            visible: keyInput.text === ""
+                            text: Prefs.streamKeySaved ? "stream key saved and hidden: paste a new one to replace it" : "stream key: paste it here (kept in a private file)"
+                            color: Omarchy.tertiaryText; font.pixelSize: 13
+                        }
+                    }
+                    Row {
+                        spacing: 8
+                        Button {
+                            id: saveLive
+                            objectName: "saveLive"
+                            text: "save"
+                            onClicked: {
+                                liveProblem.text = Prefs.setStreamUrl(urlInput.text)
+                                if (liveProblem.text === "" && keyInput.text !== "") { liveProblem.text = Prefs.setStreamKey(keyInput.text); if (liveProblem.text === "") keyInput.text = "" }
+                                if (liveProblem.text === "" && !Prefs.streamKeySaved) liveProblem.text = "paste the stream key X gives you"
+                            }
+                        }
+                        Button { text: "forget key"; enabled: Prefs.streamKeySaved; onClicked: { Prefs.clearStreamKey(); keyInput.text = "" } }
+                    }
+                    Txt { id: liveProblem; width: parent.width; wrapMode: Text.WordWrap; text: ""; color: Omarchy.red; font.pixelSize: 13; visible: text !== "" }
+                    Txt {
+                        width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13
+                        color: Prefs.streamReady ? Omarchy.green : Omarchy.secondaryText
+                        text: Prefs.streamReady ? "ready: on the ready screen, click go live, then Record." : "not set up yet: both boxes are needed."
+                    }
+                }
+                Column {
+                    width: (parent.width - parent.spacing) / 2; spacing: 10
+                    Txt { text: "stream quality"; font.pixelSize: 16; font.bold: true }
+                    Flow {
+                        width: parent.width; spacing: 8
+                        Repeater {
+                            model: [["light", 0], ["standard", 1], ["high", 2]]
+                            Button {
+                                required property var modelData
+                                text: modelData[0]; primary: Prefs.streamQuality === modelData[1]
+                                onClicked: Prefs.setStreamQuality(modelData[1])
+                            }
+                        }
+                    }
+                    Txt {
+                        width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13; color: Omarchy.secondaryText
+                        text: ["720p, 3 Mbps: for a slow connection.", "1080p, 6 Mbps: needs about 8 Mbps of upload.", "1080p, 9 Mbps: X's recommended rate; needs about 12 Mbps upload."][Prefs.streamQuality]
+                    }
+                    Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "You click go live before each broadcast; it never stays on. A full-quality copy is always saved too, and if the connection drops it keeps going. Pause is off while live." }
+                }
             }
             Txt { visible: drawer.tab === 4; width: parent.width; text: Prefs.aboutText; font.pixelSize: 14; color: Omarchy.secondaryText; wrapMode: Text.WordWrap; lineHeight: 1.6 }
         }

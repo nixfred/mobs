@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         if case_filter and case_filter not in name:
             return
         case_count += 1
-        case_env = env | {"MOBS_SETTINGS": str(root / f"{case_count}.ini"),
+        case_env = env | {"MOBS_SETTINGS": str(root / f"{case_count}.ini"), "MOBS_STREAM_KEY_FILE": str(root / f"{case_count}.key"),
                           "MOBS_SCRIPT": steps + ",quit", "MOBS_WINDOW_SIZE": size}
         if fake_backend:
             case_env["MOBS_FAKE_BACKEND"] = "1"
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     for size in ("860x560", "1024x768", "1180x720"):
         check("choose", "wait=0.1,checklayout", size)
         check("ready mic off", "pick=1,mic=0,wait=0.1,checklayout", size)
-        for tab in range(6):
+        for tab in range(7):
             check(f"expert page {tab}", f"pro=1,tab={tab},wait=0.1,checklayout", size)
     for size in ("860x560", "1024x768", "1180x720"):
         check("audio gain page", "openaudio,audiodetails=1,micgain=-60,wait=0.1,checklayout", size)
@@ -64,6 +64,30 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=1,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:0,expect=previewFrame:0,expect=preview:0", fake_backend=True)
     check("a preview that was asked for keeps running after the take",
           "pick=1,preview=1,wait=0.2,start,expect=state:recording,wait=0.3,expect=previewing:1,stop,waitidle,expect=previewing:1,expect=previewFrame:1", fake_backend=True)
+    # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.
+    live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("live setup page with a saved key fits", live_setup + "pro=1,tab=6,expect=streamReady:1,wait=0.1,checklayout", size)
+        check("ready screen armed to go live fits", live_setup + "pick=1,arm=1,expect=armed:1,wait=0.1,checklayout", size, True)
+        check("ready screen armed with the preview fits", live_setup + "pick=1,preview=1,arm=1,expect=previewFrame:1,wait=0.1,checklayout", size, True)
+    for size in ("860x560", "1024x768", "1180x720", "900x1600", "1206x2000"):
+        check("a live take shows its state and fits",
+              live_setup + "pick=1,arm=1,start,expect=state:recording,expect=armed:0,expect=broadcasting:1,wait=0.8,expect=streamState:live,expect=previewFrame:1,checklayout,"
+              "streamretry,expect=streamState:reconnecting,wait=0.1,checklayout,streamback,expect=streamState:live,"
+              "streamdrop,expect=streamState:failed,expect=broadcasting:0,expect=state:recording,wait=0.1,checklayout", size, True)
+        check("a live take with both audio meters fits",
+              live_setup + "pick=1,desktop=1,arm=1,start,expect=state:recording,wait=0.8,expect=streamState:live,checklayout,pro=1,wait=0.1,checklayout", size, True)
+    check("a live take cannot be paused, and the saved copy carries on when it ends",
+          live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.8,pause,expect=state:recording,expect=message:you are live,stop,waitidle,expect=armed:0,expect=streamState:off,expect=broadcasting:0", fake_backend=True)
+    check("after the connection is lost the take can be paused",
+          live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.8,streamdrop,expect=streamState:failed,pause,expect=state:paused,resume,expect=state:recording", fake_backend=True)
+    check("going live is off again for the next take",
+          live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.5,stop,waitidle,start,expect=state:recording,expect=broadcasting:0,expect=streamState:off", fake_backend=True)
+    check("arming without an address or key sends the user to set them up",
+          "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=pro:1,expect=audioTab:6,wait=0.1,checklayout", fake_backend=True)
+    check("the go live chip opens the setup when nothing is saved, and arms once it is",
+          "pick=1,click=liveChip,expect=pro:1,expect=audioTab:6,expect=armed:0,pro=0," + live_setup + "click=liveChip,expect=armed:1,click=liveChip,expect=armed:0", fake_backend=True)
+    check("a take that is not live shows no broadcast", "pick=1,start,expect=state:recording,wait=0.6,expect=broadcasting:0,expect=streamState:off,checklayout", fake_backend=True)
     check("audio shortcut opens inputs", "pick=1,openaudio,expect=pro:1,expect=audioTab:2")
     check("invalid folder preserves saved destination", "pro=1,foldertext=relative/path,applyfolder,expect=folderDefault:1,wait=0.1,checklayout")
     check("preview error still fits", "pick=1,preview=1,wait=0.1,checklayout")

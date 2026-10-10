@@ -39,7 +39,7 @@ Item {
             id: summary
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 6
-            Txt { text: Review.loading ? "opening your recording…" : "ready to record"; font.pixelSize: 24; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+            Txt { text: Review.loading ? "opening your recording…" : Engine.streamArmed ? "ready to go LIVE" : "ready to record"; color: Engine.streamArmed ? Omarchy.red : Omarchy.foreground; font.pixelSize: 24; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 10
@@ -56,6 +56,14 @@ Item {
                     HoverHandler { id: changeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: App.back() }
                 }
+            }
+            Txt {
+                objectName: "liveWarning"
+                visible: Engine.streamArmed
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.min(580, root.width - 48); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                text: "Record BROADCASTS to X: this screen is public until you stop."
+                color: Omarchy.red; font.pixelSize: 13
             }
         }
         Row {
@@ -92,6 +100,15 @@ Item {
                 text: App.preview ? "preview on" : "preview off"
                 tint: App.preview ? Omarchy.accent : Omarchy.tertiaryText
                 onClicked: App.setPreview(!App.preview)
+            }
+            Chip {
+                objectName: "liveChip"
+                glyph: "\uf2ce"
+                clickable: true
+                text: Engine.streamArmed ? "LIVE: armed" : "go live"
+                tint: Engine.streamArmed ? Omarchy.red : Omarchy.tertiaryText
+                // Arming is always a deliberate click. Without an address and key there is nothing to arm, so it opens the page that sets them.
+                onClicked: { if (Engine.streamArmed) Engine.setStreamArmed(false); else if (Prefs.streamReady) Engine.setStreamArmed(true); else App.openLive() }
             }
         }
         Txt {

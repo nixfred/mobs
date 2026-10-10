@@ -33,7 +33,7 @@ Item {
             y: root.wide ? (stage.height - height) / 2 : 0
             frameColor: Engine.state === "recording" ? Omarchy.red : Omarchy.selection
             dotColor: Engine.state === "recording" ? Omarchy.red : Omarchy.tertiaryText
-            caption: Engine.state === "recording" ? "recording: this is what is being saved" : Engine.state === "paused" ? "paused: nothing is being saved" : Engine.state === "stopping" ? "finishing the file" : "live preview"
+            caption: Engine.broadcasting ? "LIVE: this is what viewers see, and what is being saved" : Engine.state === "recording" ? "recording: this is what is being saved" : Engine.state === "paused" ? "paused: nothing is being saved" : Engine.state === "stopping" ? "finishing the file" : "live preview"
             overlay: Engine.state === "paused" ? "paused" : Engine.state === "stopping" ? "saving..." : ""
         }
 
@@ -59,6 +59,34 @@ Item {
                     color: Engine.state === "recording" ? Omarchy.red : Omarchy.secondaryText
                     font.pixelSize: 20; font.bold: true
                 }
+                Rectangle {   // the broadcast, beside the recording: red and solid only while viewers can really see it
+                    objectName: "liveBadge"
+                    visible: Engine.streamRequested && Engine.state !== "stopping"
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: badgeText.implicitWidth + 24; height: 28; radius: 14
+                    color: Engine.streamState === "live" ? Omarchy.red : "transparent"
+                    border.width: 2
+                    border.color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.red : Omarchy.yellow
+                    Txt {
+                        id: badgeText
+                        anchors.centerIn: parent
+                        font.pixelSize: 13; font.bold: true
+                        text: Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING"
+                        color: Engine.streamState === "live" ? Omarchy.accentForeground : Engine.streamState === "failed" ? Omarchy.red : Omarchy.yellow
+                    }
+                }
+            }
+            Txt {
+                id: liveStatus
+                objectName: "liveStatus"
+                visible: Engine.streamRequested && Engine.state !== "stopping" && text !== ""
+                width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                font.pixelSize: 13
+                color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.secondaryText : Omarchy.yellow
+                text: Engine.streamState === "live" ? "broadcasting at " + (Engine.streamKbps / 1000).toFixed(1) + " Mbps" + (Engine.streamDropped > 0 ? ", " + Engine.streamDropped + " frames dropped" : "")
+                    : Engine.streamState === "failed" ? "NOT LIVE: " + Engine.streamProblem + ". The recording is still being saved."
+                    : Engine.streamState === "reconnecting" ? Engine.streamProblem
+                    : Engine.streamState === "connecting" ? "connecting to the server..." : ""
             }
             Txt {
                 text: Engine.elapsedText; font.bold: true; width: controls.width; horizontalAlignment: Text.AlignHCenter
@@ -91,10 +119,10 @@ Item {
                 spacing: 26
                 Rectangle {
                     width: root.btn; height: root.btn; radius: root.btn / 2; color: "transparent"; border.color: Omarchy.selection; border.width: 3
-                    opacity: live ? 1 : 0.35
+                    opacity: live && !Engine.broadcasting ? 1 : 0.35
                     Glyph { anchors.centerIn: parent; text: Engine.state === "paused" ? "" : ""; font.pixelSize: 30; color: Omarchy.foreground }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor; enabled: live }
-                    TapHandler { enabled: live; onTapped: Engine.togglePause() }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor; enabled: live && !Engine.broadcasting }
+                    TapHandler { enabled: live && !Engine.broadcasting; onTapped: Engine.togglePause() }
                 }
                 Rectangle {
                     width: root.btn; height: root.btn; radius: root.btn / 2; color: Omarchy.accent
