@@ -1,4 +1,5 @@
 #pragma once
+#include <QImage>
 #include <QObject>
 #include <QString>
 
@@ -25,7 +26,11 @@ public:
     virtual void begin(const RecordSpec &spec) = 0;
     virtual void pause(bool paused) = 0;
     virtual void end() = 0;   // stop (or cancel, if recording has not really started yet)
+    // Show what would be recorded, without recording. Call again with a new spec when the pick, camera or placement
+    // changes. A recording that starts afterwards reuses the same scene (no second screen-share dialog).
+    virtual void setPreview(bool on, const RecordSpec &spec) { Q_UNUSED(on); Q_UNUSED(spec); }
 signals:
+    void previewFrame(const QImage &image);     // ~15 per second while previewing, 640x360
     void waitingForUser(const QString &what);   // e.g. the screen picker is open
     void started();                             // frames are really being recorded
     void failed(const QString &why);            // nothing is recording any more

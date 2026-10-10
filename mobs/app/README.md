@@ -13,7 +13,13 @@ restore token itself (`~/.config/mobs/screen-token`), so later recordings are si
 diagram and the recording use the same rectangle (`src/placement.h`). The choice is remembered. MOBS asks the camera for 1280x720
 MJPEG when it supports it.
 
-**Not wired yet (labelled on screen):** the review screen, the Pro drawer, a live preview.
+**Live preview (2026-10-10):** the *preview* chip on the ready screen shows what will be recorded, live (15 frames per second, 640x360):
+your screen, and your webcam where you placed it. It follows the choices as you make them (tap a corner and the webcam moves in the
+preview), keeps running during a recording, and is **off by default and remembered**, because it turns the camera on and may open
+the screen dialog. Frames come out of libobs as plain pictures (`obs_add_raw_video_callback2`), not a native surface inside the
+window, which is simple, robust on Wayland, and testable by reading pixels.
+
+**Not wired yet (labelled on screen):** the review screen and the Pro drawer.
 
 Architecture: `Engine` (state machine for QML) drives a `RecorderBackend` (a narrow interface: begin, pause, end).
 The only real backend is `ObsBackend` (libobs); tests use a fake one. Keeping that door small is what would let the engine

@@ -3,6 +3,7 @@
 #include "engine.h"
 #include "obsbackend.h"
 #include "palette.h"
+#include "previewmodel.h"
 #include <QDateTime>
 #include <QDir>
 #include <QGuiApplication>
@@ -44,12 +45,24 @@ int main(int argc, char *argv[]) {
     Control control(&recorder, &state);
     if (qEnvironmentVariable("MOBS_NO_HOTKEY") != "1") control.registerOnSessionBus();   // tests that run several copies set MOBS_NO_HOTKEY=1
 
+    PreviewModel preview;
+    QObject::connect(&backend, &RecorderBackend::previewFrame, &preview, &PreviewModel::setFrame);
+    QObject::connect(&recorder, &Engine::previewingChanged, &preview, [&] { if (!recorder.previewing()) preview.clear(); });
+    // The preview runs when the user turned it on AND a screen other than "choose" is showing; it follows the pick, the
+    // camera and the placement. A recording that starts meanwhile reuses the same scene.
+    auto syncPreview = [&] { recorder.setPreview(state.preview() && state.screen() != 1, state.pick()); };
+    for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged})
+        QObject::connect(&state, sig, &state, syncPreview);
+
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Omarchy", &palette);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Preview", &preview);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Engine", &recorder);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
 
     QQmlApplicationEngine engine;
+    engine.addImageProvider("preview", preview.provider());
     engine.loadFromModule("Mobs", "Main");
+    syncPreview();   // a preview left on last time starts with the app
     if (engine.rootObjects().isEmpty()) return 1;
 
     // MOBS_GRAB=/path.png saves the window's own pixels (no desktop around it) and quits: for design checks.
@@ -62,7 +75,7 @@ int main(int argc, char *argv[]) {
     }
     // MOBS_SCRIPT drives the app itself, with no synthetic key presses (safe on a live desktop). Steps, comma separated:
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
-    //   pick=N | corner=N | size=N | panel=0/1   (what the user would click, for screenshots)
+    //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
     // e.g. MOBS_SCRIPT=start,waitrec,wait=3,pause,wait=2,resume,wait=2,stop,waitidle,quit   (for tests and checks only)
     if (const QString script = qEnvironmentVariable("MOBS_SCRIPT"); !script.isEmpty()) {
         auto steps = std::make_shared<QStringList>(script.split(','));
@@ -93,6 +106,7 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("pick=")) { state.choose(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("corner=")) { state.setCorner(st.mid(7).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("preview=")) { state.setPreview(st.mid(8) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("panel=")) { state.setCameraPanel(st.mid(6) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st == "quit") app.quit();
             else { qWarning() << "script: unknown step" << st; app.exit(3); }

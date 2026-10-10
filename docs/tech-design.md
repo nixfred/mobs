@@ -81,7 +81,7 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
   (GPU-buffer import fallback) on this hybrid-GPU machine.
 - **Source and encoder breadth:** mic and camera sources, audio mixing, NVENC/VAAPI choices, and recording-quality settings.
 - **Own the settings:** libobs has no profile or scene-collection files here; MOBS must save and restore its own.
-- **Preview:** a live preview needs a libobs display inside the Qt Quick scene; to be proven.
+- **Preview: DONE (2026-10-10)** without a native display surface: libobs raw video callback to QImage to a QML image provider (`mobs/app/src/previewmodel.*`, `obsbackend.cpp`). The risky GL-subsurface route was not needed.
 - **Build:** wire `ENABLE_FRONTEND=OFF` from the subtree, and note `obs-websocket` is an uninitialized submodule
   (not needed any more).
 - **Windows and macOS** code stays in `obs/` untouched and unbuilt (README: left out).
@@ -90,5 +90,5 @@ thumbnails (`mediautils.cpp`, `thumbnails.cpp`), the theme watcher (`theme.cpp`)
 
 1. DONE in the VM (2026-10-09): `Engine` + `RecorderBackend` + `ObsBackend`, tests, and a record button that really records. Next: one real run on gus (picker once).
 1b. The Alt+Shift+V hotkey over D-Bus.
-2. A live preview inside the Qt Quick scene.
+2. DONE: live preview (see Risks).
 3. The review screen with Monologue's editor; then the Pro drawer.

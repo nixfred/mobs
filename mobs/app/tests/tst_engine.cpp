@@ -12,6 +12,8 @@ public:
     void begin(const RecordSpec &spec) override { began++; lastPick = spec.pick; lastPath = spec.path; lastSpec = spec; }
     void pause(bool p) override { pauseCalls++; lastPause = p; }
     void end() override { ended++; }
+    void setPreview(bool on, const RecordSpec &spec) override { previewCalls++; previewOn = on; previewSpec = spec; }
+    int previewCalls = 0; bool previewOn = false; RecordSpec previewSpec;
     int began = 0, ended = 0, pauseCalls = 0, lastPick = 0;
     bool lastPause = false;
     QString lastPath;
@@ -207,6 +209,69 @@ private slots:
         QVERIFY(makeVideo(g, "testsrc2=s=320x180:r=10"));
         e.start(1); emit b.started(); e.stop(); emit b.finished(g);
         QTRY_VERIFY_WITH_TIMEOUT(e.warning().isEmpty(), 5000);   // a good recording must not inherit the last warning
+    }
+    // ---- preview ----------------------------------------------------------------------------------------------------
+    void previewTurnsOnForTheScreenPickWithoutACamera() {
+        FakeBackend b; Engine e(&b, dir.path());
+        QSignalSpy sp(&e, &Engine::previewingChanged);
+        e.setPreview(true, 1);
+        QVERIFY(e.previewing());
+        QVERIFY(b.previewOn);
+        QCOMPARE(b.previewSpec.pick, 1);
+        QCOMPARE(sp.count(), 1);
+        e.setPreview(false, 1);
+        QVERIFY(!e.previewing());
+        QVERIFY(!b.previewOn);
+    }
+    void previewForACameraPickNeedsAUsableCamera() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(true, 2);                          // no camera chosen: nothing to show, nothing started
+        QVERIFY(!e.previewing());
+        QCOMPARE(b.previewCalls, 0);
+        CameraSpec cam; cam.path = "/dev/v4l/by-id/x-video-index0"; cam.corner = 0; cam.size = 2;
+        e.setCameraProvider([cam] { return cam; });
+        e.setPreview(true, 2);
+        QVERIFY(e.previewing());
+        QCOMPARE(b.previewSpec.camera.corner, 0);       // the placement goes through, for the backend to apply
+        QCOMPARE(b.previewSpec.camera.size, 2);
+    }
+    void previewIsRepeatedSoTheBackendCanFollowChanges() {
+        FakeBackend b; Engine e(&b, dir.path());
+        CameraSpec cam; cam.path = "x";
+        e.setCameraProvider([&cam] { return cam; });
+        e.setPreview(true, 2);
+        cam.corner = 1;
+        e.setPreview(true, 2);                          // the user tapped another corner
+        QCOMPARE(b.previewCalls, 2);
+        QCOMPARE(b.previewSpec.camera.corner, 1);
+        QVERIFY(e.previewing());
+    }
+    void switchingToAPickWithoutACameraTurnsThePreviewOffInTheBackend() {
+        FakeBackend b; Engine e(&b, dir.path());
+        CameraSpec cam; cam.path = "x";
+        bool have = true;
+        e.setCameraProvider([&] { return have ? cam : CameraSpec{}; });
+        e.setPreview(true, 3);
+        QVERIFY(b.previewOn);
+        have = false;                                   // the camera was unplugged
+        e.setPreview(true, 3);
+        QVERIFY(!e.previewing());
+        QVERIFY(!b.previewOn);                          // and the backend was told, not left showing a dead camera
+    }
+    void turningOffAnAlreadyOffPreviewDoesNotBotherTheBackend() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(false, 1); e.setPreview(false, 1);
+        QCOMPARE(b.previewCalls, 0);
+    }
+    void previewNeverChangesTheRecordingState() {
+        FakeBackend b; Engine e(&b, dir.path());
+        e.setPreview(true, 1);
+        QCOMPARE(e.state(), QString("idle"));
+        e.start(1); emit b.started();
+        e.setPreview(true, 1);
+        QCOMPARE(e.state(), QString("recording"));
+        e.setPreview(false, 1);
+        QCOMPARE(e.state(), QString("recording"));
     }
     void aLateStartedSignalAfterStopIsIgnored() {
         FakeBackend b; Engine e(&b, dir.path());

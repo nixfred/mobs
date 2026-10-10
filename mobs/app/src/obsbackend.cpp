@@ -33,7 +33,10 @@ ObsBackend::ObsBackend(QString tokenFile, QObject *parent) : RecorderBackend(par
 
 ObsBackend::~ObsBackend() {
     m_poll.stop();
-    teardown();
+    m_previewOn = false;
+    removePreviewCallback();
+    stopOutput();
+    dropGraph();
     if (m_libobsUp) {
         obs_wait_for_destroy_queue();   // releases are queued to libobs's graphics thread; skipping this crashes
         obs_shutdown();
@@ -87,11 +90,30 @@ static void fillCanvas(obs_scene_item *item) {
     obs_sceneitem_set_bounds(item, &bounds);
 }
 
-bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
+// ---------------------------------------------------------------- the graph (scene and sources)
+
+void ObsBackend::applyPlacement(const RecordSpec &spec) {
+    if (!m_camItem || spec.pick != 2) return;   // only "screen + me" has a placement
+    const QRect r = Placement::cameraRect(spec.camera.corner, spec.camera.size);
+    vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
+    obs_sceneitem_set_pos(m_camItem, &pos);
+    obs_sceneitem_set_bounds_type(m_camItem, OBS_BOUNDS_SCALE_INNER);
+    obs_sceneitem_set_bounds(m_camItem, &bounds);
+}
+
+bool ObsBackend::ensureGraph(const RecordSpec &spec, QString *error) {
+    if (m_graphUp && spec.pick == m_graphPick && spec.camera.path == m_graphCamera) {
+        if (m_phase == Off) applyPlacement(spec);      // moving the webcam does not need a new scene (nor a new picker)
+        return true;
+    }
+    if (m_graphUp) {
+        if (m_phase != Off) return true;               // recording: the scene must not change under it
+        dropGraph();
+    }
     m_scene = obs_scene_create("mobs");
     m_needScreen = spec.pick != 3;
     m_needCamera = spec.pick != 1;
-    m_testScreen = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";    // tests record without the picker
+    m_testScreen = qEnvironmentVariable("MOBS_TEST_SOURCE") == "colour";    // tests run without the picker
     const QString testCam = qEnvironmentVariable("MOBS_TEST_CAMERA");       // "colour" or "video:/path/file.mp4": no webcam needed
     m_testCamera = testCam == "colour" || testCam.startsWith("video:");
 
@@ -112,7 +134,7 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
             obs_data_release(ps);
             if (token.isEmpty()) emit waitingForUser("choose a screen or a window in the dialog that just opened (a dragged region can record black)");
         }
-        if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; return false; }
+        if (!m_video) { *error = "could not create the screen source (is the PipeWire plugin installed?)"; dropGraph(); return false; }
         m_item = obs_scene_add(m_scene, m_video);   // first in the scene = at the back
         fillCanvas(m_item);
     }
@@ -146,20 +168,42 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
             m_camera = obs_source_create("v4l2_input", "camera", cs, nullptr);
             obs_data_release(cs);
         }
-        if (!m_camera) { *error = "could not create the camera source (is the v4l2 plugin installed?)"; return false; }
+        if (!m_camera) { *error = "could not create the camera source (is the v4l2 plugin installed?)"; dropGraph(); return false; }
         m_camItem = obs_scene_add(m_scene, m_camera);   // added second = drawn on top of the screen
-        if (spec.pick == 3) {
-            fillCanvas(m_camItem);                      // just my camera: it fills the frame
-        } else {
-            const QRect r = Placement::cameraRect(spec.camera.corner, spec.camera.size);
-            vec2 pos{float(r.x()), float(r.y())}, bounds{float(r.width()), float(r.height())};
-            obs_sceneitem_set_pos(m_camItem, &pos);
-            obs_sceneitem_set_bounds_type(m_camItem, OBS_BOUNDS_SCALE_INNER);
-            obs_sceneitem_set_bounds(m_camItem, &bounds);
-        }
+        if (spec.pick == 3) fillCanvas(m_camItem);      // just my camera: it fills the frame
+        else applyPlacement(spec);
     }
     obs_set_output_source(0, obs_scene_get_source(m_scene));
+    m_graphUp = true;
+    m_graphPick = spec.pick;
+    m_graphCamera = spec.camera.path;
+    return true;
+}
 
+void ObsBackend::dropGraph() {
+    // Order matters (spike 4): detach from the output, remove scene items, release sources, then the scene.
+    if (!m_graphUp && !m_scene && !m_video && !m_camera) return;
+    if (m_libobsUp) obs_set_output_source(0, nullptr);
+    if (m_item) { obs_sceneitem_remove(m_item); m_item = nullptr; }
+    if (m_camItem) { obs_sceneitem_remove(m_camItem); m_camItem = nullptr; }
+    if (m_camera) { obs_source_release(m_camera); m_camera = nullptr; }
+    if (m_video) { obs_source_release(m_video); m_video = nullptr; }
+    if (m_scene) { obs_scene_release(m_scene); m_scene = nullptr; }
+    if (m_libobsUp) obs_wait_for_destroy_queue();
+    m_graphUp = false;
+    m_graphPick = 0;
+    m_graphCamera.clear();
+}
+
+bool ObsBackend::sourcesReady() const {
+    const bool screenOk = !m_needScreen || m_testScreen || obs_source_get_width(m_video) > 0;
+    const bool cameraOk = !m_needCamera || m_testCamera || obs_source_get_width(m_camera) > 0;
+    return screenOk && cameraOk;
+}
+
+// ---------------------------------------------------------------- the recording (mic, encoders, file)
+
+bool ObsBackend::startOutput(const QString &path, QString *error) {
     m_mic = obs_source_create("pulse_input_capture", "mic", nullptr, nullptr);   // default input device
     if (m_mic) { obs_source_set_audio_mixers(m_mic, 1); obs_set_output_source(1, m_mic); }
 
@@ -176,31 +220,45 @@ bool ObsBackend::buildGraph(const RecordSpec &spec, QString *error) {
     obs_encoder_set_audio(m_aenc, obs_get_audio());
 
     obs_data_t *os = obs_data_create();
-    obs_data_set_string(os, "path", spec.path.toUtf8().constData());
+    obs_data_set_string(os, "path", path.toUtf8().constData());
     m_out = obs_output_create("mp4_output", "mobs recording", os, nullptr);
     obs_data_release(os);
     if (!m_out) { *error = "could not create the file output"; return false; }
     obs_output_set_video_encoder(m_out, m_venc);
     obs_output_set_audio_encoder(m_out, m_aenc, 0);
+    if (!obs_output_start(m_out)) {
+        const QString why = QString::fromUtf8(obs_output_get_last_error(m_out));
+        *error = why.isEmpty() ? "the recording would not start" : why;
+        return false;
+    }
     return true;
 }
 
-bool ObsBackend::sourcesReady() const {
-    const bool screenOk = !m_needScreen || m_testScreen || obs_source_get_width(m_video) > 0;
-    const bool cameraOk = !m_needCamera || m_testCamera || obs_source_get_width(m_camera) > 0;
-    return screenOk && cameraOk;
+void ObsBackend::stopOutput() {
+    if (m_out) { obs_output_release(m_out); m_out = nullptr; }
+    if (m_venc) { obs_encoder_release(m_venc); m_venc = nullptr; }
+    if (m_aenc) { obs_encoder_release(m_aenc); m_aenc = nullptr; }
+    if (m_libobsUp) obs_set_output_source(1, nullptr);
+    if (m_mic) { obs_source_release(m_mic); m_mic = nullptr; }
+    if (m_libobsUp) obs_wait_for_destroy_queue();
+}
+
+// An attempt (waiting or recording) is over: drop the recording parts, and the scene too unless it is still being previewed.
+void ObsBackend::finishAttempt() {
+    m_poll.stop();
+    stopOutput();
+    m_phase = Off;
+    if (!m_previewOn) dropGraph();
 }
 
 void ObsBackend::fail(const QString &why) {
-    m_poll.stop();
-    teardown();
-    m_phase = Off;
+    finishAttempt();
     emit failed(why);
 }
 
 void ObsBackend::begin(const RecordSpec &spec) {
     QString error;
-    if (!ensureStarted(&error) || !buildGraph(spec, &error)) {
+    if (!ensureStarted(&error) || !ensureGraph(spec, &error)) {
         fail(error);
         return;
     }
@@ -224,11 +282,8 @@ void ObsBackend::poll() {
                 obs_data_release(st);
                 if (!tok.isEmpty()) writeToken(m_tokenFile, tok);
             }
-            if (!obs_output_start(m_out)) {
-                const QString why = QString::fromUtf8(obs_output_get_last_error(m_out));
-                fail(why.isEmpty() ? "the recording would not start" : why);
-                return;
-            }
+            QString error;
+            if (!startOutput(m_path, &error)) { fail(error); return; }
             m_phase = Running;
             emit started();
         } else if (m_needCamera && !m_testCamera && m_waited.elapsed() > 15000 && (!m_needScreen || (m_screenReady.isValid() && m_screenReady.elapsed() > 15000))) {
@@ -239,10 +294,8 @@ void ObsBackend::poll() {
         }
     } else if (m_phase == Stopping) {
         if (!obs_output_active(m_out)) {
-            m_poll.stop();
             const QString done = m_path;
-            teardown();
-            m_phase = Off;
+            finishAttempt();
             emit finished(done);
         }
     }
@@ -254,7 +307,7 @@ void ObsBackend::pause(bool paused) {
 
 void ObsBackend::end() {
     if (m_phase == Waiting) {          // cancelled before any frame: close the portal session cleanly
-        m_poll.stop(); teardown(); m_phase = Off;
+        finishAttempt();
         emit finished(QString());
     } else if (m_phase == Running) {
         m_phase = Stopping;
@@ -262,17 +315,56 @@ void ObsBackend::end() {
     }
 }
 
-void ObsBackend::teardown() {
-    // Order matters (spike 4): output, encoders, detach the scene item, sources, scene, then wait for libobs.
-    if (m_out) { obs_output_release(m_out); m_out = nullptr; }
-    if (m_venc) { obs_encoder_release(m_venc); m_venc = nullptr; }
-    if (m_aenc) { obs_encoder_release(m_aenc); m_aenc = nullptr; }
-    if (m_libobsUp) { obs_set_output_source(0, nullptr); obs_set_output_source(1, nullptr); }
-    if (m_item) { obs_sceneitem_remove(m_item); m_item = nullptr; }
-    if (m_camItem) { obs_sceneitem_remove(m_camItem); m_camItem = nullptr; }
-    if (m_mic) { obs_source_release(m_mic); m_mic = nullptr; }
-    if (m_camera) { obs_source_release(m_camera); m_camera = nullptr; }
-    if (m_video) { obs_source_release(m_video); m_video = nullptr; }
-    if (m_scene) { obs_scene_release(m_scene); m_scene = nullptr; }
-    if (m_libobsUp) obs_wait_for_destroy_queue();
+// ---------------------------------------------------------------- the preview
+
+void ObsBackend::setPreview(bool on, const RecordSpec &spec) {
+    if (!on) {
+        m_previewOn = false;
+        removePreviewCallback();
+        if (m_phase == Off) dropGraph();
+        return;
+    }
+    QString error;
+    if (!ensureStarted(&error) || !ensureGraph(spec, &error)) {
+        m_previewOn = false;
+        emit failed(error);
+        return;
+    }
+    m_previewOn = true;
+    addPreviewCallback();
+}
+
+void ObsBackend::addPreviewCallback() {
+    if (m_previewCb) return;
+    video_scale_info info{};
+    info.format = VIDEO_FORMAT_BGRA;                 // byte order B,G,R,A = Qt's Format_RGB32 on little endian
+    info.width = 640; info.height = 360;
+    info.range = VIDEO_RANGE_DEFAULT; info.colorspace = VIDEO_CS_DEFAULT;
+    obs_add_raw_video_callback2(&info, 2, &ObsBackend::rawFrameCb, this);   // divisor 2: 15 frames per second is plenty
+    m_previewCb = true;
+}
+
+void ObsBackend::removePreviewCallback() {
+    if (!m_previewCb) return;
+    obs_remove_raw_video_callback(&ObsBackend::rawFrameCb, this);
+    m_previewCb = false;
+}
+
+void ObsBackend::rawFrameCb(void *self, video_data *frame) { static_cast<ObsBackend *>(self)->onRawFrame(frame); }
+
+// Runs on libobs's video thread. Copy the picture, keep only the newest, and tell the main thread at most once per frame.
+void ObsBackend::onRawFrame(video_data *frame) {
+    if (!frame || !frame->data[0]) return;
+    QImage img(640, 360, QImage::Format_RGB32);
+    for (int y = 0; y < 360; ++y)
+        memcpy(img.scanLine(y), frame->data[0] + size_t(y) * frame->linesize[0], 640 * 4);
+    { QMutexLocker l(&m_frameMutex); m_latest = std::move(img); }
+    if (!m_frameQueued.exchange(true)) {
+        QMetaObject::invokeMethod(this, [this] {
+            m_frameQueued = false;
+            QImage copy;
+            { QMutexLocker l(&m_frameMutex); copy = m_latest; }
+            if (m_previewCb) emit previewFrame(copy);   // late frames after the preview was switched off are dropped
+        }, Qt::QueuedConnection);
+    }
 }

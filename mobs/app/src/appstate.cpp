@@ -8,6 +8,7 @@ AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObj
     m_camera = m_settings->value("camera").toString();
     m_corner = qBound(0, m_settings->value("corner", 3).toInt(), 3);
     m_size = qBound(0, m_settings->value("size", 1).toInt(), 2);
+    m_preview = m_settings->value("preview", false).toBool();
     m_cams = m_scan();
     const int saved = m_settings->value("pick", 0).toInt();
     if (saved >= 1 && saved <= 3) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
@@ -123,4 +124,12 @@ void AppState::setCameraPanel(bool open) {
     if (open == m_panel) return;
     m_panel = open;
     emit cameraPanelChanged();
+}
+
+void AppState::setPreview(bool on) {
+    if (on == m_preview) return;
+    m_preview = on;
+    m_settings->setValue("preview", on);
+    m_settings->sync();
+    emit previewChanged();
 }

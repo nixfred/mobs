@@ -158,6 +158,98 @@ private slots:
         }
         QVERIFY2(dark == 0, qPrintable(QString("%1 of 7 probe points are black: the picture does not fill the frame").arg(dark)));
     }
+    // ---- the live preview, checked on the pixels of the frames it delivers ----------------------------------------------
+    static QImage frameFrom(QSignalSpy &spy) { return spy.isEmpty() ? QImage() : qvariant_cast<QImage>(spy.last().first()); }
+    static bool greenIn(const QImage &f, int cx, int cy) {   // canvas coordinates 1920x1080 -> preview 640x360
+        const QColor c = f.pixelColor(cx / 3, cy / 3);
+        return c.green() > c.red() + 50;
+    }
+    static bool redIn(const QImage &f, int cx, int cy) {
+        const QColor c = f.pixelColor(cx / 3, cy / 3);
+        return c.red() > c.green() + 50;
+    }
+    void thePreviewShowsTheSceneAndFollowsTheWebcamPlacement() {
+        qputenv("MOBS_TEST_SOURCE", "colour"); qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy frames(&b, &RecorderBackend::previewFrame);
+        RecordSpec spec; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 3; spec.camera.size = 1;
+        b.setPreview(true, spec);
+        QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 5, 8000);                 // frames really arrive, repeatedly
+        QImage f = frameFrom(frames);
+        QCOMPARE(f.size(), QSize(640, 360));
+        QRect br = Placement::cameraRect(3, 1);
+        QVERIFY(greenIn(f, br.center().x(), br.center().y()));              // the webcam is bottom-right...
+        QVERIFY(redIn(f, 960, 540));                                         // ...and the screen fills the rest
+        QVERIFY(redIn(f, 150, 150));
+        // tap another corner: the SAME scene is moved, with no restart
+        frames.clear();
+        spec.camera.corner = 0; spec.camera.size = 2;
+        b.setPreview(true, spec);
+        QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 4, 8000);
+        f = frameFrom(frames);
+        QRect tl = Placement::cameraRect(0, 2);
+        QVERIFY(greenIn(f, tl.center().x(), tl.center().y()));
+        QVERIFY(redIn(f, br.center().x(), br.center().y()));                 // where it used to be is screen again
+        b.setPreview(false, spec);
+    }
+    void switchingThePreviewOffStopsTheFrames() {
+        qputenv("MOBS_TEST_SOURCE", "colour"); qputenv("MOBS_TEST_COLOUR", "FF0000FF");
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy frames(&b, &RecorderBackend::previewFrame);
+        RecordSpec spec; spec.pick = 1;
+        b.setPreview(true, spec);
+        QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 3, 8000);
+        b.setPreview(false, spec);
+        QTest::qWait(300);                                                    // anything already queued may land
+        frames.clear();
+        QTest::qWait(1200);
+        QCOMPARE(frames.count(), 0);                                          // then nothing: the picture is really off
+    }
+    void aRecordingReusesThePreviewSceneAndThePreviewKeepsRunning() {
+        qputenv("MOBS_TEST_SOURCE", "colour"); qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qputenv("MOBS_TEST_CAMERA", "colour");
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        QSignalSpy frames(&b, &RecorderBackend::previewFrame), started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished), failed(&b, &RecorderBackend::failed);
+        RecordSpec spec; spec.pick = 2; spec.camera.path = "test"; spec.camera.corner = 1; spec.camera.size = 1;
+        b.setPreview(true, spec);
+        QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 3, 8000);
+        spec.path = d.path() + "/with-preview.mp4";
+        b.begin(spec);
+        started.wait(15000);
+        QVERIFY2(!started.isEmpty(), "recording never started while previewing");
+        frames.clear();
+        QTest::qWait(1800);
+        QVERIFY2(frames.count() >= 5, "the preview stopped while recording");
+        b.end();
+        finished.wait(20000);
+        QVERIFY(failed.isEmpty() && !finished.isEmpty());
+        const QByteArray still = stillRgb(spec.path);                         // the file has the same picture as the preview
+        QVERIFY(still.size() == 192 * 108 * 3);
+        const QRect tr = Placement::cameraRect(1, 1);
+        QVERIFY(greenAt(still, tr.center().x(), tr.center().y()));
+        QVERIFY(redAt(still, 960, 540));
+        frames.clear();
+        QTRY_VERIFY_WITH_TIMEOUT(frames.count() >= 3, 8000);                  // and after stopping, the preview carries on
+        b.setPreview(false, spec);
+    }
+    void aRecordingWithoutAPreviewStillCleansUpTheScene() {
+        qputenv("MOBS_TEST_SOURCE", "colour"); qputenv("MOBS_TEST_COLOUR", "FF0000FF"); qunsetenv("MOBS_TEST_CAMERA");
+        QTemporaryDir d;
+        ObsBackend b(d.path() + "/token");
+        for (int i = 0; i < 2; ++i) {                                         // twice: nothing may leak between recordings
+            QSignalSpy started(&b, &RecorderBackend::started), finished(&b, &RecorderBackend::finished);
+            RecordSpec spec; spec.pick = 1; spec.path = d.path() + QString("/p%1.mp4").arg(i);
+            b.begin(spec);
+            started.wait(15000);
+            QVERIFY(!started.isEmpty());
+            QTest::qWait(1000);
+            b.end();
+            finished.wait(20000);
+            QVERIFY(!finished.isEmpty() && QFileInfo(spec.path).size() > 1000);
+        }
+    }
     void aCameraThatNeverStartsIsReportedAsACameraProblem() {
         qunsetenv("MOBS_TEST_CAMERA");
         QTemporaryDir d;

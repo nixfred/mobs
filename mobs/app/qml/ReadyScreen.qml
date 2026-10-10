@@ -3,15 +3,21 @@ import MobsCore
 
 // One big record button, plain words, and what will be recorded.
 Item {
+    readonly property bool showPreview: App.preview
     Column {
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: -20
-        spacing: 22
-        Item {
-            width: 190; height: 190
+        anchors.verticalCenterOffset: showPreview ? -6 : -20
+        spacing: showPreview ? 14 : 22
+        PreviewView {
+            visible: showPreview
             anchors.horizontalCenter: parent.horizontalCenter
-            Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: 4 }
-            Rectangle { anchors.centerIn: parent; width: 128; height: 128; radius: 64; color: Omarchy.red }
+            previewWidth: Math.min(480, Math.max(240, (parent.parent.height - 330) * 16 / 9))
+        }
+        Item {
+            width: showPreview ? 112 : 190; height: width
+            anchors.horizontalCenter: parent.horizontalCenter
+            Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Omarchy.accent; border.width: showPreview ? 3 : 4 }
+            Rectangle { anchors.centerIn: parent; width: parent.width * 0.67; height: width; radius: width / 2; color: Omarchy.red }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: Engine.start(App.pick) }
         }
@@ -52,6 +58,13 @@ Item {
                 text: App.pick === 1 ? "camera off" : (App.hasCamera ? App.cameraName : "choose a camera")
                 tint: App.pick === 1 || !App.hasCamera ? Omarchy.tertiaryText : Omarchy.accent
                 onClicked: { App.refreshCameras(); App.setCameraPanel(true) }
+            }
+            Chip {
+                glyph: "\uf06e"
+                clickable: true
+                text: App.preview ? "preview on" : "preview off"
+                tint: App.preview ? Omarchy.accent : Omarchy.tertiaryText
+                onClicked: App.setPreview(!App.preview)
             }
         }
         Txt {

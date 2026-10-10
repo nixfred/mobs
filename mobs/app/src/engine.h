@@ -17,6 +17,7 @@ class Engine : public QObject {
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
     Q_PROPERTY(QString lastFile READ lastFile NOTIFY lastFileChanged)
     Q_PROPERTY(QString warning READ warning NOTIFY warningChanged)
+    Q_PROPERTY(bool previewing READ previewing NOTIFY previewingChanged)
 public:
     explicit Engine(RecorderBackend *backend, QString recordingDir, QObject *parent = nullptr);
     QString state() const;
@@ -26,11 +27,15 @@ public:
     QString message() const { return m_message; }
     QString lastFile() const { return m_lastFile; }
     QString warning() const { return m_warning; }
+    bool previewing() const { return m_previewing; }
     // True when a still from the file is (nearly) pure black. Static so tests and other code can reuse it.
     static bool looksBlack(const QByteArray &gray32x18);
 
     Q_INVOKABLE void start(int pick);     // 2 and 3 need a chosen camera: without one they say so instead of recording nothing
     void setCameraProvider(std::function<CameraSpec()> provider) { m_camera = std::move(provider); }
+    // Show what would be recorded. wanted=false, or a camera mode with no usable camera, switches the preview off.
+    // Safe to call again whenever the pick, camera or placement changes. Never touches the recording state.
+    Q_INVOKABLE void setPreview(bool wanted, int pick);
     Q_INVOKABLE void toggle(int pick);    // start when idle, stop when recording (the Alt+Shift+V behaviour)
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void stop();
@@ -41,6 +46,7 @@ signals:
     void messageChanged();
     void lastFileChanged();
     void warningChanged();
+    void previewingChanged();
     void checkedFile(const QString &path, bool black);   // after the saved file was inspected
     void saved(const QString &path);
     void cameraNeeded();                   // the user asked for a camera recording but has not chosen a camera
@@ -56,6 +62,7 @@ private:
     std::function<CameraSpec()> m_camera;
     QString m_dir, m_message, m_lastFile, m_warning;
     State m_state = Idle;
+    bool m_previewing = false;
     QElapsedTimer m_clock;
     qint64 m_banked = 0;   // ms recorded before the current running stretch
     QTimer m_tick;

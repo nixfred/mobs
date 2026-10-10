@@ -114,6 +114,16 @@ private slots:
         QCOMPARE(n.x() * Placement::kCanvasW, double(r.x()));
         QCOMPARE(n.height() * Placement::kCanvasH, double(r.height()));
     }
+    void previewIsOffByDefaultAndRemembered() {
+        QTemporaryDir d; const QString f = d.path() + "/m.ini";
+        { QSettings s(f, QSettings::IniFormat); AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
+          QVERIFY(!a.preview());                 // off by default: it lights the camera and may open the screen dialog
+          QSignalSpy sp(&a, &AppState::previewChanged);
+          a.setPreview(true); a.setPreview(true);
+          QCOMPARE(sp.count(), 1); }
+        QSettings s2(f, QSettings::IniFormat); AppState b(&s2, nullptr, [] { return QList<CameraInfo>(); });
+        QVERIFY(b.preview());
+    }
     void panelOpensAndCloses() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
         AppState a(&s, nullptr, [] { return twoCameras(); });

@@ -153,3 +153,11 @@ void Engine::checkPicture(const QString &path) {
     });
     p->start(ffmpeg, {"-nostdin", "-v", "error", "-ss", "1", "-i", path, "-frames:v", "1", "-vf", "scale=32:18,format=gray", "-f", "rawvideo", "-"});
 }
+
+void Engine::setPreview(bool wanted, int pick) {
+    const CameraSpec cam = m_camera ? m_camera() : CameraSpec{};
+    const bool usable = pick >= 1 && pick <= 3 && (pick == 1 || cam.valid());
+    const bool on = wanted && usable;
+    if (on || m_previewing) m_backend->setPreview(on, RecordSpec{pick, QString(), cam});
+    if (on != m_previewing) { m_previewing = on; emit previewingChanged(); }
+}
