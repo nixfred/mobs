@@ -1,0 +1,24 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=MOBS
+GenericName=Screen and Camera Recorder
+Comment=Record your screen and webcam, then trim and save. One app, Omarchy look.
+Exec=@MOBS_BIN@
+TryExec=@MOBS_BIN@
+Icon=mobs
+Terminal=false
+Categories=AudioVideo;Video;Recorder;
+Keywords=mobs;record;recorder;screen;screencast;capture;webcam;camera;video;obs;monologue;obs-studio;stream;
+StartupNotify=true
+StartupWMClass=mobs
+SingleMainWindow=true
+Actions=toggle;pause;
+
+[Desktop Action toggle]
+Name=Start or stop recording
+Exec=busctl --user call org.mobs.Control /org/mobs/Control org.mobs.Control Toggle
+
+[Desktop Action pause]
+Name=Pause or resume
+Exec=busctl --user call org.mobs.Control /org/mobs/Control org.mobs.Control Pause

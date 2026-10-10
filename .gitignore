@@ -6,6 +6,7 @@ __pycache__/
 node_modules/
 .venv/
 dist/
+!mobs/app/dist/
 build/
 .DS_Store
 forks/

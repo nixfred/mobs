@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- MOBS: a record ring and dot, viewfinder corners on three sides, and a webcam lens in the bottom-right corner,
+       which is where MOBS puts your webcam by default. Omarchy "Liftoff" colours, on a dark glass tile. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22313F"/>
+      <stop offset="100%" stop-color="#0B1117"/>
+    </linearGradient>
+    <radialGradient id="aura" cx="0.5" cy="0.44" r="0.62">
+      <stop offset="0%" stop-color="#F3B77B" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#F3B77B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFE0B5"/>
+      <stop offset="100%" stop-color="#E8964F"/>
+    </linearGradient>
+    <radialGradient id="dot" cx="0.38" cy="0.32" r="0.85">
+      <stop offset="0%" stop-color="#FFC0B5"/>
+      <stop offset="100%" stop-color="#E5675A"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="scan" width="5" height="5" patternUnits="userSpaceOnUse">
+      <rect width="5" height="1" fill="#ffffff" opacity="0.05"/>
+    </pattern>
+    <clipPath id="tileclip"><rect x="8" y="8" width="240" height="240" rx="58"/></clipPath>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#tile)"/>
+  <g clip-path="url(#tileclip)">
+    <rect width="256" height="256" fill="url(#aura)"/>
+    <rect width="256" height="256" fill="url(#scan)"/>
+  </g>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="57.5" fill="none" stroke="#F3B77B" stroke-opacity="0.38"/>
+
+  <!-- viewfinder corners: top-left, top-right, bottom-left (the bottom-right belongs to the webcam) -->
+  <g fill="none" stroke="#F3B77B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.92">
+    <path d="M44 80 V60 Q44 44 60 44 H80"/>
+    <path d="M176 44 H196 Q212 44 212 60 V80"/>
+    <path d="M44 176 V196 Q44 212 60 212 H80"/>
+  </g>
+
+  <!-- record ring and dot -->
+  <circle cx="126" cy="122" r="54" fill="none" stroke="url(#amber)" stroke-width="15" filter="url(#glow)"/>
+  <circle cx="126" cy="122" r="31" fill="url(#dot)"/>
+  <ellipse cx="116" cy="109" rx="10" ry="6.5" fill="#ffffff" opacity="0.34"/>
+
+  <!-- webcam lens, bottom-right -->
+  <circle cx="192" cy="190" r="37" fill="#0B1117" stroke="url(#amber)" stroke-width="8"/>
+  <circle cx="192" cy="190" r="23" fill="#13202B" stroke="#8BC8D0" stroke-width="3.5"/>
+  <circle cx="192" cy="190" r="11" fill="#8BC8D0"/>
+  <circle cx="186.5" cy="184.5" r="4" fill="#ffffff" opacity="0.85"/>
+</svg>
