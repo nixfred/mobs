@@ -1,7 +1,7 @@
 # mobs: status
 
 - Started: 2026-10-09, from Clarity's Idea Box
-- Stage: shape, tech design and screen design drafted 2026-10-09. Next is spike 3, then the build.
+- Stage: shape, tech design, screen design and spike 3 done 2026-10-09. Next is the portal check on gus, then the build.
 - Repo: github.com/nixfred/mobs (private). OBS and Monologue are git subtrees (obs/, monologue/) with full history and the official upstreams as remotes (ADR 0002).
 - Finding: Monologue is a webcam recorder with a trim editor (Qt 6 QML, C++), not a voice tool. Voxtype (already on Omarchy) is the dictation tool.
 
@@ -18,8 +18,11 @@
 - Screen prototype (mobs/design/, docs/design/screen-1..5.png, docs/screen-design.md): five screens in the live Liftoff theme, rendered in the Test Drive VM with sample data only. Screen 4 uses Monologue's EditBar.qml unmodified.
 - Practice copy: Test Drive VM test-drive-mobs-spike (OBS 32.2.2, Qt 6.11.2, cmake/ninja; its package DB was stale, refreshed with pacman -Sy). Still running.
 
+- Spike 3 (mobs/spike3/, ADR 0005): PASSED for the control plane in the VM. OBS hidden on special:mobs, websocket auth, scene/input, record, pause (cut 2 s of a 7 s run), resume, stop, file path back, OBS alive throughout. Learned: RecQuality must not be Stream or pause does nothing; wait for the RecordStateChanged STOPPED event, the file is not final when StopRecord replies.
+
 ## Open
 
-- Spike 3: MOBS starts OBS hidden, connects over obs-websocket, starts, pauses and stops a recording, gets the file path back; Wayland screen-capture portal works while OBS is hidden.
+- Wayland screen capture through the portal while OBS is hidden: no picker ever appeared in the VM. Needs one run on gus with a click.
+- New dependency: qt6-websockets (not on gus yet).
 - Not built: theme reader (colors.toml, live), the real app, the hotkey, the recording pill, the audio/output/keys tabs, first-run permission screen.
 - Throwaway test configs for gus runs live in the Claude scratchpad, not in ~/.config/obs-studio (Fred's own OBS setup was never touched).

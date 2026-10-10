@@ -33,8 +33,16 @@ OpenGL video output instead of the software-rendered workaround of ADR 0004.
 - ADR 0004 (software rendering for QML docks) only applies if a dock inside OBS is ever built again.
 - Two processes, one app to the user: MOBS starts OBS hidden (a Hyprland special workspace),
   enables obs-websocket on localhost with a generated password, and quits it with MOBS.
-- Still to prove (spike 3): MOBS can start OBS hidden, connect over websocket, start, pause and
-  stop a recording, and get the file path back; and Wayland screen capture via the portal works
-  when OBS is not the focused window.
+- Spike 3 (mobs/spike3/, practice VM, OBS 32.2.2, obs-websocket 5.7.4) PROVED the control plane: OBS started
+  with a generated websocket password, hidden on Hyprland's `special:mobs` (verified with `hyprctl clients -j`),
+  and a Qt WebSockets client authenticated, created a scene and input, started, paused (4.93 s file from
+  3 s + 2 s recorded with 2 s paused), resumed and stopped, and got the file path; OBS stayed alive and hidden.
+  Two things the first run got wrong, and what MOBS must do:
+  - Pause only works when recording does not share the stream encoder: simple-mode `RecQuality` must not be
+    `Stream` (OBS's default). MOBS's profile sets `RecQuality=Small`.
+  - `StopRecord` returns the path BEFORE a Hybrid MP4 is finalized (the file looked 0 bytes). Wait for the
+    `RecordStateChanged` event with state STOPPED (about 0.7 s later) before opening the take.
+- NOT proven: Wayland screen capture through the portal while OBS is hidden. In the VM no picker window ever
+  appeared (cause unknown: the VM's portal, or the hidden OBS). Needs a real desktop and one click.
 - Beginner presets ("Record my screen", "Screen + my camera", "Just my camera") become scenes
   MOBS creates over websocket, so beginners never see scenes or sources.

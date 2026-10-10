@@ -70,13 +70,18 @@ so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting i
   Exit reliability with any QML dock loaded was poor on gus (no plugin 6/6 clean; plugin without a dock 6/6;
   empty QML dock 4/8 stuck; full dock 3/6). One cause found (OBS's "Closing Dockable Window" dialog), the rest
   unexplained. This is why the architecture moved out of OBS's window.
+- **Spike 3** (`mobs/spike3/`): hidden OBS driven over obs-websocket, all checks passed except the portal (see Risks).
 - **Screen prototype** (`mobs/design/`, `docs/design/*.png`): five screens in the live Liftoff theme,
   rendered in the Test Drive VM with sample data.
 
 ## Risks and the next test
 
-- **Spike 3, the real unknown now:** MOBS starts OBS hidden, connects over websocket, starts, pauses and stops a
-  recording, and gets the file path back; and Wayland screen capture through the portal works while OBS is not focused.
+- **Portal screen capture while OBS is hidden: the last unknown.** Spike 3 proved hidden OBS, websocket control,
+  record, pause, resume, stop and the file path (ADR 0005). In the VM no portal picker ever appeared, so real
+  screen capture is untested. Needs one run on real hardware where someone clicks the picker.
+- **Profile must set `RecQuality`** (not `Stream`) or pause silently does nothing; **wait for `RecordStateChanged`
+  STOPPED** before opening a take, because `StopRecord` replies before a Hybrid MP4 is finalized.
+- **New dependency:** `qt6-websockets` (not installed on gus; installed in the VM for the spike).
 - **First-run permissions:** the screen-capture portal prompt must be explained by a MOBS screen, not left to OBS.
 - **Hiding OBS:** a Hyprland special workspace is Omarchy-only, which is fine here, but check that OBS stays alive and keeps capturing while hidden.
 - **`obs-websocket` submodule is not checked out** in `obs/plugins/obs-websocket`. Harmless (we use the installed OBS), but a from-source OBS build needs `git submodule update --init`.
@@ -84,6 +89,6 @@ so MOBS gets an editing-only backend; a later PR to omacom/monologue splitting i
 
 ## Next
 
-1. Spike 3: OBS hidden plus websocket recording, in the practice VM, then on gus.
+1. Portal screen capture check on gus (one click), then the real app.
 2. Wire the theme reader (`colors.toml`, live) and Hyprland rounding into the prototype.
 3. Build `mobs/app/` screen by screen from the prototype.
