@@ -96,7 +96,8 @@ private slots:
         QVERIFY(!c.status().contains("BEFORE")); QVERIFY(c.signInAllowed());
     }
     void aPageThatDoesNotLoadSaysSo() {
-        GuestCall c(false); c.invite();    // not a stand-in, but nothing here loads a page: the clipboard may or may not exist, the status is what matters
+        qputenv("MOBS_NO_CLIPBOARD", "1");   // a test must never write to the clipboard of the desktop it runs on
+        GuestCall c(false); c.invite();      // not a stand-in, but nothing here loads a page: the status is what matters
         c.pageLoaded(false, "net::ERR_INTERNET_DISCONNECTED");
         QVERIFY(c.status().contains("could not open the call")); QVERIFY(c.status().contains("ERR_INTERNET_DISCONNECTED"));
         c.pageLoaded(true, QString());
