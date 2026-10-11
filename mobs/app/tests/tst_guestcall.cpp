@@ -91,9 +91,10 @@ private slots:
         c.setTakeProbe([&] { return take; });
         c.invite();
         take = true;
-        QVERIFY(!c.signInAllowed()); QVERIFY(c.status().contains("BEFORE you start a take"));
+        QVERIFY(!c.signInAllowed()); QVERIFY(c.status().contains("BEFORE you start a take")); QVERIFY(c.problem());   // a complaint, so the card shows it in red
+        QVERIFY(c.status().contains("Login failed"));                                                                    // Jitsi's own toast says that when its window is held back: the card explains it
         take = false; c.takeChanged();
-        QVERIFY(!c.status().contains("BEFORE")); QVERIFY(c.signInAllowed());
+        QVERIFY(!c.status().contains("BEFORE")); QVERIFY(!c.problem()); QVERIFY(c.signInAllowed());
     }
     void aPageThatDoesNotLoadSaysSo() {
         qputenv("MOBS_NO_CLIPBOARD", "1");   // a test must never write to the clipboard of the desktop it runs on

@@ -21,6 +21,7 @@ class GuestCall : public QObject {
     Q_PROPERTY(QUrl url READ url NOTIFY changed)                 // what the card's web view opens (YOUR side of the room)
     Q_PROPERTY(bool pageReady READ pageReady NOTIFY changed)     // the page has loaded: the card shows it instead of the placeholder
     Q_PROPERTY(bool joined READ joined NOTIFY changed)           // you are in the room (false while Jitsi still waits for a signed-in host)
+    Q_PROPERTY(bool problem READ problem NOTIFY changed)         // the status is a problem (sign-in held back, page did not load), not just progress
     Q_PROPERTY(bool standIn READ standIn CONSTANT)               // tests and screenshots: no web page, no clipboard, no desktop notice
     Q_PROPERTY(QString pageScript READ viewScript CONSTANT)      // injected into the room's page: reports who is in it
     Q_PROPERTY(bool debug READ debug CONSTANT)                   // MOBS_CALL_DEBUG=1: the page's clicks, warnings and errors are written to the log
@@ -36,6 +37,7 @@ public:
     QUrl url() const;   // MOBS_CALL_URL replaces it (tests: an offline page); never set it in real use
     bool pageReady() const { return m_pageReady; }
     bool joined() const { return m_joined; }
+    bool problem() const { return !m_blockedNote.isEmpty() || !m_loadError.isEmpty(); }   // the status line is a complaint: the card shows it in red
     bool standIn() const { return m_standIn; }
     QString lastInvite() const { return m_lastInvite; }
     static QString pageScript(bool debug = false);

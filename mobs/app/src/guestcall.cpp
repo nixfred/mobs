@@ -38,10 +38,10 @@ QString GuestCall::status() const {
     if (!m_loadError.isEmpty()) return m_loadError;
     if (!m_others.isEmpty()) return QStringLiteral("in the call with you");
     if (!m_standIn && !m_pageReady) return QStringLiteral("opening the call...");
-    if (!m_standIn && !m_joined) return QStringLiteral("sign in as the host if Jitsi asks, then your guest can come in");
+    if (!m_standIn && !m_joined) return QStringLiteral("nobody is in the room yet: sign in as the host if Jitsi asks, then your guest can come in");
     const QString who = m_guest.isEmpty() ? QStringLiteral("your guest") : m_guest;
-    if (m_hadGuest) return QString("%1 left: the room is still open").arg(who);
-    return QString("waiting for %1: the invite is on your clipboard, paste it to them").arg(who);
+    if (m_hadGuest) return QString("%1 left: nobody else is in the room").arg(who);
+    return QString("waiting for %1: nobody else is in the room yet. The invite is on your clipboard, paste it to them").arg(who);
 }
 
 void GuestCall::invite(const QString &viewer) {
@@ -108,7 +108,7 @@ void GuestCall::pageLoaded(bool ok, const QString &problem) {
 
 bool GuestCall::signInAllowed() {
     if (m_busy && m_busy()) {
-        m_blockedNote = QStringLiteral("sign in to Jitsi BEFORE you start a take: viewers would see your login");
+        m_blockedNote = QStringLiteral("sign-in held back (Jitsi will say \"Login failed\"): sign in BEFORE you start a take, because viewers would see your login. Stop the take, sign in, then start again");
         MobsLog::write("call", "the Jitsi sign-in window was refused because a take is running (viewers would see it)");
         touch();
         return false;

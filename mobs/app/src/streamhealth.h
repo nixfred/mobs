@@ -27,9 +27,10 @@ public:
         v.note = QString("that connection lasted %1 s and sent %2 KB (quick drops in a row: %3)").arg(lasted / 1000.0, 0, 'f', 1).arg(sent / 1024).arg(m_quick);
         if (m_quick >= kGiveUpAfter) {
             v.giveUp = true;
-            v.advice = QString("X hung up within seconds, %1 times in a row. The usual cause: X no longer accepts this stream key (a key stops working when its "
-                               "livestream ends). In X Live Studio (studio.x.com/live) create a New livestream with source RTMP, paste its new key in EXPERT > live, "
-                               "then press GO LIVE").arg(m_quick);
+            v.advice = QString("X hung up within seconds, %1 times in a row. Two usual causes: another computer is streaming with the same key (a source carries one "
+                               "stream at a time, so give each computer its own source in X Live Studio), or X no longer accepts this stream key (a key stops working "
+                               "when its livestream ends). In X Live Studio (studio.x.com/live) create a New livestream with a source of its own, paste its key in "
+                               "EXPERT > live, then press GO LIVE").arg(m_quick);
         }
         return v;
     }

@@ -153,6 +153,9 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     # The REAL call card (the web view), pointed at a blank page and with the clipboard left alone: it must create without a single QML complaint.
     check("call: the real call card loads its web view without QML errors", dock + "call=ana,wait=4,expect=callPage:1,checkpip", fake_backend=True,
           extra_env={"MOBS_CALL_REAL": "1", "MOBS_CALL_URL": "about:blank", "MOBS_NO_CLIPBOARD": "1"})
+    # Under the real page there is a status line: while a take runs and Jitsi asks to sign in, it says why Jitsi's "Login failed" appears (the page covers the placeholder that used to say it).
+    check("call: a status line under the real page explains the held-back sign-in during a take", dock + "call=ana,wait=4,expect=callPage:1,start,waitrec,callsignin,expect=callStatus:BEFORE you start a take,wait=0.5,expect=pipHas:callStatusBar,checkpip,stop,waitidle", fake_backend=True,
+          extra_env={"MOBS_CALL_REAL": "1", "MOBS_CALL_URL": "about:blank", "MOBS_NO_CLIPBOARD": "1"})
     # A click on the call page must REACH the page: a drag handler laid over a web page once swallowed every click (the Jitsi buttons did nothing). The page reports its own click.
     (root / "click.html").write_text('<html style="height:100%"><body style="height:100%;margin:0" onclick="console.log(\'MOBS-CALL-DEBUG page got a click\')">click me</body></html>')
     check("call: a click on the call page reaches the page, not the dock's drag layer", dock + "call=ana,wait=5,expect=callPage:1,pipclick=callWeb,wait=1,pipclick=callWeb,wait=1.5,expect=callPageSaid:page got a click", fake_backend=True,

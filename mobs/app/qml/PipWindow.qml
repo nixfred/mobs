@@ -68,7 +68,7 @@ Window {
         Loader {   // the call itself: a Jitsi room in a web view. Loaded only when a call starts, so the web engine costs nothing until a guest comes
             id: callLoader
             objectName: "callLoader"
-            anchors { left: parent.left; right: parent.right; top: parent.top; bottom: parent.bottom; bottomMargin: soundBar.visible ? soundBar.height + 16 : 0 }   // the sound warning sits BELOW the page, never over Jitsi's buttons
+            anchors { left: parent.left; right: parent.right; top: parent.top; bottom: parent.bottom; bottomMargin: statusBar.visible ? statusBar.height + 12 : 0 }   // the status line sits BELOW the page, never over Jitsi's buttons
             active: Call.active && !Call.standIn && pip.visible
             source: Qt.resolvedUrl("GuestCall.qml")
         }
@@ -80,15 +80,26 @@ Window {
             Behavior on opacity { NumberAnimation { duration: 160 } }
             Txt { id: guestWord; anchors.centerIn: parent; text: guestCard.pageShown && Pip.guestName !== "guest" ? "GUEST  " + Pip.guestName : "GUEST"; font.pixelSize: Math.max(11, guestCard.height * 0.055); font.bold: true; color: "white" }
         }
-        Rectangle {   // their voice reaches the broadcast as desktop sound: say so when that is off, because nothing else will
-            id: soundBar
-            objectName: "callSoundNote"
-            visible: Call.active && !Prefs.desktopOn && (Call.joined || Call.standIn)   // only once a guest could talk: before that it would only take room from the sign-in dialog
+        Rectangle {   // what the call is doing, UNDER the page (the placeholder shows this line too, but the page covers it): nobody in the room yet, the sign-in held back, their voice not on the broadcast
+            id: statusBar
+            objectName: "callStatusBar"
+            readonly property bool soundWarn: !Call.problem && Call.state === "connected" && !Prefs.desktopOn   // their voice reaches the broadcast only as desktop sound
+            readonly property string line: soundWarn ? "desktop sound is off: viewers cannot hear your guest" : Call.status
+            visible: Call.active && guestCard.pageShown && guestCard.height >= 120 && line !== ""
             z: 10
-            x: 8; y: guestCard.height - height - 8
-            height: Math.max(20, guestCard.height * 0.1); width: Math.min(guestCard.width - 16, soundNote.implicitWidth + 16); radius: height / 2
-            color: Qt.alpha("black", 0.72); border.width: 1; border.color: Omarchy.yellow
-            Txt { id: soundNote; anchors.centerIn: parent; width: parent.width - 12; text: "desktop sound is off: viewers cannot hear your guest"; elide: Text.ElideRight; font.pixelSize: Math.max(10, guestCard.height * 0.05); font.bold: true; color: Omarchy.yellow }
+            x: 8; width: guestCard.width - 16
+            height: statusText.implicitHeight + 10
+            y: guestCard.height - height - 6
+            radius: 8
+            color: Qt.alpha("black", 0.78)
+            border.width: 1; border.color: Call.problem ? Omarchy.red : soundWarn ? Omarchy.yellow : Qt.alpha("white", 0.18)
+            Txt {
+                id: statusText
+                anchors.centerIn: parent; width: parent.width - 14
+                text: statusBar.line; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: Math.max(10, Math.min(12, guestCard.height * 0.045)); font.bold: Call.problem || statusBar.soundWarn
+                color: Call.problem ? Omarchy.red : statusBar.soundWarn ? Omarchy.yellow : Omarchy.secondaryText
+            }
         }
     }
     Rectangle {   // you
