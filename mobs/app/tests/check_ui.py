@@ -142,6 +142,23 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     for size in ("200x300", "360x420", "480x520", "700x900", "480x300"):
         check(f"dock: guest, webcam and chat stay stacked and inside when the window is {size}", dock + f"chatmsg=ana|hello,chatmsg=bo|what theme is that?,guest=Marlow|joining,pipsize={size},wait=0.5,checkpip", fake_backend=True)
     check("dock: a chat that goes away takes its card with it", dock + "chatmsg=ana|hi,expect=chatWanted:1,chatoff,expect=chatWanted:0,wait=0.3,checkpip", fake_backend=True)
+    # The call: a viewer brought into a call is the guest card above the webcam. Scripted runs use a stand-in: no web page, no clipboard, no desktop notice.
+    check("call: a viewer invited from the chat joins above the webcam", dock + "chatmsg=ana|hello,wait=0.6,piphover=chatRow,wait=0.4,expect=pipHas:inviteChip,pipclick=inviteChip,wait=0.4,expect=callActive:1,expect=callLabel:ana,expect=guestOn:1,expect=callInvite:meet.jit.si,wait=0.3,checkpip", fake_backend=True)
+    check("call: the invite chip steps aside while a call is open", dock + "chatmsg=ana|hello,call=ana,wait=0.4,piphover=chatRow,wait=0.4,expect=pipGone:inviteChip", fake_backend=True)
+    check("call: the + guest chip starts a call with nobody named", dock + "piphover=pipVideoCard,wait=0.4,pipclick=addGuestChip,wait=0.4,expect=callActive:1,expect=callLabel:guest,expect=guestOn:1,wait=0.3,checkpip", fake_backend=True)
+    check("call: end call takes the guest card away", dock + "call=ana,wait=0.4,expect=guestOn:1,piphover=pipGuestCard,wait=0.4,pipclick=endCallChip,wait=0.4,expect=callActive:0,expect=guestOn:0,wait=0.3,checkpip", fake_backend=True)
+    check("call: who is in the room shows on the card and it fits", dock + "chatmsg=ana|hello,call=ana,callwho=Ana Lee,expect=callState:connected,expect=callLabel:Ana Lee,wait=0.4,checkpip,callwho=,expect=callState:waiting,expect=callStatus:left,wait=0.3,checkpip", fake_backend=True)
+    check("call: a sign-in window is refused while a take runs", dock + "call=ana,start,waitrec,callsignin,expect=callStatus:BEFORE you start a take,stop,waitidle,expect=callStatus:waiting for ana", fake_backend=True)
+    check("call: no dock, no call", dock + "call=ana,expect=callActive:1,pick=1,wait=0.4,expect=callActive:0", fake_backend=True)
+    # The REAL call card (the web view), pointed at a blank page and with the clipboard left alone: it must create without a single QML complaint.
+    check("call: the real call card loads its web view without QML errors", dock + "call=ana,wait=4,expect=callPage:1,checkpip", fake_backend=True,
+          extra_env={"MOBS_CALL_REAL": "1", "MOBS_CALL_URL": "about:blank", "MOBS_NO_CLIPBOARD": "1"})
+    # A click on the call page must REACH the page: a drag handler laid over a web page once swallowed every click (the Jitsi buttons did nothing). The page reports its own click.
+    (root / "click.html").write_text('<html style="height:100%"><body style="height:100%;margin:0" onclick="console.log(\'MOBS-CALL-DEBUG page got a click\')">click me</body></html>')
+    check("call: a click on the call page reaches the page, not the dock's drag layer", dock + "call=ana,wait=5,expect=callPage:1,pipclick=callWeb,wait=1,pipclick=callWeb,wait=1.5,expect=callPageSaid:page got a click", fake_backend=True,
+          extra_env={"MOBS_CALL_REAL": "1", "MOBS_CALL_DEBUG": "1", "MOBS_CALL_URL": f"file://{root}/click.html", "MOBS_NO_CLIPBOARD": "1"})
+    for size in ("200x300", "360x420", "480x520", "700x900", "480x300"):
+        check(f"call: guest, webcam and chat stay stacked and inside when the window is {size}", dock + f"chatmsg=ana|hello,call=ana,pipsize={size},wait=0.5,checkpip", fake_backend=True)
     check("audio shortcut opens inputs", "pick=1,openaudio,expect=pro:1,expect=audioTab:2")
     check("invalid folder preserves saved destination", "pro=1,foldertext=relative/path,applyfolder,expect=folderDefault:1,wait=0.1,checklayout")
     check("preview error still fits", "pick=1,preview=1,wait=0.1,checklayout")

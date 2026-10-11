@@ -119,14 +119,14 @@ Fred, 2026-10-10: "put the chat from the live session connected to the bottom of
 resizable and the chat separately resizable but connected as one", then "their video should be joined above my video pip with the chat room continuing below my webcam pip". The
 webcam window (`qml/PipWindow.qml`) is therefore **one window with up to three stacked cards**, so one move carries them all:
 
-1. **A guest's card above you** (a viewer you promoted: their video, never their screen). It is a placeholder for now (their name and who is coming); the call itself is stage 2.
+1. **A guest's card above you** (a viewer you brought into a call: their video and voice, never their screen; see "Calling a guest" below). Until the call page is up it shows who is expected.
    When a guest arrives the window grows by one card **upward when there is room, so your own picture does not move on the screen**, and gives it back when they leave.
 2. **Your own camera** in the middle.
 3. **The chat card below you**: read-only (you answer with your voice and video, so there is nothing to type into). A glass card with a pulsing "connected" dot; messages slide in at the
    bottom, older ones drift up and fade out at the top; each name gets its own stable colour and an avatar letter. Before the first message, or when the feed is down, it says what is going on.
 
 **Sizes.** The videos keep 16:9 at whatever width the window has, so *resizing the width resizes the videos and the chat card's width with them*, and *resizing the height resizes the chat card
-alone*. A short window squeezes the videos (they crop) before the chat card goes. **A plain drag anywhere moves the stack** (SUPER + drag still works); the bottom edge, the right edge and the
+alone*. A short window squeezes the videos (they crop) before the chat card goes. **A plain drag on your webcam or the chat moves the stack** (not on a live call page, which needs its clicks; SUPER + drag works from anywhere); the bottom edge, the right edge and the
 corner resize it, and their grips fade in only while the pointer is over the window (the compositor does the move and resize itself: `xdg_toplevel` move/resize, no `hyprctl` per frame).
 The dock with chat remembers its own place (`pipPlaceChat`), separate from the camera alone (`pipPlace`). It is captured with the rest of the screen, so **viewers see the chat card too**.
 
@@ -135,6 +135,33 @@ made-up flow labelled **DEMO** so the dock can be seen and tried without X. The 
 Activity API `broadcast.chat` event delivered to a public HTTPS webhook (OAuth 2.0 PKCE, scope `broadcast.read`), the API is open only to whitelisted apps, and the docs never say whether a
 broadcast started from Live Studio over RTMP is covered. There is no confirmed chat-only pop-out URL, the old Periscope chat socket is reported closed, and X's developer guidelines forbid
 scraping, browser automation and iframing X pages. So the plan is a small relay that receives the webhook and that MOBS polls; that waits on X's access.
+
+## Calling a guest
+
+Fred, 2026-10-10: "select a viewer and have them join the video in another pip to chat. They don't share their screen, only their video and audio or even just audio ... as we talk and I continue to share my
+screen." Decision (asked, 2026-10-10): **a Jitsi room shown inside the dock**; not a separate window, not a self-hosted server.
+
+**Starting a call.** Two ways, both in the webcam window and only while the pointer is over it (like the resize grips):
+- point at a chat message: a chip **invite NAME** floats over it (the name is on the chip, so it is plain who you are bringing on);
+- the **+ guest** chip at the top right of your own picture, for somebody you did not pick from the chat.
+
+MOBS makes a random room (`mobs-` plus 20 characters, about 99 bits: the room name is the only lock), opens it in the guest card, and **puts the invite on your clipboard**. **MOBS never messages
+anybody**: you paste the invite to the viewer yourself (a reply or a DM on X). The invite is a plain `https://meet.jit.si/...` link with no settings, so the viewer picks their own camera and microphone,
+or just the microphone, and never shares a screen. On the card, hover for **copy invite** and **end call**. One guest at a time. The call ends with the dock (no dock, no call) and when MOBS quits.
+
+**What the viewers hear and see.** The guest's voice plays like any other sound, so it reaches the broadcast only as **desktop sound** (the card warns in yellow while that is off), and **wear
+headphones** or the guest comes out of your speakers into your mic. The guest's picture is on the stream because the dock is on the screen. **Your camera is not in the call**: a webcam can be open in
+only one program and the dock holds it, so the guest hears you and sees you only the way viewers do, on the stream. The page is given your microphone and nothing else: camera, screen sharing,
+the clipboard and plug-ins are refused.
+
+**Signing in (once, before you go live).** meet.jit.si wants a signed-in host to open a room (its sign-in window offered Google and GitHub on 2026-10-10; the guest needs no account). Jitsi's "I am the host" opens a small sign-in
+dialog, remembered in MOBS's own web profile (`~/.local/share/mobs/mobs/QtWebEngine/mobs-call`, apart from your browsers). **A sign-in window never opens while a take is running**, because viewers would
+watch you type: the card says so, and you sign in before pressing GO LIVE. Google is known to refuse sign-in from embedded browsers (not tried here); use GitHub if it turns you away.
+
+**Tested.** gus: unit tests (`tst_guestcall`: room, link, invite, who-is-in-the-room reports, the sign-in guard, and the page script run in a JS engine against a stand-in Jitsi) and UI scenarios (`check_ui.py "call:"`: invite from the chat, the chips, the stacking at five window sizes, a REAL call card loaded offscreen, and a click that must reach the page; the last two were each shown to fail on the bug they guard). In the practice VM on a real Hyprland with a real pointer: hover shows "invite NAME", a click opens the call and puts the invite on the clipboard, the dock grows a guest card, the real meet.jit.si page renders in it and says "no moderators have yet arrived", a click on its Log-in opens the sign-in dialog (Google and GitHub), and quitting or ending the call with a live page exits cleanly with no web engine process left. **Not tested:** signing in (no credential was typed anywhere), a real guest joining, the microphone grant, the guest's voice on the broadcast, Google's refusal in an embedded browser. Do those WITH the person whose account it is, at the desk, before a broadcast depends on it.
+
+**Needs `qt6-webengine`** to build and to run. The web engine is only loaded when a call starts. The code is `src/guestcall.cpp` (room, invite, clipboard, who is in the room, the sign-in guard) and
+`qml/GuestCall.qml` (the web view). The invite chips live in the dock layer of `qml/PipWindow.qml`: the pointer is read once there, because a hover handler inside a chat row never received it from under the dock's own.
 
 ## The log
 
@@ -278,5 +305,6 @@ Going-live switches: `MOBS_STREAM_KEY_FILE` (where the key is kept; scripted run
 Opening-screen switches: `MOBS_SPLASH=1|0`, `MOBS_SPLASH_AT=MS` (see "The opening screen"); the `expect=splashDone:0|1` script condition reads whether it has finished.
 Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=file:/path.wav` and `MOBS_TEST_DESKTOP_AUDIO=file:/path.wav` supply generated sound to native tests. `MOBS_FAKE_BACKEND=1` is accepted only with `MOBS_SCRIPT` and exercises QML without capture. EXPERT tabs are `tab=0..5`; scripts also support `openaudio`, `audiodetails=0/1`, `micdevice=`, `desktop=0/1`, `miccheck=0/1`, `micgain=`, and `hardware=0/1`.
 
+The call: `MOBS_CALL_REAL=1` loads the real call card in a scripted run (otherwise a stand-in: no web page, no clipboard, no desktop notice), `MOBS_CALL_URL=about:blank` points it at an offline page, `MOBS_NO_CLIPBOARD=1` leaves the clipboard alone, `MOBS_CALL_DEBUG=1` writes the page's own clicks, warnings and errors to the log (and lets a local `file:///tmp/` page stand in for Jitsi). Script steps `call=NAME` (`call=` names nobody), `callend`, `callwho=a;b` (the page reports who is in the room; `callwho=` only you, `callwho=-` not in yet), `callsignin`, `piphover=NAME` and `pipclick=NAME` (a pointer move, or move and click, on the last showing item of that name in the webcam window), `pipprobe=NAME`; conditions `expect=callActive|callState|callLabel|callStatus|callInvite|callPage|callPageSaid|pipHas|pipGone` (`pipclick=callWeb` clicks the call page itself).
 Layout: `src/palette.*` (theme reader), `src/appstate.*` (screens and pick), `qml/` (components and screens), `tests/`.
 Screens are checked in the Test Drive practice VM, never on a live desktop; see `docs/app/`.

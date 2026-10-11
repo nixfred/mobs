@@ -46,9 +46,11 @@ Window {
         visible: pip.guestOn
         x: 0; y: 0; width: pip.width; height: pip.guestH
         color: "#0e1522"; clip: true
+        readonly property bool pageShown: callLoader.status === Loader.Ready && Call.pageReady   // the call's own picture replaces the placeholder once its page is up
         readonly property real hue: { let h = 7; for (let i = 0; i < Pip.guestName.length; ++i) h = (h * 31 + Pip.guestName.charCodeAt(i)) % 3600; return h / 3600 }
         Column {
             anchors.centerIn: parent; spacing: 5
+            visible: !guestCard.pageShown
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: Math.max(28, Math.min(guestCard.height * 0.4, 72)); height: width; radius: width / 2
@@ -56,13 +58,37 @@ Window {
                 Txt { anchors.centerIn: parent; text: Pip.guestName.substring(0, 1).toUpperCase(); font.pixelSize: parent.height * 0.45; font.bold: true; color: "white" }
             }
             Txt { anchors.horizontalCenter: parent.horizontalCenter; text: Pip.guestName; font.pixelSize: Math.max(11, Math.min(18, guestCard.height * 0.1)); font.bold: true }
-            Txt { anchors.horizontalCenter: parent.horizontalCenter; text: Pip.guestStatus; font.pixelSize: Math.max(10, Math.min(13, guestCard.height * 0.075)); color: Omarchy.tertiaryText }
+            Txt {   // a long line (waiting for your guest, paste the invite...) wraps inside the card instead of running out of the window
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.max(40, guestCard.width - 24)
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: guestCard.height < 100 ? 2 : 3; elide: Text.ElideRight
+                text: Pip.guestStatus; font.pixelSize: Math.max(10, Math.min(13, guestCard.height * 0.075)); color: Omarchy.tertiaryText
+            }
         }
-        Rectangle {
+        Loader {   // the call itself: a Jitsi room in a web view. Loaded only when a call starts, so the web engine costs nothing until a guest comes
+            id: callLoader
+            objectName: "callLoader"
+            anchors { left: parent.left; right: parent.right; top: parent.top; bottom: parent.bottom; bottomMargin: soundBar.visible ? soundBar.height + 16 : 0 }   // the sound warning sits BELOW the page, never over Jitsi's buttons
+            active: Call.active && !Call.standIn && pip.visible
+            source: Qt.resolvedUrl("GuestCall.qml")
+        }
+        Rectangle {   // who: over the call's own page it only shows while the pointer is on the window (Jitsi has its own title there)
             x: 8; y: 8; z: 10
             height: Math.max(20, guestCard.height * 0.1); width: guestWord.implicitWidth + 16; radius: height / 2
             color: Qt.alpha("black", 0.6)
-            Txt { id: guestWord; anchors.centerIn: parent; text: "GUEST"; font.pixelSize: Math.max(11, guestCard.height * 0.055); font.bold: true; color: "white" }
+            opacity: guestCard.pageShown && !hover.hovered ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: 160 } }
+            Txt { id: guestWord; anchors.centerIn: parent; text: guestCard.pageShown && Pip.guestName !== "guest" ? "GUEST  " + Pip.guestName : "GUEST"; font.pixelSize: Math.max(11, guestCard.height * 0.055); font.bold: true; color: "white" }
+        }
+        Rectangle {   // their voice reaches the broadcast as desktop sound: say so when that is off, because nothing else will
+            id: soundBar
+            objectName: "callSoundNote"
+            visible: Call.active && !Prefs.desktopOn && (Call.joined || Call.standIn)   // only once a guest could talk: before that it would only take room from the sign-in dialog
+            z: 10
+            x: 8; y: guestCard.height - height - 8
+            height: Math.max(20, guestCard.height * 0.1); width: Math.min(guestCard.width - 16, soundNote.implicitWidth + 16); radius: height / 2
+            color: Qt.alpha("black", 0.72); border.width: 1; border.color: Omarchy.yellow
+            Txt { id: soundNote; anchors.centerIn: parent; width: parent.width - 12; text: "desktop sound is off: viewers cannot hear your guest"; elide: Text.ElideRight; font.pixelSize: Math.max(10, guestCard.height * 0.05); font.bold: true; color: Omarchy.yellow }
         }
     }
     Rectangle {   // you
@@ -100,6 +126,8 @@ Window {
         }
     }
     ChatPanel {   // the conversation, under you
+        id: chatCard
+        onMoved: if (dock) dock.follow()
         visible: pip.chatOn
         x: 0; y: pip.chatY
         width: pip.width; height: Math.max(0, pip.height - y)
@@ -110,9 +138,21 @@ Window {
         id: dock
         anchors.fill: parent
         z: 50
-        HoverHandler { id: hover }
-        Item {   // a plain drag anywhere inside the edge zones moves the whole stack
-            anchors { fill: parent; margins: 12 }
+        // Which chat message is the pointer on? The pointer is read HERE, once, for the whole window; the invite chip below floats over that message.
+        property bool onMessage: false
+        property string inviteName: ""        // the message last pointed at, kept so the chip can still be tapped while it fades
+        property real inviteTop: 0
+        property real inviteHeight: 0
+        function follow() {
+            let row = null
+            if (hover.hovered && pip.chatOn && !Call.active) row = chatCard.rowAt(hover.point.position.x - chatCard.x, hover.point.position.y - chatCard.y)
+            onMessage = row !== null
+            if (row) { inviteName = row.name; inviteTop = chatCard.y + row.top; inviteHeight = row.height }
+        }
+        HoverHandler { id: hover; blocking: false; onPointChanged: dock.follow(); onHoveredChanged: dock.follow() }
+        Item {   // a plain drag on your webcam or the chat moves the whole stack. Not over the call page: a drag handler on top of a web page swallows its clicks
+                 // (found with a real pointer: Jitsi's buttons did nothing), so that card is left alone. SUPER + drag still moves the window from anywhere.
+            anchors { left: parent.left; right: parent.right; top: parent.top; bottom: parent.bottom; margins: 12; topMargin: 12 + (guestCard.pageShown ? guestCard.height : 0) }
             DragHandler { target: null; onActiveChanged: if (active) pip.startSystemMove() }
         }
         component Grip: Item {
@@ -139,6 +179,43 @@ Window {
             anchors { right: parent.right; bottom: parent.bottom }
             width: 18; height: 18
             Rectangle { anchors { right: parent.right; bottom: parent.bottom; margins: 3 } width: 9; height: 9; radius: 2; color: "transparent"; border.width: 2; border.color: Qt.alpha("white", 0.6); opacity: hover.hovered ? 1 : 0; Behavior on opacity { NumberAnimation { duration: 160 } } }
+        }
+        // Calling a guest. Like the grips, these only show while the pointer is over the window.
+        component DockChip: Rectangle {
+            id: chip
+            property string label
+            property bool shown: false
+            signal tapped()
+            height: 24; width: chipText.implicitWidth + 22; radius: 12
+            color: Qt.alpha("black", chipTap.pressed ? 0.88 : 0.64)
+            border.width: 1; border.color: Qt.alpha("white", 0.28)
+            opacity: shown ? 1 : 0
+            visible: opacity > 0.01
+            Behavior on opacity { NumberAnimation { duration: 160 } }
+            Txt { id: chipText; anchors.centerIn: parent; text: chip.label; font.pixelSize: 12; font.bold: true; color: "white" }
+            TapHandler { id: chipTap; onTapped: chip.tapped() }
+        }
+        Row {   // top-right of the guest's card
+            visible: Call.active
+            x: pip.width - width - 14; y: 8
+            spacing: 6
+            DockChip { objectName: "copyInviteChip"; label: "copy invite"; shown: hover.hovered; onTapped: Call.copyInvite() }
+            DockChip { objectName: "endCallChip"; label: "end call"; shown: hover.hovered; onTapped: Call.end() }
+        }
+        DockChip {   // over the chat message the pointer is on: bring that viewer into a call, their card joins above your webcam
+            objectName: "inviteChip"
+            label: "invite " + (dock.inviteName.length > 16 ? dock.inviteName.substring(0, 15) + "..." : dock.inviteName)   // who exactly: the name is on the chip
+            visible: opacity > 0.01 && pip.chatOn
+            shown: dock.onMessage && !Call.active
+            x: chatCard.x + chatCard.width - width - 14; y: dock.inviteTop + (dock.inviteHeight - height) / 2
+            onTapped: Call.invite(dock.inviteName)
+        }
+        DockChip {   // top-right of your own card: bring somebody on without picking them from the chat
+            objectName: "addGuestChip"
+            visible: opacity > 0.01 && pip.visible
+            label: "+ guest"; shown: hover.hovered && !Call.active
+            x: pip.width - width - 14; y: pip.meY + 8
+            onTapped: Call.invite("")
         }
     }
 }

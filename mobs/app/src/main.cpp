@@ -29,6 +29,8 @@
 #include <memory>
 #include <QtQml/qqml.h>
 #include "chatmodel.h"
+#include "guestcall.h"
+#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 // Development-script fixture for rendering active UI states offscreen. It never creates media.
 // Both MOBS_SCRIPT and MOBS_FAKE_BACKEND must be explicit; ordinary launches always use libobs.
@@ -73,6 +75,7 @@ public:
 
 int main(int argc, char *argv[]) {
     qputenv("QT_MEDIA_BACKEND", "ffmpeg");   // Qt's ffmpeg multimedia backend plays the takes in the review screen
+    QtWebEngineQuick::initialize();          // the call card's web engine must be set up before the application object exists (it starts nothing until a call opens)
     QGuiApplication app(argc, argv);
     app.setApplicationName("mobs");
     app.setOrganizationName("mobs");
@@ -174,6 +177,13 @@ int main(int argc, char *argv[]) {
     ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
+    // The call with a guest, in the card above the webcam. A scripted run gets a stand-in (no web page, no clipboard, no desktop notice) unless MOBS_CALL_REAL=1.
+    GuestCall call(!qEnvironmentVariable("MOBS_SCRIPT").isEmpty() && qEnvironmentVariable("MOBS_CALL_REAL") != "1");
+    call.setTakeProbe([&] { return recorder.active(); });
+    QObject::connect(&recorder, &Engine::stateChanged, &call, &GuestCall::takeChanged);
+    QObject::connect(&call, &GuestCall::changed, &pip, [&] { pip.setGuest(call.active() ? call.label() : QString(), call.status()); });
+    QObject::connect(&pip, &PipController::changed, &call, [&] { if (!pip.wanted() && call.active()) call.end(); });   // the card belongs to the dock: no dock, no call
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &call, &GuestCall::end);                                  // the web page goes before the engine does
     QObject::connect(backend.get(), &RecorderBackend::captureSized, &pip, &PipController::setCaptureSize);   // which monitor is in the picture
     // A person working in another window needs to be TOLD: connected (and the one step left for them), dropped, not live, saved. Each state once.
     QObject::connect(&recorder, &Engine::streamChanged, &state, [&, last = QString("off")]() mutable {
@@ -228,6 +238,7 @@ int main(int argc, char *argv[]) {
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Pip", &pip);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Chat", &chat);
+    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Call", &call);
 
     QStringList qmlWarnings;
     QQmlApplicationEngine engine;
@@ -289,7 +300,15 @@ int main(int argc, char *argv[]) {
             };
             (*poll)();
         };
-        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat]() mutable {
+        auto pipItem = [](const QString &name) -> QQuickItem * {   // the LAST showing item of that name in the webcam window (the newest chat row, say)
+            QQuickWindow *pw = nullptr;
+            for (QWindow *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) pw = qobject_cast<QQuickWindow *>(w);
+            QQuickItem *hit = nullptr;
+            std::function<void(QQuickItem *)> find = [&](QQuickItem *at) { if (!at->isVisible()) return; if (at->objectName() == name) hit = at; for (auto *child : at->childItems()) find(child); };
+            if (pw) find(pw->contentItem());
+            return hit;
+        };
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &call]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -444,6 +463,15 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "chatCount") ok = chat.count() == condition[1].toInt();
                 else if (ok && condition[0] == "chatWanted") ok = pip.chatWanted() == (condition[1] == "1");
                 else if (ok && condition[0] == "guestOn") ok = pip.guestOn() == (condition[1] == "1");
+                else if (ok && condition[0] == "callActive") ok = call.active() == (condition[1] == "1");
+                else if (ok && condition[0] == "callState") ok = call.state() == condition[1];
+                else if (ok && condition[0] == "callLabel") ok = call.label() == condition[1];
+                else if (ok && condition[0] == "callStatus") ok = call.status().contains(condition[1]);
+                else if (ok && condition[0] == "callInvite") ok = call.lastInvite().contains(condition[1]);
+                else if (ok && condition[0] == "callPageSaid") ok = call.lastPageSaid().contains(condition[1]);   // debug mode: the page reported this (a click reached it)
+                else if (ok && condition[0] == "callPage") ok = (pipItem("guestCall") != nullptr) == (condition[1] == "1") && qmlWarnings.isEmpty();   // the real call card (its web view) exists, and nothing in QML complained
+                else if (ok && condition[0] == "pipHas") ok = pipItem(condition[1]) != nullptr;   // an item of that name is showing in the webcam window
+                else if (ok && condition[0] == "pipGone") ok = pipItem(condition[1]) == nullptr;
                 else if (ok && condition[0] == "messageEmpty") ok = recorder.message().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "audioTab") ok = window->findChild<QObject *>("expertPanel")->property("tab").toInt() == condition[1].toInt();
                 else if (ok && condition[0] == "splashDone") { auto *splash = window->findChild<QObject *>("splash"); ok = splash && splash->property("done").toBool() == (condition[1] == "1"); }
@@ -502,6 +530,40 @@ int main(int argc, char *argv[]) {
             }
             else if (st == "chatoff") { chat.setConfigured(false); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("guest=")) { const QStringList p = st.mid(6).split('|'); pip.setGuest(p.value(0), p.value(1)); QTimer::singleShot(0, &app, *run); }   // guest=name|status; guest= sends them away
+            else if (st.startsWith("call=")) { call.invite(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // call=name: that viewer is brought into a call (call= : nobody named)
+            else if (st == "callend") { call.end(); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("callwho=")) {   // callwho=a;b : the call page reports who else is in the room (callwho= : only you), callwho=- : you are not in the room yet
+                const QString who = st.mid(8);
+                QJsonArray others;
+                if (who != "-") for (const QString &n : who.split(';', Qt::SkipEmptyParts)) others.append(QJsonObject{{"name", n}});
+                call.report(QString::fromUtf8(QJsonDocument(QJsonObject{{"v", 1}, {"joined", who != "-"}, {"others", others}}).toJson(QJsonDocument::Compact)));
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st == "callsignin") { call.signInAllowed(); QTimer::singleShot(0, &app, *run); }   // the Jitsi host sign-in asks to open a window
+            else if (st.startsWith("piphover=") || st.startsWith("pipclick=")) {   // the pointer over (or a click on) the last showing item of that name in the webcam window
+                QQuickItem *hit = pipItem(st.mid(9));
+                if (!hit) { std::fprintf(stderr, "script: nothing called %s is showing in the webcam window\n", qPrintable(st.mid(9))); app.exit(4); return; }
+                QQuickWindow *pw = hit->window();
+                const QPointF at = hit->mapToScene(QPointF(hit->width() / 2, hit->height() / 2));
+                const auto send = [&](QEvent::Type type, Qt::MouseButtons buttons) {
+                    QMouseEvent e(type, at, pw->mapToGlobal(at), type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton, buttons, Qt::NoModifier);
+                    QCoreApplication::sendEvent(pw, &e);
+                };
+                send(QEvent::MouseMove, Qt::NoButton);
+                if (st.startsWith("pipclick=")) { send(QEvent::MouseButtonPress, Qt::LeftButton); send(QEvent::MouseButtonRelease, Qt::NoButton); }
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st.startsWith("pipprobe=")) {   // what the pointer sees of a named item in the webcam window (for finding out why a hover does not show)
+                QQuickItem *hit = pipItem(st.mid(9));
+                if (!hit) std::fprintf(stderr, "probe: no %s showing\n", qPrintable(st.mid(9)));
+                else {
+                    const QPointF c = hit->mapToScene(QPointF(hit->width() / 2, hit->height() / 2));
+                    std::fprintf(stderr, "probe: %s %gx%g centre at %g,%g in a %dx%d window, opacity %g\n", qPrintable(st.mid(9)), hit->width(), hit->height(), c.x(), c.y(), hit->window()->width(), hit->window()->height(), hit->opacity());
+                    for (QObject *o : hit->children()) if (QByteArray(o->metaObject()->className()).contains("Handler"))
+                        std::fprintf(stderr, "probe:   %s hovered=%d enabled=%d\n", o->metaObject()->className(), int(o->property("hovered").toBool()), int(o->property("enabled").toBool()));
+                }
+                QTimer::singleShot(0, &app, *run);
+            }
             else if (st == "checkpip") {   // the dock's own layout: everything inside the window, and the cards stacked without overlapping
                 QQuickWindow *pw = nullptr;
                 for (QWindow *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) pw = qobject_cast<QQuickWindow *>(w);
