@@ -83,6 +83,18 @@ int main(int argc, char *argv[]) {
     QQuickWindow::setDefaultAlphaBuffer(true);   // the webcam dock is see-through between its cards once a chat or a guest joins: a surface made opaque cannot become see-through later
     MobsLog::init();   // first, so Qt's own warnings and everything below land in ~/.local/state/mobs/mobs.log
 
+    // One copy at a time. A second copy finds the webcam held by the first, takes and streams with the same key (X drops one of the two)
+    // and the stop hotkey reaches only the first: on 2026-10-12 three live takes ran at once, windows hidden, the webcam dead in all.
+    // Tests that run several copies set MOBS_NO_HOTKEY=1. (Two launches within the same few milliseconds can still both pass; the later one
+    // then fails to take the bus name and warns.)
+    if (qEnvironmentVariable("MOBS_NO_HOTKEY") != "1") {
+        if (const QString other = Control::runningCopy(); !other.isEmpty()) {
+            MobsLog::write("start", QString("another MOBS is already running (%1): this copy does not start").arg(other));
+            Notifier::send("MOBS is already running", Control::secondCopyNotice(other), true);
+            return 0;
+        }
+    }
+
     // MOBS_THEME_DIR points at a fake Omarchy "current" folder, for tests and screenshots only.
     Palette palette(qEnvironmentVariable("MOBS_THEME_DIR"));
     QSettings settings(qEnvironmentVariable("MOBS_SETTINGS", QSettings().fileName()), QSettings::IniFormat);

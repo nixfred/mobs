@@ -281,8 +281,19 @@ busctl --user call org.mobs.Control /org/mobs/Control org.mobs.Control Pause    
 
 If MOBS is not running, D-Bus starts it: copy `dist/org.mobs.Control.service` to `~/.local/share/dbus-1/services/`, replace
 `@MOBS_BIN@` with the path of the `mobs` binary, and reload the bus once (or log in again). Proven in the Test Drive VM:
-Toggle, Pause, Pause, Toggle made a valid file with the pause cut out; auto-launch started MOBS in 0.5 s; a second copy does not take
-the hotkey over. (`MOBS_NO_HOTKEY=1` stops a copy from registering.)
+Toggle, Pause, Pause, Toggle made a valid file with the pause cut out; auto-launch started MOBS in 0.5 s.
+
+**One copy at a time.** Whoever owns `org.mobs.Control` is the running MOBS. A second launch asks it for `Status`, writes
+"another MOBS is already running" to the log, sends a desktop notice and exits at once: it says whether the first copy is idle or
+mid-take ("its window is hidden so it stays out of the picture, SUPER + SHIFT + V stops the take"), and it never opens the
+webcam. Why: on 2026-10-12 three copies ran live takes together on one machine, each with its window hidden on the special
+workspace, all three holding the same webcam (a webcam serves one program, so the newest got no picture) and all three
+streaming with one key (X drops one of them); the hotkey reached only the oldest. A copy that owns the name but does not answer
+within 2 s counts as running ("not answering"). Two launches within the same few milliseconds can both pass; the later one then
+fails to take the name and warns. `MOBS_NO_HOTKEY=1` turns the guard off (tests that run several copies), and
+`MOBS_CONTROL_NAME=org.mobs.SomethingElse` moves a copy to another bus name, so a test never touches the real hotkey door.
+`check_ui.py "one copy"` runs it with real copies on a throwaway name: alone it starts, and a second copy is turned away while the
+first is idle and while it is recording.
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build

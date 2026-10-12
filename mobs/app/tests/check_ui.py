@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 binary = str(Path(sys.argv[1]).resolve())
 case_filter = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -234,4 +235,53 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           f"pick=1,review={take},split=1,expect=unsaved:0,closereview,expect=screen:2")
     check("saving clears a blocked recording prompt",
           f"pick=1,review={take},split=1,cut=0,start,expect=message:save your edit,savereview,waitsaved,expect=unsaved:0,expect=messageEmpty:1,wait=0.1,checklayout")
+    # One copy at a time (2026-10-12: three live takes at once, windows hidden, the webcam dead in all). Real session bus, but a throwaway
+    # bus name (MOBS_CONTROL_NAME), so the real hotkey door org.mobs.Control is never touched. Skipped where there is no session bus.
+    if (not case_filter or case_filter in "one copy") and shutil.which("busctl") and (os.environ.get("DBUS_SESSION_BUS_ADDRESS") or Path(f"/run/user/{os.getuid()}/bus").exists()):
+        bus_name = f"org.mobs.ControlUi{os.getpid()}"
+
+        def copy_env(tag, script):
+            e = env | {"MOBS_SETTINGS": str(root / f"{tag}.ini"), "MOBS_STREAM_KEY_FILE": str(root / f"{tag}.key"), "MOBS_LOG_FILE": str(root / f"{tag}.log"),
+                       "MOBS_CONTROL_NAME": bus_name, "MOBS_WINDOW_SIZE": "860x560", "MOBS_FAKE_BACKEND": "1", "MOBS_SCRIPT": script}
+            e.pop("MOBS_NO_HOTKEY", None)    # the whole point: these copies DO use the bus
+            Path(e["MOBS_SETTINGS"]).write_text(f"[General]\nfolder={root / 'takes'}\nreviewAfter=false\npreview=false\n")
+            return e
+
+        def copy_status():
+            r = subprocess.run(["busctl", "--user", "call", bus_name, "/org/mobs/Control", "org.mobs.Control", "Status"], capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() if r.returncode == 0 else ""
+
+        # Alone, a copy starts as always: the guard stays quiet when nobody else owns the name.
+        alone = subprocess.run([binary], env=copy_env("alone", "wait=0.1,quit"), capture_output=True, text=True, timeout=15)
+        if alone.returncode or "script: quit" not in alone.stdout or "already running" in Path(root / "alone.log").read_text():
+            raise AssertionError(f"one copy: a lone copy did not start normally\n{alone.stdout}{alone.stderr}")
+        case_count += 1
+        print("PASS one copy: alone, a copy starts as always", flush=True)
+
+        for state, first_script in (("idle", "wait=6,quit"), ("recording", "pick=1,start,expect=state:recording,wait=6,stop,waitidle,quit")):
+            first = subprocess.Popen([binary], env=copy_env(f"first-{state}", first_script), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            try:
+                for _ in range(80):    # up to 8 s for the first copy to own the name and, for the take, to be recording
+                    if f'"{state}' in copy_status():
+                        break
+                    if first.poll() is not None:
+                        raise AssertionError(f"one copy ({state}): the first copy ended early\n{first.stdout.read()}")
+                    time.sleep(0.1)
+                else:
+                    raise AssertionError(f"one copy ({state}): the first copy never said '{state}' on the bus (said {copy_status()!r})")
+                # The second copy must refuse, say why in the log, leave at once, and never run its script (which would take 3 s).
+                second = subprocess.run([binary], env=copy_env(f"second-{state}", "wait=3,quit"), capture_output=True, text=True, timeout=15)
+                second_log = Path(root / f"second-{state}.log").read_text()
+                if second.returncode or "script: quit" in second.stdout or f"another MOBS is already running ({state}" not in second_log:
+                    raise AssertionError(f"one copy ({state}): the second copy was not turned away\nexit {second.returncode}\n{second.stdout}{second.stderr}\n{second_log}")
+                if state == "idle" and "not recording" not in second_log:
+                    raise AssertionError(f"one copy (idle): the notice does not say the first copy is idle\n{second_log}")
+                if state == "recording" and ("already running a take (recording" not in second_log or "hidden" not in second_log):
+                    raise AssertionError(f"one copy (recording): the notice does not name the take and where its window went\n{second_log}")
+            finally:
+                out, _ = first.communicate(timeout=20)
+            if first.returncode != 0 or "script: quit" not in out:
+                raise AssertionError(f"one copy ({state}): the first copy was disturbed by the second\nexit {first.returncode}\n{out}")
+            case_count += 1
+            print(f"PASS one copy: a second copy is turned away while the first is {state}, and the first carries on", flush=True)
     print(f"{case_count} UI scenarios passed")

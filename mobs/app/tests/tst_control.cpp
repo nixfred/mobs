@@ -65,6 +65,25 @@ private slots:
         QCOMPARE(b.began, 0);            // no camera chosen: the engine asks for one rather than recording nothing
         QVERIFY(e.message().contains("choose a camera"));
     }
+    void aSecondCopyIsToldWhatTheFirstIsDoing() {
+        QVERIFY(Control::secondCopyNotice("idle").contains("not recording"));
+        const QString take = Control::secondCopyNotice("recording 00:12:34");
+        QVERIFY(take.contains("recording 00:12:34")); QVERIFY(take.contains("SUPER + SHIFT + V")); QVERIFY(take.contains("hidden"));
+        QVERIFY(take.contains("was not started"));
+        QVERIFY(Control::secondCopyNotice("not answering").contains("not answering"));
+    }
+    void theBusNameCanBeSwappedForATestAndFallsBackToTheRealOne() {
+        qunsetenv("MOBS_CONTROL_NAME");
+        QCOMPARE(Control::serviceName(), QString("org.mobs.Control"));
+        qputenv("MOBS_CONTROL_NAME", "org.mobs.ControlTest");
+        QCOMPARE(Control::serviceName(), QString("org.mobs.ControlTest"));
+        qunsetenv("MOBS_CONTROL_NAME");
+    }
+    void nobodyIsRunningOnANameNobodyOwns() {
+        qputenv("MOBS_CONTROL_NAME", QByteArray("org.mobs.ControlTestNobody") + QByteArray::number(QCoreApplication::applicationPid()));
+        QVERIFY(Control::runningCopy().isEmpty());     // the bus half with a real owner is checked with two real copies in check_ui.py
+        qunsetenv("MOBS_CONTROL_NAME");
+    }
     void statusReportsStateAndTime() {
         QSettings s(dir.path() + "/f.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);
         FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);
