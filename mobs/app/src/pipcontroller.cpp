@@ -58,49 +58,6 @@ void PipController::setChat(ChatModel *chat) {
     if (m_chat) connect(m_chat, &ChatModel::statusChanged, this, &PipController::changed);
 }
 
-int PipController::guestExtra(int width) { return width * 9 / 16 + 8; }
-
-QRect PipController::withGuest(const QRect &dock, const QJsonObject &monitor, bool on, bool *grewUp) {
-    const QRect area = usableArea(monitor);
-    const int extra = guestExtra(dock.width());
-    QRect r = dock;
-    if (on) {
-        const bool up = dock.top() - extra >= area.top();
-        if (up) r.setTop(dock.top() - extra); else r.setBottom(dock.bottom() + extra);
-        if (grewUp) *grewUp = up;
-        const QRect fitted = area.isEmpty() ? QRect() : fitInside(r, monitor);
-        return fitted.isNull() ? r : fitted;
-    }
-    if (grewUp && *grewUp) r.setTop(dock.top() + extra); else r.setBottom(dock.bottom() - extra);   // give back what was taken, from the same side
-    return r;
-}
-
-void PipController::setGuest(const QString &name, const QString &status) {
-    const bool was = guestOn();
-    m_guestName = name.simplified(); m_guestStatus = status;
-    MobsLog::write("pip", m_guestName.isEmpty() ? QString("the guest left the dock") : QString("guest \"%1\": %2").arg(m_guestName, status));
-    if (guestOn() != was) resizeForGuest(guestOn());
-    emit changed();
-}
-
-void PipController::resizeForGuest(bool on) {
-    if (!m_shown || !onHyprland()) return;
-    const QJsonArray clients = hyprJson({"clients", "-j"}).array();
-    const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
-    const QJsonObject c = clientAt(clients, address);
-    if (c.isEmpty()) return;
-    const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
-    const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
-    if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
-    const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
-    const QRect next = withGuest(now, monitor, on, &m_guestGrewUp);
-    const QString win = QString("window=\"address:%1\"").arg(address);
-    hyprEval(QString("hl.dispatch(hl.dsp.window.resize({x=%1,y=%2,%3}))").arg(next.width()).arg(next.height()).arg(win));
-    hyprEval(QString("hl.dispatch(hl.dsp.window.move({x=%1,y=%2,%3}))").arg(next.x()).arg(next.y()).arg(win));
-    m_placed = next;   // where WE put it, not a place the person chose
-    MobsLog::write("pip", QString("dock %1 a guest card: now %2,%3 %4x%5").arg(on ? "gained" : "lost").arg(next.x()).arg(next.y()).arg(next.width()).arg(next.height()));
-}
-
 bool PipController::testPattern() const {
     return !qEnvironmentVariable("MOBS_TEST_CAMERA").isEmpty() || m_state->camera().startsWith("fake:");
 }
@@ -332,7 +289,7 @@ void PipController::onEngineState() {
 // steps aside to a hidden workspace (the hotkey SUPER + SHIFT + V still stops it) and comes back when the take ends.
 void PipController::hideMain() {
     if (!m_prefs->stayOut() || !onHyprland()) return;
-    if (m_state->pick() != 1 && m_state->pick() != 2) return;     // the show and just-the-camera do not capture a screen with MOBS on it
+    if (m_state->pick() != 1 && m_state->pick() != 2) return;     // just-the-camera does not capture a screen with MOBS on it
     const QJsonArray clients = hyprJson({"clients", "-j"}).array();
     QJsonObject mine;
     for (const QJsonValue &v : clients) {

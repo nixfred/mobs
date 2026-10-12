@@ -27,9 +27,6 @@ class PipController : public QObject {
     Q_PROPERTY(QCameraFormat format READ format NOTIFY changed)
     Q_PROPERTY(bool testPattern READ testPattern NOTIFY changed)   // a stand-in picture instead of a camera: tests and screenshots
     Q_PROPERTY(QString title READ title CONSTANT)
-    Q_PROPERTY(bool guestOn READ guestOn NOTIFY changed)           // a promoted viewer's card sits ABOVE the webcam, in the same window
-    Q_PROPERTY(QString guestName READ guestName NOTIFY changed)
-    Q_PROPERTY(QString guestStatus READ guestStatus NOTIFY changed)
     Q_PROPERTY(bool mainHeld READ mainHeld NOTIFY heldChanged)     // MOBS's own window is kept up while the person finishes going live in X
     Q_PROPERTY(bool chatWanted READ chatWanted NOTIFY changed)     // the webcam window carries the chat card under the video
 public:
@@ -41,11 +38,6 @@ public:
     QCameraFormat format() const;
     bool testPattern() const;
     bool chatWanted() const;
-    bool guestOn() const { return !m_guestName.isEmpty() && wanted(); }
-    QString guestName() const { return m_guestName; }
-    QString guestStatus() const { return m_guestStatus; }
-    // A promoted viewer joins above you (empty name: they leave). The window grows by the guest's card, upward when there is room, so YOUR picture does not move.
-    Q_INVOKABLE void setGuest(const QString &name, const QString &status);
     void setChat(ChatModel *chat);                      // the live chat shown under the webcam, when there is a feed for it
     QString title() const { return kTitle; }
     bool mainHeld() const { return m_held; }
@@ -61,8 +53,6 @@ public:
     static QJsonObject clientAt(const QJsonArray &clients, const QString &address);
     static QJsonObject monitorById(const QJsonArray &monitors, int id);
     static QJsonObject monitorByName(const QJsonArray &monitors, const QString &name);
-    static int guestExtra(int width);   // the guest card (16:9 at that width) and the gap under it
-    static QRect withGuest(const QRect &dock, const QJsonObject &monitor, bool on, bool *grewUp);   // the dock with a guest card added (on) or taken away again
     static int chatHeightFor(int width);   // the chat card's height under a video that wide
     static QSize defaultSize(const QJsonObject &monitor, bool withChat = false);                                        // 20% of the usable width (480..1024): visible once the broadcast is scaled to 1080p
     static QRect defaultRect(const QJsonObject &monitor, const QSize &size, int margin = 24);   // top-right of the monitor's usable area
@@ -100,9 +90,6 @@ private:
     QTimer m_placeTimer;
     int m_tries = 0;
     ChatModel *m_chat = nullptr;
-    void resizeForGuest(bool on);
-    QString m_guestName, m_guestStatus;
-    bool m_guestGrewUp = false;                        // the card was added above (true) or below (false): taking it away gives back the same side
     QString m_placeKey = QStringLiteral("pipPlace");   // where this window's remembered place lives: the dock with chat has its own, the video alone keeps its own
     bool m_shown = false;
     QString m_prevActive;     // what had the keyboard when the window was about to appear

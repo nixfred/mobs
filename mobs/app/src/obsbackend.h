@@ -42,8 +42,6 @@ private:
     bool ensureGraph(const RecordSpec &spec, QString *error);
     void applyPlacement(const RecordSpec &spec);
     QString screenTokenFile() const;
-    void applyCrop();
-    bool createGuest(QString *error);
     void tickGraph();
     void dropGraph();
     bool startOutput(const RecordSpec &spec, QString *error);
@@ -76,16 +74,8 @@ private:
     RecordSpec m_spec;                      // the recording being made (quality, microphone)
     bool m_libobsUp = false, m_needScreen = true, m_needCamera = false, m_testScreen = false, m_testCamera = false;
     bool m_graphUp = false, m_previewOn = false, m_previewCb = false;
-    // "the show" (pick 4): a background, the guest's window in a tile, and the webcam in the other. The guest's window is chosen in a
-    // SECOND screen-share dialog, opened only once the first is done, so two pickers never compete.
-    bool m_needGuest = false, m_testGuest = false, m_guestTokenSaved = false, m_mainTokenSaved = false;
-    bool m_loggedScreen = false, m_loggedCamera = false, m_loggedGuest = false;
-    QString m_guestTokenFile;
-    int m_cropWish[4] = {0, 0, 0, 0}, m_cropApplied[4] = {-1, 0, 0, 0}, m_cropW = 0, m_cropH = 0;
+    bool m_loggedScreen = false, m_loggedCamera = false;
     QTimer m_graphTick;
-    QElapsedTimer m_guestWaited;
-    obs_source *m_guest = nullptr, *m_bg = nullptr;
-    obs_scene_item *m_guestItem = nullptr, *m_bgItem = nullptr;
     int m_graphPick = 0;
     bool m_graphPip = false;
     QString m_graphCamera;

@@ -7,14 +7,6 @@ Item {
     id: root
     objectName: "chatPanel"
     readonly property bool compact: width < 300      // a narrow dock drops the avatars and keeps the words
-    signal moved()                                   // the messages shifted (one arrived, the list scrolled): whatever the pointer is on may be a different one now
-    // The message under a point of this card (panel coordinates), or null: the dock above reads the pointer once for the whole window and uses this to
-    // float its "invite to talk" chip over that message. (A hover handler inside a row never received the pointer from under the dock's own.)
-    function rowAt(x, y) {
-        const p = list.mapFromItem(root, x, y)
-        const item = list.itemAt(p.x + list.contentX, p.y + list.contentY)
-        return item ? { name: item.name, top: root.mapFromItem(item, 0, 0).y, height: item.height } : null
-    }
 
     Rectangle {
         anchors.fill: parent
@@ -48,8 +40,7 @@ Item {
         spacing: 9
         model: Chat
         interactive: false                      // it follows the conversation by itself
-        onContentHeightChanged: { follow(); root.moved() }
-        onContentYChanged: root.moved()
+        onContentHeightChanged: follow()
         onHeightChanged: follow()
         function follow() { scroll.stop(); scroll.to = Math.max(0, contentHeight - height); scroll.start() }
         NumberAnimation { id: scroll; target: list; property: "contentY"; duration: 240; easing.type: Easing.OutCubic }

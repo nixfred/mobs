@@ -17,7 +17,7 @@ private slots:
     }
     static QList<CameraInfo> oneCamera() { return {{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}}; }
     void aNewUserWithACameraLandsOnScreenPlusMeWithNothingToChoose() {
-        // Fred, 2026-10-10: "All I want is screen and me." No four cards to puzzle over on the first run.
+        // Fred, 2026-10-10: "All I want is screen and me." No three cards to puzzle over on the first run.
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
         AppState a(&s, nullptr, [] { return oneCamera(); });
         QCOMPARE(a.screen(), 2); QCOMPARE(a.pick(), 2); QCOMPARE(a.pickName(), QString("screen + me"));
@@ -49,7 +49,7 @@ private slots:
     }
     void ignoresBadPicks() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);
-        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); }); a.back(); a.choose(0); a.choose(5); a.choose(-1);   // 4 is the show now
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); }); a.back(); a.choose(0); a.choose(4); a.choose(5); a.choose(-1);   // 4 was "the show", which is gone
         QCOMPARE(a.screen(), 1); QCOMPARE(a.pick(), 1);   // nothing changed: still the first-run default
     }
     void recordingShowsScreenThreeThenReturns() {
@@ -165,47 +165,16 @@ private slots:
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); s.setValue("camX", 99999); s.setValue("camY", 5); s.sync();
         AppState a(&s, nullptr, [] { return twoCameras(); }); QCOMPARE(a.cameraX(), -1);
     }
-    // ---- the show: a fourth pick, with the guest's window trimmed
-    void theShowIsAFourthPickThatNeedsACameraAndIsRemembered() {
+    // ---- "the show" (an older fourth pick) is gone: what an old settings file still says must not break anything
+    void aSavedPickOfTheRemovedShowFallsBackToScreenPlusMe() {
         QTemporaryDir d; const QString ini = d.path() + "/m.ini";
-        { QSettings s(ini, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
-          a.choose(4); QCOMPARE(a.pick(), 4); QCOMPARE(a.pickName(), QString("the show")); QCOMPARE(a.screen(), 2);
-          QVERIFY(a.hasCamera());                                     // like the other camera picks, it never starts with "no camera" when one exists
-          a.choose(5); a.choose(0); QCOMPARE(a.pick(), 4); }
-        QSettings s(ini, QSettings::IniFormat); AppState b(&s, nullptr, [] { return twoCameras(); });
-        QCOMPARE(b.pick(), 4); QCOMPARE(b.screen(), 2);               // a returning user lands on ready, with the show chosen
-    }
-    void theShowLayoutHasThreeTilesInsideTheCanvasAndNothingOverlaps() {
-        const auto l = Placement::showLayout();
-        const QRect canvas(0, 0, Placement::kCanvasW, Placement::kCanvasH);
-        for (const QRect &r : {l.main, l.guest, l.me}) QVERIFY2(canvas.contains(r), qPrintable(QString("%1,%2 %3x%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height())));
-        QVERIFY(!l.main.intersects(l.guest)); QVERIFY(!l.main.intersects(l.me)); QVERIFY(!l.guest.intersects(l.me));
-        QVERIFY(l.main.width() > 2 * l.guest.width());                 // the shared window is the main thing
-        QVERIFY(l.guest.top() < l.me.top());                           // the guest above, you below
-        QCOMPARE(l.guest.size(), l.me.size()); QVERIFY(qAbs(l.guest.width() * 9 - l.guest.height() * 16) < 16);   // 16:9 (integer rounding)
-    }
-    void theGuestCropIsClampedRememberedAndNeverCropsTheGuestAway() {
-        QTemporaryDir d; const QString ini = d.path() + "/m.ini";
-        { QSettings s(ini, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
-          QSignalSpy changed(&a, &AppState::cameraChanged);
-          a.setGuestCrop(0, 15); a.setGuestCrop(0, 15); QCOMPARE(changed.count(), 1);   // a repeat is silent
-          a.setGuestCrop(0, 500); QCOMPARE(a.guestCrop()[0].toInt(), 60);
-          a.setGuestCrop(2, 80); QCOMPARE(a.guestCrop()[2].toInt(), 30);                  // left 60 + right 30 = 90: the most the pair may take
-          a.setGuestCrop(1, -5); QCOMPARE(a.guestCrop()[1].toInt(), 0);
-          a.setGuestCrop(9, 10); a.setGuestCrop(-1, 10);                                  // not an edge
-          QCOMPARE(a.cameraSpec().guestCrop[0], 60); QCOMPARE(a.cameraSpec().guestCrop[2], 30); }
-        QSettings s(ini, QSettings::IniFormat); AppState b(&s, nullptr, [] { return twoCameras(); });
-        QCOMPARE(b.guestCrop()[0].toInt(), 60); QCOMPARE(b.guestCrop()[2].toInt(), 30);
-        QSettings bad(d.path() + "/bad.ini", QSettings::IniFormat); bad.setValue("guestCropLeft", 60); bad.setValue("guestCropRight", 60); bad.sync();
-        AppState c(&bad, nullptr, [] { return twoCameras(); });
-        QCOMPARE(c.guestCrop()[0].toInt(), 0); QCOMPARE(c.guestCrop()[2].toInt(), 0);   // a hand-edited file cannot crop the guest away
-    }
-    void thePanelDiagramForTheShowUsesTheRecordingsRectangles() {
-        QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
-        const auto l = Placement::showLayout(); const auto n = a.showRectsNormalized();
-        QCOMPARE(n["guest"].toRectF().x() * Placement::kCanvasW, double(l.guest.x()));
-        QCOMPARE(n["me"].toRectF().height() * Placement::kCanvasH, double(l.me.height()));
-        QCOMPARE(n["main"].toRectF().width() * Placement::kCanvasW, double(l.main.width()));
+        { QSettings s(ini, QSettings::IniFormat); s.setValue("pick", 4); s.setValue("camera", oneCamera().first().path); s.setValue("guestCropLeft", 30); s.setValue("guestCropRight", 60); s.sync(); }
+        QSettings s(ini, QSettings::IniFormat); AppState a(&s, nullptr, [] { return twoCameras(); });
+        QCOMPARE(a.pick(), 2); QCOMPARE(a.pickName(), QString("screen + me")); QCOMPARE(a.screen(), 2);   // a returning user still lands on ready
+        QVERIFY(a.cameraSpec().valid());                                // and the old trim keys are simply ignored
+        a.choose(4); QCOMPARE(a.pick(), 2);                             // nobody can pick it again
+        a.choose(3); QCOMPARE(a.pick(), 3); QCOMPARE(a.pickName(), QString("just my camera"));
+        QSettings again(ini, QSettings::IniFormat); QCOMPARE(again.value("pick").toInt(), 3);   // the next choice overwrites the old 4
     }
     void reviewShowsScreenFourAndRecordingWinsOverIt() {
         QTemporaryDir d; QSettings s(d.path() + "/m.ini", QSettings::IniFormat);

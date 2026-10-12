@@ -10,7 +10,6 @@ struct CameraSpec {
     int size = 1;            // 0 small, 1 medium, 2 large
     bool pip = false;        // "screen + me" with the webcam as a WINDOW on the screen: libobs captures only the screen, which then contains the webcam
     int x = -1, y = -1;      // the webcam dragged to a free place: its top-left on the 1920x1080 canvas. -1 = use the corner above
-    int guestCrop[4] = {0, 0, 0, 0};   // "the show" only: percent trimmed off the guest's window: left, top, right, bottom
     bool valid() const { return !path.isEmpty(); }
 };
 struct AudioSpec {
@@ -29,7 +28,7 @@ struct StreamSpec {
     int height = 1080;       // 720 or 1080 (16:9); the file is always 1080
 };
 struct RecordSpec {
-    int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera, 4 the show (screen + guest's window + me)
+    int pick = 1;            // 1 my screen, 2 screen + me, 3 just my camera
     QString path;            // the file to write
     CameraSpec camera;
     int crf = 23;            // x264 CRF / NVIDIA CQP (lower = bigger, better); from the quality setting
@@ -53,7 +52,7 @@ public:
     // Show what would be recorded, without recording. Call again with a new spec when the pick, camera or placement
     // changes. A recording that starts afterwards reuses the same scene (no second screen-share dialog).
     virtual void setPreview(bool on, const RecordSpec &spec) { Q_UNUSED(on); Q_UNUSED(spec); }
-    // Forget which screen (and guest window) was chosen, so the next time MOBS asks again. Never touches a take in progress.
+    // Forget which screen was chosen, so the next time MOBS asks again. Never touches a take in progress.
     virtual void forgetCapture() {}
     virtual void setMicCheck(bool on, const AudioSpec &audio) { Q_UNUSED(on); Q_UNUSED(audio); }
     virtual void checkHardware() { emit hardwareChecked(false, "hardware detection is not supported by this backend"); }

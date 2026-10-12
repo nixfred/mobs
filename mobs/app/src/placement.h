@@ -21,20 +21,4 @@ inline QRect cameraRectAt(int x, int y, int size, int canvasW = kCanvasW, int ca
     const QRect corner = cameraRect(0, size, canvasW, canvasH);          // for the size only
     return QRect(qBound(0, x, canvasW - corner.width()), qBound(0, y, canvasH - corner.height()), corner.width(), corner.height());
 }
-
-// "The show": the shared window big on the left, two tiles stacked on the right (your guest above, you below), the way a video
-// call's gallery looks. ONE definition for the recording and for the diagram in the camera panel, like cameraRect above.
-struct ShowLayout { QRect main, guest, me; };
-inline ShowLayout showLayout(int canvasW = kCanvasW, int canvasH = kCanvasH) {
-    const int pad = canvasW / 160;                    // 12 px on 1920
-    const int columnW = canvasW / 4;                  // the right-hand column of tiles
-    const int tileW = columnW - 2 * pad;
-    const int tileH = tileW * 9 / 16;
-    const int top = (canvasH - (2 * tileH + pad)) / 2;
-    ShowLayout l;
-    l.main = QRect(pad, pad, canvasW - columnW - pad, canvasH - 2 * pad);
-    l.guest = QRect(canvasW - columnW + pad, top, tileW, tileH);
-    l.me = QRect(canvasW - columnW + pad, top + tileH + pad, tileW, tileH);
-    return l;
-}
 }
