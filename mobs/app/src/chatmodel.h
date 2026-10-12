@@ -36,6 +36,7 @@ public:
     // Live Chat card. The link comes from "Copy URL" in Live Studio; MOBS never has to guess it.
     Q_INVOKABLE bool attachX(const QString &textOrLink);        // true when a Live Studio or broadcast link was found in the text and attached
     Q_INVOKABLE bool attachXFromClipboard();                    // the same, from what the person just copied
+    Q_INVOKABLE QString xClipboardNote() const;                 // what to tell the person when they copied an X link that is not a livestream link; "" when there is nothing to say
     Q_INVOKABLE void detachX();
     static QString xIdFrom(const QString &text);                // "https://x.com/i/live-studio/1PJqrNXnQywxb" gives "1PJqrNXnQywxb"; "" when it is not such a link
     static double hueFor(const QString &name);   // the same name always gets the same colour: 0..1

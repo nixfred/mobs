@@ -10,6 +10,8 @@ Rectangle {
     visible: Pip.mainHeld
     color: Omarchy.background
     property bool opened: false
+    property string linkNote: ""   // set when the person copied an X link that is not a livestream link
+    function pickUpLink() { linkNote = Chat.attachXFromClipboard() ? "" : Chat.xClipboardNote() }
     TapHandler {}   // clicks stop here: the recording screen underneath is not what this moment is about
     Connections {
         target: Engine
@@ -20,9 +22,9 @@ Rectangle {
     // The chat under the webcam: the person presses Copy URL in Live Studio, comes back here, and MOBS picks the link up by itself.
     Connections {
         target: Qt.application
-        function onStateChanged() { if (root.visible && Qt.application.state === Qt.ApplicationActive && Chat.xId === "") Chat.attachXFromClipboard() }
+        function onStateChanged() { if (root.visible && Qt.application.state === Qt.ApplicationActive && Chat.xId === "") root.pickUpLink() }
     }
-    Timer { interval: 2000; repeat: true; running: root.visible && Prefs.xSignedIn && Chat.xId === ""; onTriggered: Chat.attachXFromClipboard() }
+    Timer { interval: 2000; repeat: true; running: root.visible && Prefs.xSignedIn && Chat.xId === ""; onTriggered: root.pickUpLink() }
     Column {
         anchors.centerIn: parent
         width: Math.min(880, root.width - 48)
@@ -67,8 +69,8 @@ Rectangle {
                 objectName: "goLiveChatStatus"
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(560, root.width - 48 - 260); wrapMode: Text.WordWrap; font.pixelSize: 13
-                color: Chat.xId !== "" ? Omarchy.green : Omarchy.secondaryText
-                text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : "Chat: after Go Live press Copy URL in Live Studio and come back. MOBS picks the link up by itself."
+                color: Chat.xId !== "" ? Omarchy.green : root.linkNote !== "" ? Omarchy.yellow : Omarchy.secondaryText
+                text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : "Chat: after Go Live press Copy URL in Live Studio and come back. MOBS picks the link up by itself."
             }
             Rectangle {
                 visible: Chat.xId === ""

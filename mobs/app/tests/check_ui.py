@@ -184,6 +184,9 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a plain recording hides MOBS's window at once, with nothing to hold", "pick=1,start,expect=state:recording,wait=0.3,expect=mainHeld:0", fake_backend=True)
     check("the hold ends by itself after a while", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.3,expect=mainHeld:1,wait=1.3,expect=mainHeld:0",
           fake_backend=True, extra_env={"MOBS_HOLD_MS": "700"}, expect_log=("hiding it now",))
+    check("a copied X link that is not a livestream link gets a note, and a real one attaches the chat",
+          live_setup + "xurl=https://x.com/home,clip=https://x.com/NixFred/status/1234567890123456789,pick=1,arm=1,start,expect=state:recording,wait=3,expect=mainHeld:1,expect=goLiveNote:not a livestream link,checklayout,"
+          "clip=https://x.com/i/broadcasts/1PJqrNXnQywxb,wait=3,expect=chatXId:1PJqrNXnQywxb,expect=goLiveNote:Chat attached", fake_backend=True)
     check("stopping the stream ends the hold", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.5,expect=mainHeld:1,click=goLiveStop,waitidle,expect=mainHeld:0", fake_backend=True)
     check("arming without an address or key sends the user to set them up",
           "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=setupOpen:1,expect=setupStep:5,wait=0.1,checklayout", fake_backend=True)

@@ -97,6 +97,10 @@ private slots:
         if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
         ChatModel m;
         QGuiApplication::clipboard()->setText("nothing useful"); QVERIFY(!m.attachXFromClipboard());
+        QVERIFY(m.xClipboardNote().isEmpty());                                                              // not an X link: nothing to say, and nothing of it is shown
+        QGuiApplication::clipboard()->setText("https://x.com/NixFred/status/1234567890123456789"); QVERIFY(!m.attachXFromClipboard());
+        QVERIFY(!m.xClipboardNote().isEmpty());                                                             // an X link that is no livestream link: say what to copy instead
+        QGuiApplication::clipboard()->setText(""); QVERIFY(m.xClipboardNote().isEmpty());
         QGuiApplication::clipboard()->setText("https://x.com/i/live-studio/1PJqrNXnQywxb"); QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1PJqrNXnQywxb"));
     }
 };

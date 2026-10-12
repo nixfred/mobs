@@ -96,6 +96,16 @@ bool ChatModel::attachXFromClipboard() {
     return clipboard && attachX(clipboard->text());
 }
 
+QString ChatModel::xClipboardNote() const {
+    if (!m_xId.isEmpty()) return QString();
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    const QString text = clipboard ? clipboard->text().trimmed() : QString();
+    if (text.isEmpty() || text.size() > 400 || !xIdFrom(text).isEmpty()) return QString();   // nothing copied, something huge, or a link that would have been taken
+    static const QRegularExpression xLink(R"((?:^|[/.])(?:x|twitter)\.com/)");
+    if (!xLink.match(text).hasMatch()) return QString();                                      // whatever else was copied is none of MOBS's business, and is never shown
+    return QStringLiteral("That link is not a livestream link MOBS knows. In Live Studio open your livestream and copy the address from the browser's address bar instead.");
+}
+
 void ChatModel::detachX() {
     if (m_xId.isEmpty()) return;
     m_xId.clear();

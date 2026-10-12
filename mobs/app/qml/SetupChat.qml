@@ -12,6 +12,7 @@ Item {
     readonly property string skipText: "skip: no chat in the picture"
     property string studio: "idle"        // idle, checking, ok or failed: does Live Studio open for this account?
     property string pageTitle: web.title  // for tests: the stand-in sign-in page writes what it saw here
+    function runJs(code) { web.runJavaScript(code, function (result) { console.log("setupjs result: " + JSON.stringify(result)) }) }   // test hook: run a script on the sign-in page and say what came back
     // X's sign-in page asks the browser for a PASSKEY the moment it loads. A passkey lives on a phone or in a password manager, neither of which a small
     // embedded browser can reach, and Qt's browser waits for an answer that never comes: the page spins forever (Fred hit exactly that). So the page is
     // told, before any of its own code runs, that passkeys do not exist here. X then goes straight to the email, username and password way in.
@@ -44,7 +45,7 @@ Item {
         Txt { text: "Chat under your webcam"; font.pixelSize: 24; font.bold: true }
         Txt {
             width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13; color: Omarchy.secondaryText
-            text: "Sign in to X here, once. Then your viewers' chat shows under your webcam and moves with it. You answer out loud, so there is nothing to type."
+            text: "Sign in to X here, once. Then your viewers' chat shows under your webcam and moves with it. You answer out loud, so there is nothing to type. MOBS has its own little browser, so it cannot see the login of your normal one."
         }
         Txt {
             objectName: "setupChatStatus"
@@ -53,7 +54,7 @@ Item {
             width: parent.width; wrapMode: Text.WordWrap
             text: !Prefs.xSignedIn ? "Sign in below with your email or username and password. Passkeys and Google or Apple sign-in cannot work in this box. When you see your X home page you are done."
                 : root.studio === "ok" ? "Signed in, and Live Studio opens for your account. Press NEXT."
-                : root.studio === "failed" ? "Signed in, but Live Studio did not open here (it needs X Premium). You can still go live; the chat just will not show. Press NEXT."
+                : root.studio === "failed" ? "Signed in, but Live Studio did not open here. It needs X Premium, and X sometimes asks to sign in once more. You can still go live; the chat just will not show. Press NEXT."
                 : "Signed in. Checking that Live Studio opens for your account..."
         }
         Rectangle {
