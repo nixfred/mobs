@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("splashAt", splashAtSet ? qEnvironmentVariableIntValue("MOBS_SPLASH_AT") : -1);
     // X, inside MOBS: where its cookies are kept, the page the person signs in on, and the page of a livestream (%1 = its id). Tests point the last two at stand-in files.
     engine.rootContext()->setContextProperty("xStoragePath", qEnvironmentVariable("MOBS_WEB_DIR", cfg + "/web"));
-    engine.rootContext()->setContextProperty("xLoginUrl", qEnvironmentVariable("MOBS_X_LOGIN_URL", "https://x.com/i/flow/login"));
+    engine.rootContext()->setContextProperty("xLoginUrl", qEnvironmentVariable("MOBS_X_LOGIN_URL", "https://x.com/home"));
     engine.rootContext()->setContextProperty("xChatUrlTemplate", qEnvironmentVariable("MOBS_X_CHAT_URL", "https://studio.x.com/live/%1"));   // the page itself: x.com/i/live-studio/<id> holds it in an iframe a script cannot see into
     engine.rootContext()->setContextProperty("xStudioUrl", qEnvironmentVariable("MOBS_X_STUDIO_URL", "https://studio.x.com/live"));   // the guide opens it once after sign-in, to see that Live Studio opens for this account
     engine.rootContext()->setContextProperty("xChatTries", qEnvironmentVariableIntValue("MOBS_X_TRIES") > 0 ? qEnvironmentVariableIntValue("MOBS_X_TRIES") : 12);   // tests shorten how long the chat card is looked for

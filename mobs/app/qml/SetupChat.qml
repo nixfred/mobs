@@ -11,6 +11,7 @@ Item {
     readonly property bool canSkip: true
     readonly property string skipText: "skip: no chat in the picture"
     property string studio: "idle"        // idle, checking, ok or failed: does Live Studio open for this account?
+    property bool loadedOnce: false       // the browser first reports the address it was ASKED for (x.com/home), then X may send it to the sign-in page: only pages that really loaded count
     property string pageTitle: web.title  // for tests: the stand-in sign-in page writes what it saw here
     function runJs(code) { web.runJavaScript(code, function (result) { console.log("setupjs result: " + JSON.stringify(result)) }) }   // test hook: run a script on the sign-in page and say what came back
     // X's sign-in page asks the browser for a PASSKEY the moment it loads. A passkey lives on a phone or in a password manager, neither of which a small
@@ -70,7 +71,8 @@ Item {
                 settings.screenCaptureEnabled: false
                 settings.fullScreenSupportEnabled: false
                 settings.pluginsEnabled: false
-                onUrlChanged: Prefs.noteXUrl(url.toString())
+                onUrlChanged: if (root.loadedOnce) Prefs.noteXUrl(url.toString())   // a move inside the page (X shows the home page after the password) or a later navigation
+                onLoadingChanged: function (info) { if (info.status === WebEngineView.LoadSucceededStatus) { root.loadedOnce = true; Prefs.noteXUrl(url.toString()) } }
                 userScripts.collection: [ { name: "no passkeys", sourceCode: root.noPasskeys, injectionPoint: WebEngineScript.DocumentCreation, worldId: WebEngineScript.MainWorld, runsOnSubFrames: true } ]
                 onWebAuthUxRequested: function (request) { request.cancel() }   // a request that still arrives is refused at once, so nothing can hang
             }
