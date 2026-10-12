@@ -10,7 +10,7 @@ Rectangle {
     property string keyName
     property bool selected: false
     signal activated()
-    // The row decides the width (four cards must fit the smallest window); a narrow card uses smaller type.
+    // The row decides the width (three cards must fit the smallest window); a narrow card uses smaller type.
     width: parent && parent.cardW ? parent.cardW : 252
     readonly property bool narrow: width < 230
     height: 306

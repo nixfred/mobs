@@ -30,7 +30,6 @@
 #include <QtQml/qqml.h>
 #include "chatmodel.h"
 #include "chatrelay.h"
-#include "guestcall.h"
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 // Development-script fixture for rendering active UI states offscreen. It never creates media.
@@ -76,12 +75,12 @@ public:
 
 int main(int argc, char *argv[]) {
     qputenv("QT_MEDIA_BACKEND", "ffmpeg");   // Qt's ffmpeg multimedia backend plays the takes in the review screen
-    QtWebEngineQuick::initialize();          // the call card's web engine must be set up before the application object exists (it starts nothing until a call opens)
+    QtWebEngineQuick::initialize();          // QtWebEngine must be set up before the application object exists; kept for a later feature, it starts nothing by itself
     QGuiApplication app(argc, argv);
     app.setApplicationName("mobs");
     app.setOrganizationName("mobs");
     app.setDesktopFileName("mobs");
-    QQuickWindow::setDefaultAlphaBuffer(true);   // the webcam dock is see-through between its cards once a chat or a guest joins: a surface made opaque cannot become see-through later
+    QQuickWindow::setDefaultAlphaBuffer(true);   // the webcam dock is see-through between its cards once a chat joins: a surface made opaque cannot become see-through later
     MobsLog::init();   // first, so Qt's own warnings and everything below land in ~/.local/state/mobs/mobs.log
 
     // One copy at a time. A second copy finds the webcam held by the first, takes and streams with the same key (X drops one of the two)
@@ -201,13 +200,6 @@ int main(int argc, char *argv[]) {
         const int envPort = qEnvironmentVariable("MOBS_CHAT_RELAY_PORT").toInt(&portGiven);
         relay.start(host, quint16(portGiven ? qBound(0, envPort, 65535) : prefs.chatRelayPort()));
     }
-    // The call with a guest, in the card above the webcam. A scripted run gets a stand-in (no web page, no clipboard, no desktop notice) unless MOBS_CALL_REAL=1.
-    GuestCall call(!qEnvironmentVariable("MOBS_SCRIPT").isEmpty() && qEnvironmentVariable("MOBS_CALL_REAL") != "1");
-    call.setTakeProbe([&] { return recorder.active(); });
-    QObject::connect(&recorder, &Engine::stateChanged, &call, &GuestCall::takeChanged);
-    QObject::connect(&call, &GuestCall::changed, &pip, [&] { pip.setGuest(call.active() ? call.label() : QString(), call.status()); });
-    QObject::connect(&pip, &PipController::changed, &call, [&] { if (!pip.wanted() && call.active()) call.end(); });   // the card belongs to the dock: no dock, no call
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &call, &GuestCall::end);                                  // the web page goes before the engine does
     QObject::connect(backend.get(), &RecorderBackend::captureSized, &pip, &PipController::setCaptureSize);   // which monitor is in the picture
     // A person working in another window needs to be TOLD: connected (and the one step left for them), dropped, not live, saved. Each state once.
     QObject::connect(&recorder, &Engine::streamChanged, &state, [&, last = QString("off")]() mutable {
@@ -262,7 +254,6 @@ int main(int argc, char *argv[]) {
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "App", &state);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Pip", &pip);
     qmlRegisterSingletonInstance("MobsCore", 1, 0, "Chat", &chat);
-    qmlRegisterSingletonInstance("MobsCore", 1, 0, "Call", &call);
 
     QStringList qmlWarnings;
     QQmlApplicationEngine engine;
@@ -301,7 +292,7 @@ int main(int argc, char *argv[]) {
     }
     // MOBS_SCRIPT drives the app itself, with no synthetic key presses (safe on a live desktop). Steps, comma separated:
     //   start | waitrec | wait=SECONDS | pause | resume | stop | waitidle | grab=/path.png | quit
-    //   pick=N | corner=N | size=N | guestcrop=EDGE:PERCENT | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
+    //   pick=N | corner=N | size=N | panel=0/1 | preview=0/1   (what the user would click, for screenshots)
     //   grabpreview=/path.png   (save the newest live-preview frame; for checks)
     //   pro=0/1 | tab=N (drawer)   quality=N | mic=0/1
     //   arm=0/1 | streamurl=URL | streamkey=KEY | streamquality=N   (going live; with the fake backend: streamdrop | streamretry | streamback)
@@ -332,7 +323,7 @@ int main(int argc, char *argv[]) {
             if (pw) find(pw->contentItem());
             return hit;
         };
-        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &call, &relay]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &relay]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -372,7 +363,6 @@ int main(int argc, char *argv[]) {
                 if (!pipWindow) { std::fprintf(stderr, "script: no webcam window to grab\n"); app.exit(4); return; }
                 std::printf("script: grabpip %d\n", int(pipWindow->grabWindow().save(st.mid(8)))); QTimer::singleShot(0, &app, *run);
             }
-            else if (st.startsWith("guestcrop=")) { const auto edgeAndPercent = st.mid(10).split(':'); if (edgeAndPercent.size() == 2) state.setGuestCrop(edgeAndPercent[0].toInt(), edgeAndPercent[1].toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("size=")) { state.setSize(st.mid(5).toInt()); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("grabpreview=")) { std::printf("script: grabpreview %d\n", int(preview.image().save(st.mid(12)))); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("pro=")) { state.setPro(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
@@ -387,7 +377,7 @@ int main(int argc, char *argv[]) {
             }
             else if (st.startsWith("key=")) {
                 const QString name = st.mid(4);
-                const int key = name == "Space" ? Qt::Key_Space : name == "Esc" ? Qt::Key_Escape : name == "P" ? Qt::Key_P : name == "4" ? Qt::Key_4 : Qt::Key_unknown;
+                const int key = name == "Space" ? Qt::Key_Space : name == "Esc" ? Qt::Key_Escape : name == "P" ? Qt::Key_P : name == "3" ? Qt::Key_3 : name == "4" ? Qt::Key_4 : Qt::Key_unknown;
                 QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
                 QCoreApplication::sendEvent(window, &press);
                 QTimer::singleShot(0, &app, *run);
@@ -476,7 +466,6 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "pipWanted") ok = pip.wanted() == (condition[1] == "1");
                 else if (ok && condition[0] == "pipShown") { bool shown = false; for (auto *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle && w->isVisible()) shown = true; ok = shown == (condition[1] == "1"); }
                 else if (ok && condition[0] == "camMoved") ok = (state.cameraX() >= 0) == (condition[1] == "1");
-                else if (ok && condition[0] == "guestCrop") { QStringList have; for (const auto &v : state.guestCrop()) have << QString::number(v.toInt()); ok = have.join('/') == condition[1]; }
                 else if (ok && condition[0] == "armed") ok = recorder.streamArmed() == (condition[1] == "1");
                 else if (ok && condition[0] == "broadcasting") ok = recorder.broadcasting() == (condition[1] == "1");
                 else if (ok && condition[0] == "streamState") ok = recorder.streamState() == condition[1];
@@ -488,14 +477,6 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "chatConnected") ok = chat.connected() == (condition[1] == "1");   // the other computer's script has called lately
                 else if (ok && condition[0] == "pipPlain") { QQuickItem *item = pipItem(condition[1]); ok = item && item->property("textFormat").toInt() == int(Qt::PlainText); }   // a stranger's words are shown as plain text
                 else if (ok && condition[0] == "chatWanted") ok = pip.chatWanted() == (condition[1] == "1");
-                else if (ok && condition[0] == "guestOn") ok = pip.guestOn() == (condition[1] == "1");
-                else if (ok && condition[0] == "callActive") ok = call.active() == (condition[1] == "1");
-                else if (ok && condition[0] == "callState") ok = call.state() == condition[1];
-                else if (ok && condition[0] == "callLabel") ok = call.label() == condition[1];
-                else if (ok && condition[0] == "callStatus") ok = call.status().contains(condition[1]);
-                else if (ok && condition[0] == "callInvite") ok = call.lastInvite().contains(condition[1]);
-                else if (ok && condition[0] == "callPageSaid") ok = call.lastPageSaid().contains(condition[1]);   // debug mode: the page reported this (a click reached it)
-                else if (ok && condition[0] == "callPage") ok = (pipItem("guestCall") != nullptr) == (condition[1] == "1") && qmlWarnings.isEmpty();   // the real call card (its web view) exists, and nothing in QML complained
                 else if (ok && condition[0] == "pipHas") ok = pipItem(condition[1]) != nullptr;   // an item of that name is showing in the webcam window
                 else if (ok && condition[0] == "pipGone") ok = pipItem(condition[1]) == nullptr;
                 else if (ok && condition[0] == "messageEmpty") ok = recorder.message().isEmpty() == (condition[1] == "1");
@@ -566,17 +547,6 @@ int main(int argc, char *argv[]) {
                 socket->connectToHost(QHostAddress::LocalHost, relay.port());
                 QTimer::singleShot(0, &app, *run);
             }
-            else if (st.startsWith("guest=")) { const QStringList p = st.mid(6).split('|'); pip.setGuest(p.value(0), p.value(1)); QTimer::singleShot(0, &app, *run); }   // guest=name|status; guest= sends them away
-            else if (st.startsWith("call=")) { call.invite(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // call=name: that viewer is brought into a call (call= : nobody named)
-            else if (st == "callend") { call.end(); QTimer::singleShot(0, &app, *run); }
-            else if (st.startsWith("callwho=")) {   // callwho=a;b : the call page reports who else is in the room (callwho= : only you), callwho=- : you are not in the room yet
-                const QString who = st.mid(8);
-                QJsonArray others;
-                if (who != "-") for (const QString &n : who.split(';', Qt::SkipEmptyParts)) others.append(QJsonObject{{"name", n}});
-                call.report(QString::fromUtf8(QJsonDocument(QJsonObject{{"v", 1}, {"joined", who != "-"}, {"others", others}}).toJson(QJsonDocument::Compact)));
-                QTimer::singleShot(0, &app, *run);
-            }
-            else if (st == "callsignin") { call.signInAllowed(); QTimer::singleShot(0, &app, *run); }   // the Jitsi host sign-in asks to open a window
             else if (st.startsWith("piphover=") || st.startsWith("pipclick=")) {   // the pointer over (or a click on) the last showing item of that name in the webcam window
                 QQuickItem *hit = pipItem(st.mid(9));
                 if (!hit) { std::fprintf(stderr, "script: nothing called %s is showing in the webcam window\n", qPrintable(st.mid(9))); app.exit(4); return; }
@@ -610,7 +580,7 @@ int main(int argc, char *argv[]) {
                     if (!item->isVisible()) return;
                     const QString name = item->objectName(), text = item->property("text").toString();
                     const QRectF box = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
-                    if (name == "pipGuestCard" || name == "pipVideoCard" || name == "chatPanel") cards.append(box);
+                    if (name == "pipVideoCard" || name == "chatPanel") cards.append(box);
                     if ((!text.isEmpty() || !name.isEmpty()) && (box.left() < -1 || box.top() < -1 || box.right() > pw->width() + 1 || box.bottom() > pw->height() + 1))
                         problems.append(name.isEmpty() ? text.left(60) : name);
                     if (name == "chatList") return;   // older messages sit scrolled out of sight inside it, on purpose

@@ -111,7 +111,7 @@ Item {
             Chip { glyph: ""; text: App.displayText + "  (change)"; clickable: true; onClicked: Engine.forgetScreen(); visible: App.pick !== 3 }
             Chip { glyph: ""; text: Prefs.micOn ? "mic on" : "mic off"; tint: Prefs.micOn ? Omarchy.accent : Omarchy.tertiaryText; clickable: true; onClicked: Prefs.setMicOn(!Prefs.micOn) }
             Chip { glyph: ""; text: "EXPERT audio"; clickable: true; onClicked: App.openAudio() }
-            Chip { glyph: ""; text: Prefs.desktopOn ? "desktop on" : (App.pick === 4 ? "desktop off: guest is silent" : "desktop off"); tint: App.pick === 4 && !Prefs.desktopOn ? Omarchy.red : Omarchy.accent; clickable: true; onClicked: Prefs.setDesktopOn(!Prefs.desktopOn) }
+            Chip { glyph: ""; text: Prefs.desktopOn ? "desktop on" : "desktop off"; tint: Omarchy.accent; clickable: true; onClicked: Prefs.setDesktopOn(!Prefs.desktopOn) }
             Chip { glyph: "⚙"; text: Prefs.customQuality ? "custom quality" : ["small file", "balanced", "high quality"][Prefs.quality]; clickable: true; onClicked: App.setPro(true) }
             Chip {
                 glyph: "\uf03d"

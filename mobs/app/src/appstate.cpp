@@ -14,13 +14,11 @@ AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObj
     const int cx = m_settings->value("camX", -1).toInt(&xOk), cy = m_settings->value("camY", -1).toInt(&yOk);
     if (xOk && yOk && cx >= 0 && cy >= 0 && cx < Placement::kCanvasW && cy < Placement::kCanvasH) { m_camX = cx; m_camY = cy; }
     m_preview = m_settings->value("preview", true).toBool();   // on: a recorder (above all a broadcaster) that cannot be seen is one you cannot trust
-    static const char *const cropKeys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
-    for (int i = 0; i < 4; ++i) m_guestCrop[i] = qBound(0, m_settings->value(cropKeys[i], 0).toInt(), 60);
-    for (int i = 0; i < 2; ++i) if (m_guestCrop[i] + m_guestCrop[i + 2] > 90) m_guestCrop[i] = m_guestCrop[i + 2] = 0;   // a hand-edited file must not crop the guest away
     m_cams = m_scan();
-    const int saved = m_settings->value("pick", 0).toInt();
-    if (saved >= 1 && saved <= 4) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
-    else {                                  // first run: no four cards to puzzle over. The whole screen and your camera in a corner is what most people want.
+    int saved = m_settings->value("pick", 0).toInt();
+    if (saved == 4) saved = 2;              // an older MOBS had a fourth pick, "the show", which is gone: screen + me is the closest
+    if (saved >= 1 && saved <= 3) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
+    else {                                  // first run: no three cards to puzzle over. The whole screen and your camera in a corner is what most people want.
         m_pick = m_cams.isEmpty() ? 1 : 2; m_screen = 2;
         if (m_pick != 1) ensureCamera();
     }
@@ -31,7 +29,6 @@ QString AppState::pickName() const {
     case 1: return "my screen";
     case 2: return "screen + me";
     case 3: return "just my camera";
-    case 4: return "the show";
     default: return {};
     }
 }
@@ -44,7 +41,7 @@ QString AppState::displayText() const {
 }
 
 void AppState::choose(int pick) {
-    if (pick < 1 || pick > 4) return;
+    if (pick < 1 || pick > 3) return;
     if (pick != 1) ensureCamera();                    // a camera pick must not start with "no camera" if one exists
     if (pick != m_pick) MobsLog::write("app", QString("pick -> %1").arg(pick));
     if (pick != m_pick) { m_pick = pick; m_settings->setValue("pick", pick); m_settings->sync(); emit pickChanged(); }
@@ -89,7 +86,6 @@ CameraSpec AppState::cameraSpec() const {
     spec.corner = m_corner;
     spec.size = m_size;
     spec.x = m_camX; spec.y = m_camY;
-    for (int i = 0; i < 4; ++i) spec.guestCrop[i] = m_guestCrop[i];
     return spec;
 }
 
@@ -155,29 +151,6 @@ QRectF AppState::cameraRectNormalized() const {
     const QRect r = m_camX >= 0 ? Placement::cameraRectAt(m_camX, m_camY, m_size) : Placement::cameraRect(m_corner, m_size);
     return QRectF(double(r.x()) / Placement::kCanvasW, double(r.y()) / Placement::kCanvasH,
                   double(r.width()) / Placement::kCanvasW, double(r.height()) / Placement::kCanvasH);
-}
-
-QVariantMap AppState::showRectsNormalized() const {
-    const auto l = Placement::showLayout();
-    const auto norm = [](const QRect &r) {
-        return QRectF(double(r.x()) / Placement::kCanvasW, double(r.y()) / Placement::kCanvasH,
-                      double(r.width()) / Placement::kCanvasW, double(r.height()) / Placement::kCanvasH);
-    };
-    return {{"main", norm(l.main)}, {"guest", norm(l.guest)}, {"me", norm(l.me)}};
-}
-
-QVariantList AppState::guestCrop() const { return {m_guestCrop[0], m_guestCrop[1], m_guestCrop[2], m_guestCrop[3]}; }
-
-void AppState::setGuestCrop(int edge, int percent) {
-    if (edge < 0 || edge > 3) return;
-    const int opposite = (edge + 2) % 4;
-    percent = qBound(0, percent, qMin(60, 90 - m_guestCrop[opposite]));   // the two opposite edges together may never take more than 90%
-    if (percent == m_guestCrop[edge]) return;
-    static const char *const keys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
-    m_guestCrop[edge] = percent;
-    m_settings->setValue(keys[edge], percent);
-    m_settings->sync();
-    emit cameraChanged();
 }
 
 void AppState::setCameraPanel(bool open) {

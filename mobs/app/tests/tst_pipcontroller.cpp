@@ -69,7 +69,7 @@ private slots:
         QCOMPARE(PipController::defaultSize(mon(3440, 1440, 1.0)), QSize(688, 387));
         QCOMPARE(PipController::defaultSize(mon(2560, 1600, 1.6)), QSize(480, 270));     // measured in layout units, not pixels
     }
-    // ---- the dock: chat under you, a guest above you
+    // ---- the dock: chat under you
     void withChatTheDefaultSizeKeepsTheVideoAt16By9AndAddsTheChatCardUnderneath() {
         const auto mon = [](int w, int h, double scale) { return QJsonObject{{"x", 0}, {"y", 0}, {"width", w}, {"height", h}, {"scale", scale}, {"reserved", QJsonArray{0, 43, 0, 0}}}; };
         QCOMPARE(PipController::defaultSize(mon(5120, 2160, 1.0), true), QSize(1024, 576 + 374));
@@ -80,24 +80,6 @@ private slots:
         QCOMPARE(PipController::chatHeightFor(160), 220);       // never too short to read
         QCOMPARE(PipController::chatHeightFor(1024), 374);
         QCOMPARE(PipController::chatHeightFor(4000), 480);      // never taller than that
-    }
-    void aGuestCardAddsAVideoAndAGapAndGrowsUpwardWhenThereIsRoomSoYouDoNotMove() {
-        QCOMPARE(PipController::guestExtra(480), 278); QCOMPARE(PipController::guestExtra(1024), 584);
-        const QJsonObject m = PipController::monitorById(monitors(), 1);      // usable area starts below the 40 px bar
-        const QRect dock(1500, 400, 480, 500);
-        bool up = false;
-        const QRect with = PipController::withGuest(dock, m, true, &up);
-        QVERIFY(up); QCOMPARE(with, QRect(1500, 400 - 278, 480, 500 + 278));
-        QCOMPARE(with.bottom(), dock.bottom());                               // YOUR part of the stack stays exactly where it was on the screen
-        QCOMPARE(PipController::withGuest(with, m, false, &up), dock);         // and the guest leaving gives it all back
-    }
-    void withNoRoomAboveTheGuestCardGrowsDownwardAndLeavesTheSameWay() {
-        const QJsonObject m = PipController::monitorById(monitors(), 1);
-        const QRect dock(1500, 100, 480, 500);
-        bool up = true;
-        const QRect with = PipController::withGuest(dock, m, true, &up);
-        QVERIFY(!up); QCOMPARE(with, QRect(1500, 100, 480, 500 + 278));
-        QCOMPARE(PipController::withGuest(with, m, false, &up), dock);
     }
     void aPlaceIsRememberedAsTextAndBadTextIsRefused() {
         QRect r; QString m;
@@ -131,7 +113,6 @@ private slots:
         PipController pip(&st, &e, &prefs, &s);
         st.choose(1); e.setPreview(true, 1); QVERIFY(!pip.wanted());        // my screen: no webcam
         st.choose(3); e.setPreview(true, 3); QVERIFY(!pip.wanted());        // just my camera: libobs shows it full frame
-        st.choose(4); e.setPreview(true, 4); QVERIFY(!pip.wanted());        // the show: its own layout
         QSettings s2(dir.path() + "/c.ini", QSettings::IniFormat); Settings prefs2(&s2); AppState none(&s2, nullptr, [] { return QList<CameraInfo>(); });
         none.choose(2); Engine e2(&b, dir.path()); PipController pip2(&none, &e2, &prefs2, &s2); QVERIFY(!pip2.wanted());   // no camera to show
     }

@@ -21,7 +21,6 @@ class AppState : public QObject {
     Q_PROPERTY(bool hasCamera READ hasCamera NOTIFY cameraChanged)
     Q_PROPERTY(int corner READ corner NOTIFY cameraChanged)              // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     Q_PROPERTY(int size READ size NOTIFY cameraChanged)                  // 0 small, 1 medium, 2 large
-    Q_PROPERTY(QVariantList guestCrop READ guestCrop NOTIFY cameraChanged)    // "the show": percent trimmed off the guest's window (left, top, right, bottom)
     Q_PROPERTY(bool cameraPanel READ cameraPanel NOTIFY cameraPanelChanged)
     Q_PROPERTY(int expertTab READ expertTab NOTIFY proChanged)
     Q_PROPERTY(bool pro READ pro NOTIFY proChanged)                       // the Pro drawer is open
@@ -60,9 +59,6 @@ public:
     Q_INVOKABLE void moveCamera(double nx, double ny, bool done);
     int cameraX() const { return m_camX; }
     int cameraY() const { return m_camY; }
-    Q_INVOKABLE QVariantMap showRectsNormalized() const;   // {main, guest, me} for "the show", 0..1 of the canvas
-    QVariantList guestCrop() const;
-    Q_INVOKABLE void setGuestCrop(int edge, int percent);  // edge 0 left, 1 top, 2 right, 3 bottom; 0..60, and opposite edges never meet
     Q_INVOKABLE void setCameraPanel(bool open);
     Q_INVOKABLE void setPreview(bool on);
     Q_INVOKABLE void setPro(bool open);
@@ -82,7 +78,6 @@ private:
     QList<CameraInfo> m_cams;
     QString m_camera;
     int m_corner = 1, m_size = 1;
-    int m_guestCrop[4] = {0, 0, 0, 0};
     int m_camX = -1, m_camY = -1;           // a dragged position (canvas pixels); -1 = the chosen corner
     bool m_panel = false, m_preview = true, m_pro = false;
     int m_expertTab = 0;

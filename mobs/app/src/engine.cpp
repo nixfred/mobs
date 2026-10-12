@@ -103,7 +103,7 @@ QString Engine::recordingPathFor(const QString &dir, const QString &stamp) {
 
 void Engine::start(int pick) {
     if (m_state != Idle) return;
-    if (pick < 1 || pick > 4) return;
+    if (pick < 1 || pick > 3) return;
     if (m_startGuard) {
         const QString problem = m_startGuard();
         if (!problem.isEmpty()) { setMessage(problem); return; }
@@ -201,7 +201,7 @@ void Engine::onStarted() {
 
 void Engine::forgetScreen() {
     if (active()) return;
-    MobsLog::write("engine", "change screen: forgetting the chosen screen and guest window");
+    MobsLog::write("engine", "change screen: forgetting the chosen screen");
     resetPicture(true);   // a new screen is a new picture: no verdict carries over
     m_backend->forgetCapture();
 }
@@ -325,7 +325,7 @@ void Engine::applyPreview() {
     const bool live = m_state == Recording || m_state == Paused;
     const int pick = live ? m_recPick : m_previewPick;
     const CameraSpec cam = m_camera ? m_camera() : CameraSpec{};
-    const bool usable = pick >= 1 && pick <= 4 && (pick == 1 || cam.valid());
+    const bool usable = pick >= 1 && pick <= 3 && (pick == 1 || cam.valid());
     const bool on = (m_previewWish || live) && usable;
     const bool wasOn = m_previewing;
     if (on != m_previewing) { m_previewing = on; emit previewingChanged(); }

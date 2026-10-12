@@ -228,9 +228,12 @@ private slots:
     }
     void unknownPicksAreIgnored() {
         FakeBackend b; Engine e(&b, dir.path());
-        e.start(0); e.start(5); e.start(-1);   // 4 is the show now
+        e.setCameraProvider([] { CameraSpec c; c.path = "cam"; return c; });   // a camera is there, so a camera is never the reason
+        e.start(0); e.start(4); e.start(5); e.start(-1);   // 4 was "the show", which is gone
         QCOMPARE(b.began, 0);
         QVERIFY(e.message().isEmpty());
+        e.setPreview(true, 4); QVERIFY(!e.previewing());
+        e.setPreview(true, 5); QVERIFY(!e.previewing());
     }
     void startIsIgnoredWhileBusy() {
         FakeBackend b; Engine e(&b, dir.path());
@@ -514,22 +517,6 @@ private slots:
         QVERIFY(b.previewCalls > calls); QVERIFY(b.previewOn);
         QCOMPARE(b.previewSpec.camera.x, 400); QCOMPARE(b.previewSpec.camera.y, 300);   // the backend is told the new place mid-take
         QCOMPARE(e.state(), QString("recording"));    // and the take itself is untouched
-    }
-    // ---- the show (pick 4)
-    void theShowNeedsACameraLikeTheOtherCameraPicks() {
-        FakeBackend b; Engine e(&b, dir.path()); QSignalSpy needed(&e, &Engine::cameraNeeded);
-        e.start(4);
-        QCOMPARE(b.began, 0); QCOMPARE(needed.count(), 1); QVERIFY(e.message().contains("camera"));
-        e.setCameraProvider([] { CameraSpec c; c.path = "cam"; c.guestCrop[0] = 20; return c; });
-        e.start(4);
-        QCOMPARE(b.began, 1); QCOMPARE(b.lastPick, 4); QCOMPARE(b.lastSpec.camera.guestCrop[0], 20);   // the trim travels with the take
-    }
-    void theShowHasALivePreviewWithItsTrim() {
-        FakeBackend b; Engine e(&b, dir.path());
-        e.setCameraProvider([] { CameraSpec c; c.path = "cam"; c.guestCrop[2] = 35; return c; });
-        e.setPreview(true, 4);
-        QVERIFY(e.previewing()); QVERIFY(b.previewOn); QCOMPARE(b.previewSpec.pick, 4); QCOMPARE(b.previewSpec.camera.guestCrop[2], 35);
-        e.setPreview(true, 5); QVERIFY(!e.previewing());                // not a pick
     }
     // ---- going live
     static StreamSpec target() { StreamSpec s; s.url = "rtmp://live.example/x"; s.key = "secret-key-1"; s.kbps = 6000; s.height = 1080; return s; }
