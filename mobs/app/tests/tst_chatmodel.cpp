@@ -1,4 +1,6 @@
 #include "chatmodel.h"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -66,6 +68,35 @@ private slots:
         ChatModel m; m.add("1", "ana", "x"); QSignalSpy counted(&m, &ChatModel::countChanged);
         m.clear(); QCOMPARE(m.count(), 0); QCOMPARE(counted.count(), 1);
         m.clear(); QCOMPARE(counted.count(), 1);
+    }
+    // ---- the chat of the person's own livestream, shown by X's own page
+    void aLiveStudioLinkIsFoundAndNothingElseIsTakenForOne() {
+        const QString id = "1PJqrNXnQywxb";
+        QCOMPARE(ChatModel::xIdFrom("https://x.com/i/live-studio/" + id), id);
+        QCOMPARE(ChatModel::xIdFrom("  https://x.com/i/broadcasts/" + id + "?s=20 \n"), id);
+        QCOMPARE(ChatModel::xIdFrom("https://studio.x.com/i/live-studio/" + id), id);
+        QCOMPARE(ChatModel::xIdFrom("look: https://twitter.com/i/broadcasts/" + id + "/ ok"), id);
+        for (const char *no : {"", "hello", "1PJqrNXnQywxb", "https://x.com/home", "https://x.com/i/live-studio/short", "https://x.com/i/live-studio/",
+                               "https://evilx.com/i/live-studio/1PJqrNXnQywxb", "https://x.com.evil.example/i/live-studio/1PJqrNXnQywxb", "https://x.com/i/spaces/1PJqrNXnQywxb"})
+            QVERIFY2(ChatModel::xIdFrom(no).isEmpty(), no);
+    }
+    void attachingTheXChatMakesTheCardAndDetachingTakesItAway() {
+        ChatModel m; QSignalSpy changed(&m, &ChatModel::statusChanged);
+        QVERIFY(!m.configured()); QVERIFY(m.xId().isEmpty());
+        QVERIFY(!m.attachX("not a link")); QVERIFY(!m.configured());
+        QVERIFY(m.attachX("https://x.com/i/live-studio/1PJqrNXnQywxb"));
+        QCOMPARE(m.xId(), QString("1PJqrNXnQywxb")); QVERIFY(m.configured()); QVERIFY(m.connected()); QVERIFY(!m.demo());
+        const int announced = changed.count();
+        QVERIFY(m.attachX("https://x.com/i/broadcasts/1PJqrNXnQywxb")); QCOMPARE(changed.count(), announced);   // the same livestream again: nothing to announce
+        m.detachX(); QVERIFY(m.xId().isEmpty()); QVERIFY(!m.configured());                                  // the card existed only because of it
+        ChatModel relay; relay.setConfigured(true);                                                          // a chat that is there for another reason keeps its card
+        QVERIFY(relay.attachX("https://x.com/i/live-studio/1PJqrNXnQywxb")); relay.detachX(); QVERIFY(relay.configured());
+    }
+    void aLinkOnTheClipboardIsAttachedOnlyOnTheOffscreenPlatform() {
+        if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
+        ChatModel m;
+        QGuiApplication::clipboard()->setText("nothing useful"); QVERIFY(!m.attachXFromClipboard());
+        QGuiApplication::clipboard()->setText("https://x.com/i/live-studio/1PJqrNXnQywxb"); QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1PJqrNXnQywxb"));
     }
 };
 

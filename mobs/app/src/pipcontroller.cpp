@@ -32,6 +32,13 @@ PipController::PipController(AppState *state, Engine *engine, Settings *prefs, Q
     connect(&m_placeTimer, &QTimer::timeout, this, &PipController::tryPlace);
     connect(m_engine, &Engine::previewingChanged, this, [this] { rememberActive(); emit changed(); });
     connect(m_engine, &Engine::stateChanged, this, &PipController::onEngineState);
+    m_holdTimer.setSingleShot(true);
+    m_holdTimer.setInterval(qEnvironmentVariableIntValue("MOBS_HOLD_MS") ?: 180000);   // tests shorten it
+    connect(&m_holdTimer, &QTimer::timeout, this, [this] {
+        MobsLog::write("pip", "MOBS's window was kept up for a few minutes while going live: hiding it now");
+        Notifier::send("MOBS: window hidden", "MOBS stepped out of the picture. SUPER + SHIFT + V stops the stream.");
+        hideMainNow();
+    });
     connect(m_state, &AppState::pickChanged, this, &PipController::changed);
     connect(m_state, &AppState::screenChanged, this, &PipController::changed);
     connect(m_state, &AppState::cameraChanged, this, &PipController::changed);
@@ -290,11 +297,35 @@ void PipController::rememberWhereItWasLeft() {
     m_prevActive.clear();
 }
 
+// A broadcast keeps MOBS's window up until the person says they pressed Go live in X: the steps for it are ON that window. A plain recording
+// has nothing to finish, so it hides at once as before.
+void PipController::holdMain() {
+    m_held = true;
+    emit heldChanged();
+    m_holdTimer.start();
+    MobsLog::write("pip", "going live: MOBS's window stays up until you press \"I'm live\" (or a few minutes pass)");
+    Notifier::send("MOBS: now finish in X", "Open Live Studio, press New Livestream, pick your source, choose Public and press Go Live. Then press I'M LIVE in MOBS.");
+}
+
+void PipController::releaseHold() {
+    m_holdTimer.stop();
+    if (!m_held) return;
+    m_held = false;
+    emit heldChanged();
+}
+
+void PipController::hideMainNow() {
+    const bool wasHeld = m_held;
+    releaseHold();
+    if (wasHeld && m_engine->state() == "recording" && !m_mainHidden) hideMain();
+}
+
 void PipController::onEngineState() {
     const QString st = m_engine->state();
     if (st == "idle") { m_gaveUp = false; m_reopens.clear(); }   // the next take starts with a clean slate
-    if (st == "recording" && !m_mainHidden) hideMain();
-    else if (st == "idle" && m_mainHidden) restoreMain();
+    if (st == "recording" && !m_mainHidden && !m_held) { if (m_engine->streamRequested() && m_prefs->stayOut()) holdMain(); else hideMain(); }
+    else if (st == "idle") { releaseHold(); if (m_mainHidden) restoreMain(); }
+    else if (st == "stopping") releaseHold();
 }
 
 // A screen capture shows everything on that screen, MOBS's own window included: a stream of MOBS showing the stream. So while a take records, MOBS's window

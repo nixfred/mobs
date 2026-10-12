@@ -1,4 +1,5 @@
 import QtQuick
+import QtWebEngine
 import MobsCore
 
 // The MOBS window. Screens so far: choose and ready. Everything follows the live Omarchy theme.
@@ -48,7 +49,7 @@ Window {
         enabled: !win.confirmQuit && !win.confirmStopQuit
         id: header
         anchors { top: parent.top; left: parent.left; right: parent.right }
-        stateWord: App.screen === 1 ? "new" : App.screen === 3 ? (Engine.broadcasting && Engine.state === "recording" ? "LIVE" : Engine.state) : App.screen === 4 ? "review" : "ready"
+        stateWord: App.setupOpen ? "setup" : App.screen === 1 ? "new" : App.screen === 3 ? (Engine.broadcasting && Engine.state === "recording" ? "LIVE" : Engine.state) : App.screen === 4 ? "review" : "ready"
     }
     ChooseScreen {
         objectName: "contentScreen"
@@ -91,7 +92,6 @@ Window {
         Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "Ctrl" } Key { text: "S" } Txt { text: "save"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
         Row { spacing: 8; visible: !App.pro && App.screen === 4; Key { text: "Esc" } Txt { text: "done"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
         Row { spacing: 8; visible: !App.pro && App.screen === 2; Key { text: "P" } Txt { text: "EXPERT"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
-        Row { spacing: 8; visible: !App.pro && App.screen === 2; Key { text: "Esc" } Txt { text: "change what we're making"; color: Omarchy.tertiaryText; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter } }
     }
 
     Rectangle {
@@ -129,6 +129,11 @@ Window {
             }
         }
     }
+    SetupGuide {   // the guided setup covers everything under the header, the footer included: its own keys are NEXT and BACK
+        id: setupGuide
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        z: 30
+    }
     SplashScreen { id: splash }
     PipWindow { id: pipWindow }
     Item {
@@ -138,6 +143,7 @@ Window {
             if (!splash.done) { splash.skip(); e.accepted = true; return }   // the opening screen eats the first key, so it can never start a recording
             if (win.confirmStopQuit) { if (e.key === Qt.Key_Escape) win.confirmStopQuit = false; e.accepted = true; return }
             if (win.confirmQuit) { if (e.key === Qt.Key_Escape) win.confirmQuit = false; e.accepted = true; return }
+            if (App.setupOpen) { setupGuide.handleKey(e); e.accepted = true; return }
             if (App.pro) {
                 if (e.key === Qt.Key_Escape || e.key === Qt.Key_P) App.setPro(false)
                 e.accepted = true
@@ -155,7 +161,16 @@ Window {
             else if (App.screen === 3 && e.key === Qt.Key_Space) Engine.togglePause()
             else if (App.screen === 3 && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) Engine.stop()
             else if (App.screen === 4) reviewScreen.handleKey(e)
-            else if (App.screen === 2 && e.key === Qt.Key_Escape) { if (App.cameraPanel) App.setCameraPanel(false); else App.back() }
+            else if (App.screen === 2 && e.key === Qt.Key_Escape) { if (App.cameraPanel) App.setCameraPanel(false) }   // easy mode has no "what are we making" page: screen + me, your whole screen
         }
+    }
+    // MOBS's own browser profile for X: the person signs in once (setup guide) and the chat card reuses it. Declared last on purpose: the web pages that
+    // use it are deleted first, and a profile must outlive them. Its folder is MOBS_WEB_DIR in tests, so a test never writes into a real profile.
+    WebEngineProfile {
+        id: xProfile
+        storageName: "mobs-x"
+        offTheRecord: false
+        persistentStoragePath: xStoragePath
+        persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
     }
 }

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Live Studio / X (a stand-in page for tests: the shape of the real page, none of its content)</title>
+<style>
+  body { background: #000; color: #eee; font-family: sans-serif; margin: 0 }
+  .nav { width: 200px; float: left }
+  .main { margin-left: 220px }
+  .card { border: 1px solid #333; border-radius: 12px; padding: 12px; margin: 8px; min-height: 200px }
+  .foot { height: 44px }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="nav"><div>Home</div><div>Explore</div><div>Notifications</div></div>
+  <div class="main">
+    <div class="card" id="details"><div><span>Details</span></div><div>Visibility: Private</div></div>
+    <div class="grid">
+      <div class="card" id="chat">
+        <div class="head"><span>Live Chat</span></div>
+        <div class="list"><div>ana: hello there</div><div>bo: what theme is that?</div></div>
+        <div class="foot"><input placeholder="Send a message..."></div>
+      </div>
+      <div class="card" id="viewers"><div><span>Concurrent viewers</span></div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

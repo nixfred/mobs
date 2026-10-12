@@ -1,5 +1,9 @@
 #include "chatmodel.h"
+#include "mobslog.h"
 #include <QChar>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QRegularExpression>
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -65,4 +69,35 @@ void ChatModel::clear() {
     m_items.clear();
     endResetModel();
     emit countChanged();
+}
+
+QString ChatModel::xIdFrom(const QString &text) {
+    // x.com or twitter.com, then /i/live-studio/ or /i/broadcasts/, then the id. The id must follow a slash or a dot, so "evilx.com/..." never matches.
+    static const QRegularExpression re(R"((?:^|[/.])(?:x|twitter)\.com/i/(?:live-studio|broadcasts)/([A-Za-z0-9]{8,24})(?:[/?#\s]|$))");
+    const QRegularExpressionMatch m = re.match(text.trimmed());
+    return m.hasMatch() ? m.captured(1) : QString();
+}
+
+bool ChatModel::attachX(const QString &textOrLink) {
+    const QString id = xIdFrom(textOrLink);
+    if (id.isEmpty()) return false;
+    if (id == m_xId) return true;
+    m_xId = id;
+    if (!m_configured) { m_configured = true; m_xConfigured = true; }
+    m_demo = false; m_connected = true; m_status.clear();
+    MobsLog::write("chat", "X chat attached: the card under the webcam shows the Live Chat of your livestream");   // never the link itself
+    emit statusChanged();
+    return true;
+}
+
+bool ChatModel::attachXFromClipboard() {
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    return clipboard && attachX(clipboard->text());
+}
+
+void ChatModel::detachX() {
+    if (m_xId.isEmpty()) return;
+    m_xId.clear();
+    if (m_xConfigured) { m_configured = false; m_xConfigured = false; m_connected = false; m_status = QStringLiteral("chat is not connected"); }
+    emit statusChanged();
 }

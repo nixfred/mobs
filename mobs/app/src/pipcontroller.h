@@ -30,6 +30,7 @@ class PipController : public QObject {
     Q_PROPERTY(bool guestOn READ guestOn NOTIFY changed)           // a promoted viewer's card sits ABOVE the webcam, in the same window
     Q_PROPERTY(QString guestName READ guestName NOTIFY changed)
     Q_PROPERTY(QString guestStatus READ guestStatus NOTIFY changed)
+    Q_PROPERTY(bool mainHeld READ mainHeld NOTIFY heldChanged)     // MOBS's own window is kept up while the person finishes going live in X
     Q_PROPERTY(bool chatWanted READ chatWanted NOTIFY changed)     // the webcam window carries the chat card under the video
 public:
     static inline const QString kTitle = QStringLiteral("mobs webcam");
@@ -47,6 +48,9 @@ public:
     Q_INVOKABLE void setGuest(const QString &name, const QString &status);
     void setChat(ChatModel *chat);                      // the live chat shown under the webcam, when there is a feed for it
     QString title() const { return kTitle; }
+    bool mainHeld() const { return m_held; }
+    // The person pressed "I'm live" (or the minutes ran out): now MOBS's window steps out of the picture, as it always did for a plain recording.
+    Q_INVOKABLE void hideMainNow();
     Q_INVOKABLE void windowShown();                     // the QML window became visible: float, pin and place it
     Q_INVOKABLE void windowHidden();                    // it is about to go: remember where it was left, if the person moved or resized it
     Q_INVOKABLE void cameraProblem(const QString &what); // the camera view's own messages, for the log
@@ -71,10 +75,15 @@ public:
     static bool reopenAllowed(const QString &engineState, int reopensInTheLastMinute);
 signals:
     void changed();
+    void heldChanged();
     void reopenRequested();                            // the window was closed during a take: the QML window should show itself again
 private:
+    void holdMain();
+    void releaseHold();
     void rememberWhereItWasLeft();
     void reopenIfClosedDuringATake();
+    QTimer m_holdTimer;                                // a few minutes after going live MOBS's window steps out of the picture even if nobody pressed "I'm live"
+    bool m_held = false;
     QList<qint64> m_reopens;                           // when MOBS put the window back (ms since epoch): the last minute decides whether to keep doing it
     qint64 m_reopenAskedAt = 0;                        // a put-back was asked for then: the window showing again within a few seconds is that put-back
     bool m_gaveUp = false;                             // closed again and again: said so once, then left alone until the next take

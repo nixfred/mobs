@@ -248,6 +248,45 @@ private slots:
         a.setCameraPanel(true); a.setCameraPanel(true); a.setCameraPanel(false);
         QCOMPARE(sp.count(), 2);
     }
+    // ---- the guided setup ("easy mode")
+    void aCameraLockedInIsRememberedAndNeverSwappedForAnotherOne() {
+        QTemporaryDir d; const QString path = d.path() + "/lock.ini";
+        const auto both = [] { return QList<CameraInfo>{{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}, {"/dev/v4l/by-id/usb-hp-video-index0", "HP Webcam", false}}; };
+        { QSettings s(path, QSettings::IniFormat); AppState a(&s, nullptr, both);
+          QVERIFY(!a.cameraLocked());
+          a.lockCamera("/dev/v4l/by-id/not-a-camera"); QVERIFY(!a.cameraLocked());       // only a camera that exists can be locked in
+          a.lockCamera("/dev/v4l/by-id/usb-hp-video-index0");
+          QVERIFY(a.cameraLocked()); QCOMPARE(a.camera(), QString("/dev/v4l/by-id/usb-hp-video-index0")); QCOMPARE(a.lockedCameraName(), QString("HP Webcam")); }
+        // next launch with that camera unplugged: it is still the locked one, reported as missing, and the BRIO is NOT quietly used instead
+        QSettings s2(path, QSettings::IniFormat);
+        AppState b(&s2, nullptr, [] { return QList<CameraInfo>{{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}}; });
+        QVERIFY(b.cameraLocked()); QVERIFY(!b.hasCamera());
+        QCOMPARE(b.camera(), QString("/dev/v4l/by-id/usb-hp-video-index0")); QCOMPARE(b.lockedCameraName(), QString("HP Webcam"));
+        b.choose(2); b.refreshCameras(); QVERIFY(!b.hasCamera());
+        // choosing another camera on purpose moves the lock with it; unlocking lets MOBS pick for itself again
+        b.setCamera("/dev/v4l/by-id/usb-brio-video-index0");
+        QVERIFY(b.cameraLocked()); QVERIFY(b.hasCamera()); QCOMPARE(b.lockedCameraName(), QString("Logitech BRIO"));
+        b.unlockCamera(); QVERIFY(!b.cameraLocked());
+    }
+    void theSetupGuideAsksForThePictureOnlyWhileAStepNeedsIt() {
+        QTemporaryDir d; QSettings s(d.path() + "/setup.ini", QSettings::IniFormat);
+        AppState a(&s, nullptr, [] { return twoCameras(); });
+        QSignalSpy changed(&a, &AppState::setupChanged);
+        QVERIFY(!a.setupOpen()); QVERIFY(a.previewWanted());                  // normal use: the preview chip decides (on by default)
+        a.openSetup(); QVERIFY(a.setupOpen()); QVERIFY(!a.previewWanted());   // the guide is up: no webcam window and no screen picture yet
+        a.setSetupPreview(true); QVERIFY(a.previewWanted());                  // the screen step needs the picture
+        a.closeSetup(); QVERIFY(!a.setupOpen()); QVERIFY(a.previewWanted());  // the guide closed: back to the chip
+        a.setPreview(false); QVERIFY(!a.previewWanted());
+        QVERIFY(changed.count() >= 3);
+    }
+    void onlyPagesOfXAreEverOpenedFromTheGuide() {
+        qputenv("MOBS_NO_OPEN", "1");                                          // never a real browser from a test
+        QTemporaryDir d; QSettings s(d.path() + "/url.ini", QSettings::IniFormat);
+        AppState a(&s, nullptr, [] { return QList<CameraInfo>(); });
+        QVERIFY(a.openUrl("https://studio.x.com/live")); QVERIFY(a.openUrl("https://x.com/i/live-studio"));
+        QVERIFY(!a.openUrl("https://evil.example/x.com")); QVERIFY(!a.openUrl("http://x.com/live")); QVERIFY(!a.openUrl("file:///etc/passwd"));
+        QVERIFY(!a.openUrl("https://notx.com/")); QVERIFY(!a.openUrl(""));
+    }
 };
 QTEST_MAIN(AppStateTests)
 #include "tst_appstate.moc"

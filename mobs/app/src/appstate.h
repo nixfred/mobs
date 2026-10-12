@@ -26,6 +26,9 @@ class AppState : public QObject {
     Q_PROPERTY(int expertTab READ expertTab NOTIFY proChanged)
     Q_PROPERTY(bool pro READ pro NOTIFY proChanged)                       // the Pro drawer is open
     Q_PROPERTY(bool preview READ preview NOTIFY previewChanged)          // show what will be recorded (off by default)
+    Q_PROPERTY(bool setupOpen READ setupOpen NOTIFY setupChanged)        // the guided setup ("easy mode") is showing
+    Q_PROPERTY(bool cameraLocked READ cameraLocked NOTIFY cameraChanged) // "this is my camera": kept until the person changes it, never swapped silently
+    Q_PROPERTY(QString lockedCameraName READ lockedCameraName NOTIFY cameraChanged)   // its name, also while it is unplugged
 public:
     using CameraScan = std::function<QList<CameraInfo>()>;
     explicit AppState(QSettings *settings, QObject *parent = nullptr, CameraScan scan = [] { return CameraScanner::scan(); });
@@ -66,7 +69,19 @@ public:
     Q_INVOKABLE void setCameraPanel(bool open);
     Q_INVOKABLE void setPreview(bool on);
     Q_INVOKABLE void setPro(bool open);
+    bool setupOpen() const { return m_setupOpen; }
+    bool cameraLocked() const { return m_cameraLocked; }
+    QString lockedCameraName() const { return m_lockedName; }
+    // The guided setup ("easy mode"). A step that needs the picture (the screen, the webcam) turns it on while it shows, even when the preview chip is off.
+    Q_INVOKABLE void openSetup();
+    Q_INVOKABLE void closeSetup();
+    Q_INVOKABLE void setSetupPreview(bool on);
+    bool previewWanted() const { return (m_preview && !m_setupOpen) || m_setupPreview; }   // what the engine should show right now
+    Q_INVOKABLE void lockCamera(const QString &path);   // "this is my camera": kept until the person changes it, never swapped for another one silently
+    Q_INVOKABLE void unlockCamera();
+    Q_INVOKABLE bool openUrl(const QString &url);       // a page of X's own, in the person's browser (nothing else). MOBS_NO_OPEN=1 only logs it
 signals:
+    void setupChanged();
     void screenChanged();
     void camerasChanged();
     void cameraChanged();
@@ -88,4 +103,6 @@ private:
     int m_expertTab = 0;
     int m_screen = 1, m_pick = 0;
     bool m_recording = false, m_reviewing = false;
+    bool m_setupOpen = false, m_setupPreview = false, m_cameraLocked = false;
+    QString m_lockedName;
 };

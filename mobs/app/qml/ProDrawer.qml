@@ -151,6 +151,14 @@ Rectangle {
             }
             Column {
                 visible: drawer.tab === 5; width: Math.min(700, parent.width); spacing: 16
+                Txt { text: "what to share"; font.pixelSize: 16; font.bold: true }
+                Row {
+                    spacing: 12
+                    Repeater {
+                        model: [["screen + me", 2], ["screen only", 1], ["just my camera", 3]]
+                        Button { required property var modelData; objectName: "share" + modelData[1]; text: modelData[0]; primary: App.pick === modelData[1]; onClicked: App.choose(modelData[1]) }
+                    }
+                }
                 Txt { text: "recording encoder"; font.pixelSize: 16; font.bold: true }
                 Row {
                     spacing: 12

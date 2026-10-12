@@ -13,6 +13,7 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)         // what to tell the person while there is nothing to show
     Q_PROPERTY(bool demo READ demo NOTIFY statusChanged)                 // the messages are made up (MOBS_FAKE_CHAT): the panel says so
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(QString xId READ xId NOTIFY statusChanged)                // the X livestream whose chat page the card shows ("" = the message list)
 public:
     enum Role { NameRole = Qt::UserRole + 1, TextRole, HueRole, InitialRole };
     static constexpr int kMax = 200, kNameMax = 32, kTextMax = 400;
@@ -30,6 +31,13 @@ public:
     void setConfigured(bool configured, bool demo = false);
     void setStatus(bool connected, const QString &status);
     Q_INVOKABLE void clear();
+    QString xId() const { return m_xId; }
+    // The chat of the person's own livestream, as X shows it to them: the card loads that page (signed in, in MOBS's own browser) and shows only its
+    // Live Chat card. The link comes from "Copy URL" in Live Studio; MOBS never has to guess it.
+    Q_INVOKABLE bool attachX(const QString &textOrLink);        // true when a Live Studio or broadcast link was found in the text and attached
+    Q_INVOKABLE bool attachXFromClipboard();                    // the same, from what the person just copied
+    Q_INVOKABLE void detachX();
+    static QString xIdFrom(const QString &text);                // "https://x.com/i/live-studio/1PJqrNXnQywxb" gives "1PJqrNXnQywxb"; "" when it is not such a link
     static double hueFor(const QString &name);   // the same name always gets the same colour: 0..1
 signals:
     void statusChanged();
@@ -39,4 +47,6 @@ private:
     QVector<Item> m_items;
     bool m_configured = false, m_connected = false, m_demo = false;
     QString m_status = QStringLiteral("chat is not connected");
+    QString m_xId;
+    bool m_xConfigured = false;       // the card exists only because an X chat is attached
 };

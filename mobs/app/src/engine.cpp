@@ -110,7 +110,7 @@ void Engine::start(int pick) {
     }
     const CameraSpec cam = m_camera ? m_camera() : CameraSpec{};
     if (pick != 1 && !cam.valid()) {
-        setMessage("choose a camera first: click the camera chip");
+        setMessage("choose a camera first: the guide will show you how");
         emit cameraNeeded();
         return;
     }
@@ -264,7 +264,7 @@ void Engine::onPreviewFrame(const QImage &frame) {
     }
     if (!m_blackClock.isValid()) { m_blackClock.start(); return; }
     if (m_pictureProblem.isEmpty() && m_blackClock.elapsed() >= m_blackAfterMs) {
-        m_pictureProblem = "The picture is black: click (change) and pick your screen, not Region.";   // one line even in a small window: the ready screen has no room for more
+        m_pictureProblem = "The picture is black: press the screen button and choose again. Share the whole screen, not Region.";   // one line even in a small window: the ready screen has no room for more
         MobsLog::write("capture", QString("the screen picture has been black for %1 ms: the screen share is delivering empty frames. A dragged Region does this; if a whole screen is black too, "
                                           "the portal is stuck: systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal").arg(m_blackClock.elapsed()));
         emit pictureChanged();

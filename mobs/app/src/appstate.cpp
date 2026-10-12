@@ -17,6 +17,8 @@ AppState::AppState(QSettings *settings, QObject *parent, CameraScan scan) : QObj
     static const char *const cropKeys[] = {"guestCropLeft", "guestCropTop", "guestCropRight", "guestCropBottom"};
     for (int i = 0; i < 4; ++i) m_guestCrop[i] = qBound(0, m_settings->value(cropKeys[i], 0).toInt(), 60);
     for (int i = 0; i < 2; ++i) if (m_guestCrop[i] + m_guestCrop[i + 2] > 90) m_guestCrop[i] = m_guestCrop[i + 2] = 0;   // a hand-edited file must not crop the guest away
+    m_cameraLocked = m_settings->value("cameraLocked", false).toBool();
+    m_lockedName = m_settings->value("cameraLockedName").toString();
     m_cams = m_scan();
     const int saved = m_settings->value("pick", 0).toInt();
     if (saved >= 1 && saved <= 4) { m_pick = saved; m_screen = 2; }   // returning user lands on "ready"
@@ -94,7 +96,7 @@ CameraSpec AppState::cameraSpec() const {
 }
 
 void AppState::ensureCamera() {
-    if (currentCamera() || m_cams.isEmpty()) return;
+    if (m_cameraLocked || currentCamera() || m_cams.isEmpty()) return;   // a camera the person locked in is never replaced by another one on its own
     m_camera = m_cams.first().path;
     m_settings->setValue("camera", m_camera);
     m_settings->sync();
@@ -117,6 +119,7 @@ void AppState::setCamera(const QString &path) {
     MobsLog::write("app", "camera -> " + path);
     m_camera = path;
     m_settings->setValue("camera", path);
+    if (m_cameraLocked) { m_lockedName = cameraName(); m_settings->setValue("cameraLockedName", m_lockedName); }   // picking another one on purpose moves the lock with it
     m_settings->sync();
     emit cameraChanged();
 }

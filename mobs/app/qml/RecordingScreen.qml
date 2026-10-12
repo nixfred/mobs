@@ -18,6 +18,8 @@ Item {
         : Math.max(200, Math.min(960, root.width - 2 * pad, (root.height - 2 * pad - 28 - controls.height - gap) * 16 / 9))
     readonly property real controlsW: wide && showPreview ? Math.max(260, root.width - 2 * pad - gap - previewW) : Math.min(700, root.width - 2 * pad)
 
+    GoLiveGuide { anchors.fill: parent; z: 5 }   // while a broadcast waits for Go live in X: the steps, on MOBS's own window
+
     Item {
         id: stage
         anchors.centerIn: parent
@@ -81,7 +83,7 @@ Item {
                 visible: Engine.pictureProblem !== "" && Engine.state !== "stopping"
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                 font.pixelSize: 13; font.bold: true; color: Omarchy.red
-                text: (Engine.streamRequested ? "THE PICTURE IS BLACK: viewers on X see nothing. " : "THE PICTURE IS BLACK: this recording is empty. ") + "Stop, click (change) and pick your screen."
+                text: (Engine.streamRequested ? "THE PICTURE IS BLACK: viewers on X see nothing. " : "THE PICTURE IS BLACK: this recording is empty. ") + "Stop, then press the screen button and choose again."
             }
             Txt {
                 id: liveStatus
@@ -151,7 +153,7 @@ Item {
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 8
-                Key { text: "Alt" } Key { text: "Shift" } Key { text: "V" }
+                Key { text: "Super" } Key { text: "Shift" } Key { text: "V" }
                 Txt { text: "stop"; color: Omarchy.tertiaryText; font.pixelSize: 13; leftPadding: 8; anchors.verticalCenter: parent.verticalCenter }
             }
         }

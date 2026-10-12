@@ -579,7 +579,7 @@ private slots:
         emit b.previewFrame(solid(Qt::black)); emit b.previewFrame(solid(Qt::black));   // black, but not for long
         QVERIFY(e.pictureProblem().isEmpty());
         QTest::qWait(250); emit b.previewFrame(solid(Qt::black));
-        QVERIFY(e.pictureProblem().contains("black")); QVERIFY(e.pictureProblem().contains("(change)")); QCOMPARE(changed.count(), 1);
+        QVERIFY(e.pictureProblem().contains("black")); QVERIFY(e.pictureProblem().contains("choose again")); QCOMPARE(changed.count(), 1);
         emit b.previewFrame(solid(Qt::black)); QCOMPARE(changed.count(), 1);            // said once, not on every frame
         emit b.previewFrame(solid(QColor("#3050f0")));
         QVERIFY(e.pictureProblem().isEmpty()); QCOMPARE(changed.count(), 2);

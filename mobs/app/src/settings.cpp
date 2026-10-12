@@ -40,6 +40,10 @@ Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
     m_chat = m_settings->value("chat", true).toBool();
     m_chatRelay = m_settings->value("chatRelay", false).toBool();
     m_chatRelayPort = qBound(0, m_settings->value("chatRelayPort", 8799).toInt(), 65535);
+    m_setupDone = m_settings->value("setupDone", false).toBool();
+    m_setupStep = qBound(0, m_settings->value("setupStep", 0).toInt(), 20);
+    m_micLocked = m_settings->value("micLocked", false).toBool();
+    m_xSignedIn = m_settings->value("xSignedIn", false).toBool();
     const QString url = m_settings->value("streamUrl").toString().trimmed();
     if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;
     m_streamQuality = qBound(0, m_settings->value("streamQuality", 2).toInt(), 2);

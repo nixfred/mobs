@@ -1,4 +1,6 @@
 #include "settings.h"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -186,6 +188,40 @@ private slots:
         QSettings s(ini, QSettings::IniFormat); QCOMPARE(Settings(&s, nullptr, d.path() + "/key").streamQuality(), 2);
         { QSettings low(d.path() + "/low.ini", QSettings::IniFormat); Settings c(&low, nullptr, d.path() + "/key"); c.setStreamQuality(0); }
         QSettings low2(d.path() + "/low.ini", QSettings::IniFormat); QCOMPARE(Settings(&low2, nullptr, d.path() + "/key").streamQuality(), 0);   // a lower choice is remembered
+    }
+    void theSetupGuideRemembersWhereItStoppedAndAMicrophoneLockedIn() {
+        QTemporaryDir d; const QString path = d.path() + "/setup.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QVERIFY(!c.setupDone()); QCOMPARE(c.setupStep(), 0); QVERIFY(!c.micLocked());
+          c.setSetupStep(4); c.lockMic("alsa_input.usb-mic"); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2);
+        QCOMPARE(c2.setupStep(), 4); QVERIFY(c2.micLocked()); QCOMPARE(c2.micDevice(), QString("alsa_input.usb-mic")); QVERIFY(c2.micOn());
+        c2.setSetupDone(true); c2.setSetupStep(99);
+        QVERIFY(c2.setupDone()); QCOMPARE(c2.setupStep(), 20);                 // a step number past the end is pulled back in
+        c2.setMicDevice("alsa_input.other"); QVERIFY(c2.micLocked());          // picking another one on purpose: the lock follows it
+        c2.unlockMic(); QVERIFY(!c2.micLocked());
+        c2.lockMic(""); QVERIFY(!c2.micLocked());                              // nothing to lock
+    }
+    void aStreamKeyFromTheClipboardIsSavedOnlyWhenItLooksLikeOne() {
+        if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
+        QTemporaryDir d; QSettings s(d.path() + "/key.ini", QSettings::IniFormat);
+        Settings c(&s, nullptr, d.path() + "/key");
+        QClipboard *clip = QGuiApplication::clipboard();
+        clip->setText(""); QVERIFY(c.pasteStreamKeyFromClipboard().contains("Nothing to paste")); QVERIFY(!c.streamKeySaved());
+        clip->setText("rtmp://va.pscp.tv:80/x"); QVERIFY(c.pasteStreamKeyFromClipboard().contains("not a stream key")); QVERIFY(!c.streamKeySaved());
+        clip->setText("two words here"); QVERIFY(c.pasteStreamKeyFromClipboard().contains("not a stream key")); QVERIFY(!c.streamKeySaved());
+        clip->setText("  abc123TESTKEY\n"); QCOMPARE(c.pasteStreamKeyFromClipboard(), QString()); QVERIFY(c.streamKeySaved());
+        QVERIFY(QFile::exists(d.path() + "/key"));
+        QCOMPARE(QFileInfo(d.path() + "/key").permissions() & (QFile::ReadGroup | QFile::ReadOther | QFile::WriteGroup | QFile::WriteOther), QFileDevice::Permissions());   // private
+    }
+    void signingInToXIsNoticedFromItsHomePageOnly() {
+        QVERIFY(Settings::xHomeUrl("https://x.com/home")); QVERIFY(Settings::xHomeUrl("https://x.com/home/"));
+        for (const char *no : {"https://x.com/i/flow/login", "https://evil.example/home", "http://x.com/home", "https://x.com.evil.example/home", ""}) QVERIFY2(!Settings::xHomeUrl(no), no);
+        QTemporaryDir d; const QString path = d.path() + "/x.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s); QVERIFY(!c.xSignedIn());
+          c.noteXUrl("https://x.com/i/flow/login"); QVERIFY(!c.xSignedIn()); c.noteXUrl("https://x.com/home"); QVERIFY(c.xSignedIn()); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2); QVERIFY(c2.xSignedIn());                      // remembered
+        c2.setXSignedIn(false); QVERIFY(!c2.xSignedIn());
     }
     void theChatRelayIsOffUntilAskedForAndItsPortIsKeptInRange() {
         QTemporaryDir d; const QString path = d.path() + "/relay.ini";

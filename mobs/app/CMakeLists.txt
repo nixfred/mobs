@@ -16,7 +16,7 @@ find_package(libobs REQUIRED)
 qt_policy(SET QTP0001 NEW)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
-add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/notifier.cpp src/pipcontroller.cpp src/chatmodel.cpp src/chatrelay.cpp src/guestcall.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
+add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/notifier.cpp src/pipcontroller.cpp src/chatmodel.cpp src/chatrelay.cpp src/guestcall.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/settings_setup.cpp src/appstate_setup.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
 target_include_directories(mobs-core PUBLIC src ${MONOLOGUE_SRC})
 target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Network Qt6::Multimedia OBS::libobs)
 
@@ -32,6 +32,9 @@ qt_add_qml_module(mobs
 )
 qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml qml/ChatPanel.qml qml/GuestCall.qml)   # the opening screen, the webcam window, its chat card and the call card
 target_link_libraries(mobs PRIVATE mobs-core Qt6::WebEngineQuick)
+# The guided setup ("easy mode"): its pages, and the REAL pictures of X's screens it points at (cropped from real screenshots, never drawn).
+qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/SetupChat.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupStudio.qml qml/SetupSource.qml qml/SetupKey.qml qml/SetupHow.qml qml/SetupDone.qml
+    RESOURCES assets/guide/x-live-studio.png assets/guide/x-manage-sources.png assets/guide/x-source-card.png assets/guide/x-create-livestream.png assets/guide/x-livestream-live.png)
 
 foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay guestcall)
   add_executable(tst_${t} tests/tst_${t}.cpp)

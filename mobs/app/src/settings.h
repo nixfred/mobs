@@ -29,6 +29,10 @@ class Settings : public QObject {
     Q_PROPERTY(bool streamKeySaved READ streamKeySaved NOTIFY changed)   // a stream key is on disk; QML can never read it back
     Q_PROPERTY(bool streamReady READ streamReady NOTIFY changed)       // both the address and the key are set
     Q_PROPERTY(int streamQuality READ streamQuality NOTIFY changed)    // 0 light 720p 3 Mbps, 1 standard 1080p 6 Mbps, 2 X recommended 1080p30 9 Mbps (the default)
+    Q_PROPERTY(bool setupDone READ setupDone NOTIFY changed)           // the guided setup was finished once (it can be opened again any time)
+    Q_PROPERTY(int setupStep READ setupStep NOTIFY changed)            // where the guided setup stopped, so it picks up there next time
+    Q_PROPERTY(bool xSignedIn READ xSignedIn NOTIFY changed)           // the person signed in to X inside MOBS, so the chat can show under the webcam
+    Q_PROPERTY(bool micLocked READ micLocked NOTIFY changed)           // the person pressed "this is my microphone": it stays until they change it
     Q_PROPERTY(QString aboutText READ aboutText CONSTANT)
 public:
     // streamKeyFile is where the stream key is kept (owner-only). Empty = nowhere, so a test can never write into a real config.
@@ -59,7 +63,19 @@ public:
     bool stayOut() const { return m_stayOut; }
     bool chat() const { return m_chat; }
     bool chatRelay() const { return m_chatRelay; }           // listen for the chat that another computer sends (INI key chatRelay, off unless asked for)
-    int chatRelayPort() const { return m_chatRelayPort; }    // INI key chatRelayPort, 8799 by default
+    int chatRelayPort() const { return m_chatRelayPort; }
+    bool setupDone() const { return m_setupDone; }
+    int setupStep() const { return m_setupStep; }
+    bool micLocked() const { return m_micLocked; }
+    bool xSignedIn() const { return m_xSignedIn; }
+    Q_INVOKABLE void setXSignedIn(bool in);
+    Q_INVOKABLE void noteXUrl(const QString &url);      // the sign-in browser shows a page: X's own home page means the person is signed in
+    static bool xHomeUrl(const QString &url);
+    Q_INVOKABLE void setSetupDone(bool done);
+    Q_INVOKABLE void setSetupStep(int step);
+    Q_INVOKABLE void lockMic(const QString &id);        // "this is my microphone": kept until the person changes it, and the next launch asks nothing
+    Q_INVOKABLE void unlockMic();
+    Q_INVOKABLE QString pasteStreamKeyFromClipboard();  // the key the person just copied in Live Studio: "" when it was saved, else a sentence saying why not    // INI key chatRelayPort, 8799 by default
     QString aboutText() const;
     QString streamUrl() const { return m_streamUrl; }
     bool streamKeySaved() const { return m_keySaved; }
@@ -104,6 +120,8 @@ private:
     bool m_mic = true, m_review = true, m_splash = true, m_pip = true, m_stayOut = true, m_chat = true;
     bool m_chatRelay = false;
     int m_chatRelayPort = 8799;
+    bool m_setupDone = false, m_micLocked = false, m_xSignedIn = false;
+    int m_setupStep = 0;
     QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
     int m_streamQuality = 2;

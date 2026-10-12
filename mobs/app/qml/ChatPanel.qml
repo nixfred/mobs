@@ -42,6 +42,7 @@ Item {
     ListView {
         id: list
         objectName: "chatList"
+        visible: Chat.xId === ""
         anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; leftMargin: 14; rightMargin: 14; topMargin: 6; bottomMargin: 10 }
         clip: true
         spacing: 9
@@ -87,11 +88,16 @@ Item {
     }
     Txt {   // before the first message, and whenever the feed is down: say what is going on instead of showing an empty box
         objectName: "chatEmpty"
-        visible: Chat.count === 0
+        visible: Chat.count === 0 && Chat.xId === ""
         anchors { centerIn: list }
         width: list.width - 8
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
         font.pixelSize: 12; color: Omarchy.tertiaryText
         text: Chat.connected ? "waiting for the first message..." : Chat.status
+    }
+    Loader {   // the chat of the person's own livestream, as X shows it to them: only the "Live Chat" card of its page (XChatView)
+        active: Chat.xId !== ""
+        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; leftMargin: 8; rightMargin: 8; topMargin: 6; bottomMargin: 8 }
+        sourceComponent: Component { XChatView {} }
     }
 }

@@ -16,6 +16,7 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QStandardPaths>
+#include <QClipboard>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQuickItem>
@@ -146,7 +147,7 @@ int main(int argc, char *argv[]) {
     recorder.setMicGuard([&] { auto spec = prefs.audioSpec(); spec.desktop = false; return !prefs.micOn() ? QString("turn on the microphone first") : audio.problem(spec, true); });
     recorder.setPresetProvider([&] { return prefs.encoderPreset(); });
     recorder.setCameraProvider([&] { auto c = state.cameraSpec(); c.pip = prefs.pip(); return c; });   // "screen + me" with the webcam as a window on the screen
-    QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); state.setCameraPanel(true); });
+    QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); prefs.setSetupStep(1); state.openSetup(); });   // the guide's camera page lists the cameras and says what to do
     QObject::connect(&recorder, &Engine::liveSetupNeeded, &state, [&] { state.openLive(); });
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
 
@@ -181,15 +182,16 @@ int main(int argc, char *argv[]) {
     // The preview runs when the user turned it on AND a screen other than "choose" is showing; it follows the pick, the
     // camera and the placement. A recording that starts meanwhile reuses the same scene.
     // Armed to go live ALWAYS shows it: what is about to be broadcast must be seen first, whatever the preview chip says.
-    auto syncPreview = [&] { recorder.setPreview((state.preview() || recorder.streamArmed()) && state.screen() != 1, state.pick()); };
+    auto syncPreview = [&] { recorder.setPreview((state.previewWanted() || recorder.streamArmed()) && state.screen() != 1, state.pick()); };
     QObject::connect(&recorder, &Engine::streamChanged, &state, [&] { syncPreview(); });
     QObject::connect(backend.get(), &RecorderBackend::previewFailed, &state, [&] { state.setPreview(false); });
-    for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged})
+    for (auto sig : {&AppState::screenChanged, &AppState::previewChanged, &AppState::pickChanged, &AppState::cameraChanged, &AppState::setupChanged})
         QObject::connect(&state, sig, &state, syncPreview);
     QObject::connect(&prefs, &Settings::changed, &state, syncPreview);   // the webcam window on or off rebuilds the picture (the backend ignores a repeat)
     ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
+    QObject::connect(&recorder, &Engine::stateChanged, &chat, [&] { if (recorder.state() == "idle") chat.detachX(); });   // a livestream's chat belongs to that livestream
     // The real chat, when asked for (INI chatRelay=true, or MOBS_CHAT_RELAY_PORT in a test): a script in the person's own browser on another computer
     // POSTs what his viewers say, over the tailnet, and the card under the webcam shows it. Off by default: a program that listens is a decision.
     ChatRelay relay(&chat);
@@ -222,7 +224,7 @@ int main(int argc, char *argv[]) {
     // A picture that turns black while people watch is the one thing worth interrupting for.
     QObject::connect(&recorder, &Engine::pictureChanged, &state, [&] {
         if (!recorder.pictureProblem().isEmpty() && recorder.active())
-            Notifier::send("MOBS: the picture is BLACK", recorder.broadcasting() ? "Viewers on X see black. Stop and pick your screen again." : "This recording is black. Stop and pick your screen again.", true);
+            Notifier::send("MOBS: the picture is BLACK", recorder.broadcasting() ? "Viewers on X see black. Stop, then press the screen button and choose again." : "This recording is black. Stop, then press the screen button and choose again.", true);
     });
     if (const int ms = qEnvironmentVariableIntValue("MOBS_BLACK_AFTER_MS"); ms > 0) recorder.setBlackAfter(ms);   // tests shorten how long black must last
     // MOBS_FAKE_CHAT=1: a made-up chat flow, labelled DEMO in the panel, so the dock can be seen and tried without X. Never on by default.
@@ -276,11 +278,22 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("backend", &review);                       // the name Monologue's EditBar.qml looks up
     // The opening screen plays on an ordinary launch. Scripted runs and screenshot grabs skip it so they land on the real
     // screens (MOBS_SPLASH=1 brings it back for its own tests); MOBS_SPLASH_AT=MS freezes it at that moment, for design checks.
+    // The guided setup opens by itself until it has been finished once. A scripted run or a screen grab never opens it unless MOBS_SETUP=1
+    // (the older checks all start from the ready screen), and MOBS_SETUP=0 keeps it away.
+    {
+        const QString setupSwitch = qEnvironmentVariable("MOBS_SETUP");
+        const bool automated = !qEnvironmentVariable("MOBS_SCRIPT").isEmpty() || !qEnvironmentVariable("MOBS_GRAB").isEmpty();
+        if (setupSwitch == "1" || (setupSwitch != "0" && !automated && !prefs.setupDone())) state.openSetup();
+    }
     const QString splashSwitch = qEnvironmentVariable("MOBS_SPLASH");
     const bool splashAtSet = qEnvironmentVariableIsSet("MOBS_SPLASH_AT");
     engine.rootContext()->setContextProperty("splashAllowed", splashSwitch == "1" || splashAtSet ||
         (splashSwitch != "0" && qEnvironmentVariable("MOBS_SCRIPT").isEmpty() && qEnvironmentVariable("MOBS_GRAB").isEmpty()));
     engine.rootContext()->setContextProperty("splashAt", splashAtSet ? qEnvironmentVariableIntValue("MOBS_SPLASH_AT") : -1);
+    // X, inside MOBS: where its cookies are kept, the page the person signs in on, and the page of a livestream (%1 = its id). Tests point the last two at stand-in files.
+    engine.rootContext()->setContextProperty("xStoragePath", qEnvironmentVariable("MOBS_WEB_DIR", cfg + "/web"));
+    engine.rootContext()->setContextProperty("xLoginUrl", qEnvironmentVariable("MOBS_X_LOGIN_URL", "https://x.com/i/flow/login"));
+    engine.rootContext()->setContextProperty("xChatUrlTemplate", qEnvironmentVariable("MOBS_X_CHAT_URL", "https://x.com/i/live-studio/%1"));
     engine.loadFromModule("Mobs", "Main");
     syncPreview();   // a preview left on last time starts with the app
     if (engine.rootObjects().isEmpty()) return 1;
@@ -486,6 +499,16 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "pictureProblemEmpty") ok = recorder.pictureProblem().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "chatCount") ok = chat.count() == condition[1].toInt();
                 else if (ok && condition[0] == "chatConnected") ok = chat.connected() == (condition[1] == "1");   // the other computer's script has called lately
+                else if (ok && condition[0] == "setupOpen") ok = state.setupOpen() == (condition[1] == "1");   // the guided setup is showing
+                else if (ok && condition[0] == "mainHeld") ok = pip.mainHeld() == (condition[1] == "1");
+                else if (ok && condition[0] == "chatXId") ok = chat.xId() == condition[1];
+                else if (ok && condition[0] == "xSignedIn") ok = prefs.xSignedIn() == (condition[1] == "1");
+                else if (ok && condition[0] == "xCrop") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("cropState").toString() == condition[1]; }
+                else if (ok && condition[0] == "xHiddenAtLeast") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("hiddenCount").toInt() >= condition[1].toInt(); }   // MOBS's window is kept up while the person finishes going live
+                else if (ok && condition[0] == "setupStep") ok = prefs.setupStep() == condition[1].toInt();
+                else if (ok && condition[0] == "setupDone") ok = prefs.setupDone() == (condition[1] == "1");
+                else if (ok && condition[0] == "cameraLocked") ok = state.cameraLocked() == (condition[1] == "1");
+                else if (ok && condition[0] == "micLocked") ok = prefs.micLocked() == (condition[1] == "1");
                 else if (ok && condition[0] == "pipPlain") { QQuickItem *item = pipItem(condition[1]); ok = item && item->property("textFormat").toInt() == int(Qt::PlainText); }   // a stranger's words are shown as plain text
                 else if (ok && condition[0] == "chatWanted") ok = pip.chatWanted() == (condition[1] == "1");
                 else if (ok && condition[0] == "guestOn") ok = pip.guestOn() == (condition[1] == "1");
@@ -555,6 +578,15 @@ int main(int argc, char *argv[]) {
                 QTimer::singleShot(0, &app, *run);
             }
             else if (st == "chatoff") { chat.setConfigured(false); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("xurl=")) { prefs.noteXUrl(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // the sign-in browser showed this page
+            else if (st.startsWith("xattach=")) { std::printf("script: xattach %d\n", int(chat.attachX(st.mid(8)))); QTimer::singleShot(0, &app, *run); }   // a Live Studio link was copied
+            else if (st.startsWith("setupstep=")) { prefs.setSetupStep(st.mid(10).toInt()); QTimer::singleShot(0, &app, *run); }   // jump the guided setup to a page
+            else if (st.startsWith("clip=")) {   // text on the clipboard of THIS run only: never on a real desktop's, so only the offscreen platform may do it
+                if (QGuiApplication::platformName() != "offscreen") { std::fprintf(stderr, "script: clip= works only on the offscreen platform\n"); app.exit(4); return; }
+                QGuiApplication::clipboard()->setText(st.mid(5));
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st.startsWith("grab=")) { std::printf("script: grab %d\n", int(window->grabWindow().save(st.mid(5)))); QTimer::singleShot(0, &app, *run); }   // the window's own pixels, for the docs
             else if (st.startsWith("relaypost=")) {   // relaypost=name|words: what the other computer's script does, over a real socket to MOBS's own chat relay
                 static int seq = 0;
                 const QStringList p = st.mid(10).split('|');
