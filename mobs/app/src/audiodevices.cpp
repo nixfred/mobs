@@ -58,7 +58,7 @@ QString AudioDevices::problem(const AudioSpec &audio, bool mic) const {
         for (const auto &item : devices) if (item.toMap()["id"].toString() == id) return true;
         return false;
     };
-    if (mic && !available(m_mics, audio.micDevice)) return "the chosen microphone is unavailable; choose an input in EXPERT > audio or turn the mic off";
+    if (mic && !available(m_mics, audio.micDevice)) return "the chosen microphone is unavailable: press the microphone button to choose another, or turn it off there";
     if (audio.desktop && !available(m_desktops, audio.desktopDevice)) return "the chosen desktop audio source is unavailable; choose an output in EXPERT > audio or turn desktop audio off";
     return {};
 }

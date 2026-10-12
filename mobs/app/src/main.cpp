@@ -147,7 +147,7 @@ int main(int argc, char *argv[]) {
     recorder.setPresetProvider([&] { return prefs.encoderPreset(); });
     recorder.setCameraProvider([&] { auto c = state.cameraSpec(); c.pip = prefs.pip(); return c; });   // "screen + me" with the webcam as a window on the screen
     QObject::connect(&recorder, &Engine::cameraNeeded, &state, [&] { state.refreshCameras(); prefs.setSetupStep(1); state.openSetup(); });   // the guide's camera page lists the cameras and says what to do
-    QObject::connect(&recorder, &Engine::liveSetupNeeded, &state, [&] { state.openLive(); });
+    QObject::connect(&recorder, &Engine::liveSetupNeeded, &state, [&] { prefs.setSetupStep(5); state.openSetup(); });   // the guide walks the person from "open X" to the stream key
     QObject::connect(&recorder, &Engine::stateChanged, &state, [&] { state.setRecording(recorder.active()); });
 
     Control control(&recorder, &state);

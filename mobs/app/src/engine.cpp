@@ -118,7 +118,7 @@ void Engine::start(int pick) {
     if (m_streamArmed) {
         stream = m_streamFn ? m_streamFn() : StreamSpec{};
         if (stream.url.isEmpty() || stream.key.isEmpty()) {
-            setMessage("go live needs the server address and stream key: set them in EXPERT > live");
+            setMessage("go live needs the stream key: the guide will show you how");
             emit liveSetupNeeded();
             return;
         }

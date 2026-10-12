@@ -546,7 +546,7 @@ private slots:
         e.setStreamProvider([&] { return s; }); QSignalSpy needed(&e, &Engine::liveSetupNeeded);
         e.setStreamArmed(true); e.start(1);
         QCOMPARE(b.began, 0); QCOMPARE(e.state(), QString("idle")); QCOMPARE(needed.count(), 1);
-        QVERIFY(e.message().contains("EXPERT > live"));
+        QVERIFY(e.message().contains("the guide"));
         QVERIFY(e.streamArmed());                        // still armed: fix the setup and try again
         s = target(); s.url.clear(); e.start(1); QCOMPARE(b.began, 0);
         s = target(); e.start(1); QCOMPARE(b.began, 1);

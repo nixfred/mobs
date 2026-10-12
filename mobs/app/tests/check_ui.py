@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env,
           expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "opening https://studio.x.com/live", "guided setup finished"))
     check("the setup guide opens again where the person stopped", "wait=0.5,expect=setupOpen:1,expect=setupStep:3,click=setupBack,expect=setupStep:2", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=3\n")
-    check("the setup guide can be opened again from the ready screen", "wait=0.4,expect=setupOpen:0,click=setupGuideChip,expect=setupOpen:1,expect=setupStep:0", fake_backend=True)
+    check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
     check("signing in to X is noticed from its home page only", "setupstep=8,wait=0.5,expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,wait=0.2,click=setupNext,expect=setupStep:9",
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
@@ -174,15 +174,15 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env={"MOBS_HOLD_MS": "700"}, expect_log=("hiding it now",))
     check("stopping the stream ends the hold", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.5,expect=mainHeld:1,click=goLiveStop,waitidle,expect=mainHeld:0", fake_backend=True)
     check("arming without an address or key sends the user to set them up",
-          "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=pro:1,expect=audioTab:6,wait=0.1,checklayout", fake_backend=True)
-    check("the go live chip opens the setup when nothing is saved, and arms once it is",
-          "pick=1,click=liveChip,expect=pro:1,expect=audioTab:6,expect=armed:0,pro=0," + live_setup + "click=liveChip,expect=armed:1,click=liveChip,expect=armed:0", fake_backend=True)
+          "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=setupOpen:1,expect=setupStep:5,wait=0.1,checklayout", fake_backend=True)
+    check("the hotkey chip arms and disarms once a key is saved",
+          live_setup + "pick=1,click=liveChip,expect=armed:1,click=liveChip,expect=armed:0", fake_backend=True)
     # The picture is on by default, and the broadcast has its own button beside Record.
     for size in ("860x560", "1024x768", "1180x720"):
         check("the ready screen shows the picture by default and fits with the GO LIVE button", "pick=2,wait=0.4,expect=preview:1,expect=previewing:1,expect=previewFrame:1,checklayout", size, True, default_preview=True)
         check("the ready screen with the picture, a saved key and the GO LIVE button fits", live_setup + "pick=2,wait=0.4,expect=previewFrame:1,checklayout", size, True, default_preview=True)
     check("the GO LIVE button arms and starts a broadcast in one click", live_setup + "pick=1,click=goLiveButton,expect=state:recording,expect=broadcasting:1,expect=armed:0,wait=0.8,expect=streamState:live", fake_backend=True)
-    check("the GO LIVE button without a saved address and key opens the setup page", "pick=1,click=goLiveButton,expect=state:idle,expect=pro:1,expect=audioTab:6,wait=0.1,checklayout", fake_backend=True)
+    check("the GO LIVE button without a saved address and key opens the guide at the X page", "pick=1,click=goLiveButton,expect=state:idle,expect=setupOpen:1,expect=setupStep:5,wait=0.1,checklayout", fake_backend=True)
     check("arming to go live always shows the picture, even with the preview chip off", "pick=1,expect=previewing:0,arm=1,expect=previewing:1,expect=previewFrame:1,arm=0,expect=previewing:0", fake_backend=True)
     check("the close EXPERT button on the live page leaves EXPERT", live_setup + "pro=1,tab=6,wait=0.1,click=closeLive,expect=pro:0", fake_backend=True)
     check("a take that is not live shows no broadcast", "pick=1,start,expect=state:recording,wait=0.6,expect=broadcasting:0,expect=streamState:off,checklayout", fake_backend=True)

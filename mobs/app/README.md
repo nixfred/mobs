@@ -79,14 +79,61 @@ the microphone, and where recordings go. Every colour comes from the live Omarch
 ![the finished opening screen](../../docs/app/splash-final.png)
 ![on a light, a neon and an orange Omarchy theme](../../docs/app/splash-themes.png)
 
+## Easy mode: a guide that clicks through to live on X (2026-10-12)
+
+Fred, 2026-10-12: "everything should be made for EASY mode ... pick my camera/mic and lock it in as the default ... it should not ask me what region, it should do the entire
+workspace and follow me ... click follow next, click follow instructions, next all the way to live streaming on X." So the app does the explaining, with real pictures, and the
+person only presses NEXT.
+
+- **The setup guide** (`qml/SetupGuide.qml`, one page per file `qml/Setup*.qml`) opens by itself the first time MOBS runs. It has 11 pages: welcome, camera, microphone, your screen, your
+  webcam, open X, make a source, stream key, chat, going live, all set. **NEXT** (or Enter or Space) is on every page and is greyed until the page's job is done or skipped; Back, Left and Esc
+  go back; "skip the guide" leaves. MOBS remembers the page you stopped on (`setupStep`) and opens there next time; finishing sets `setupDone`, so it never opens by itself again.
+  Every red mark on the ready screen opens the guide at the page that fixes it.
+- **Real pictures.** The X pages are crops of real Live Studio screenshots (`assets/guide/`) with a red ring drawn on the thing to press (`qml/GuideImage.qml`).
+- **The camera and the microphone are picked once and locked.** The camera page lists the cameras with a live picture; *lock this camera* saves it (`cameraLocked`, `cameraLockedName`) and it
+  stays the default until the person changes it. A locked camera that is unplugged is never swapped for another: the ready screen says "<name> is unplugged". The microphone page has a level
+  meter, *lock this microphone* saves the device (`micLocked`; "default" counts as a choice) and desktop sound is a switch on the same page.
+- **The whole workspace, no region question.** The screen page asks once for a whole screen (never a window or a region), shows the real picture, and the stream follows every workspace
+  change. *choose again* forgets the share.
+- **The ready screen** is one big red **GO LIVE to X** button, a row of check marks (camera, microphone, screen, X, chat: green is done, red or yellow opens the guide at its page), *just record,
+  nothing goes to X*, the hotkey chip and *more options* (EXPERT). With no stream key, GO LIVE opens the guide at the page that gets one.
+- **After GO LIVE, until X shows it** (`qml/GoLiveGuide.qml`). The picture is on its way to X, but nobody sees it until the person presses Go Live in Live Studio. So MOBS keeps its own window up
+  (instead of stepping out of the picture at once) with the real Live Studio steps, opens Live Studio once X is receiving the stream, and offers **I'M LIVE: HIDE THIS WINDOW** and **STOP**. It
+  holds for 3 minutes at most (`MOBS_HOLD_MS`), then says so and steps out as before.
+- **The chat, in the app.** On the guide's chat page the person signs in to X **once**, in MOBS's own browser profile (`mobs-x`, cookies in `~/.config/mobs/web`, a folder to treat like a password; MOBS never sees the password; the
+  sign-in is noticed when the page reaches x.com/home). During a take, pressing **Copy URL** in Live Studio and coming back is enough: while that window is up MOBS reads the link from the
+  clipboard (only a Live Studio or broadcast link is taken; there is also a box to paste it) and the chat card under the webcam shows **that livestream's own Live Chat card**, read-only
+  (`qml/XChatView.qml`). The page is X's, so MOBS finds the card by its heading ("Live Chat"), hides the rest of the page and the box for typing, and if the heading is not found after 8 tries
+  it shows the whole page at 60% zoom. The card can only navigate inside x.com. It is a browser showing X's own page with parts hidden: MOBS reads no chat text from it. The chat ends with the
+  take. **Not yet seen against the real x.com**, only against a stand-in page (`tests/fake-studio.html`), because the real markup is X's to change. The other route (a script on another computer
+  posting to the relay, below) still works beside it.
+- **Guests are not here.** X has no way to bring a watching viewer on stream (STATUS.md, "Guests abandoned").
+- **Tests and hooks.** Unit tests for the settings, the app state and the Live Studio link parser; `check_ui.py` walks all 11 pages, checks that every page fits at 860x560, 1024x768 and 1180x720,
+  and runs the chat crop against the stand-in page; `MOBS_UI_KEEP_GOING=1` lists every failing scenario at once. Environment: `MOBS_SETUP=0|1`, `MOBS_NO_OPEN=1` (log instead of opening a
+  browser), `MOBS_HOLD_MS`, `MOBS_WEB_DIR`, `MOBS_X_LOGIN_URL`, `MOBS_X_CHAT_URL`. Script steps: `setupstep=`, `xurl=`, `xattach=`, `closepip`, `grab=`.
+
+The guide, page by page (offscreen run with stand-in devices and a fake key, `docs/app/easy-*.png`; the X pictures are real crops of Live Studio):
+
+![welcome](../../docs/app/easy-01-welcome.png)
+![camera: pick it and lock it in](../../docs/app/easy-02-camera.png)
+![microphone: level bar, lock it in](../../docs/app/easy-03-microphone.png)
+![your whole screen, shown as viewers see it](../../docs/app/easy-04-screen.png)
+![your webcam, with the chat under it](../../docs/app/easy-05-webcam.png)
+![open X Live Studio, red ring on the button](../../docs/app/easy-06-open-x.png)
+![make a source once](../../docs/app/easy-07-source.png)
+![copy the stream key](../../docs/app/easy-08-key.png)
+![sign in to X once for the chat (here a stand-in page)](../../docs/app/easy-09-chat.png)
+![going live, every time](../../docs/app/easy-10-how.png)
+![all set](../../docs/app/easy-11-done.png)
+![the ready screen afterwards: one big button](../../docs/app/easy-12-ready.png)
+
 ## Screen and me: the simple way
 
-**The first run goes straight to "screen + me"** (or "my screen" when no camera is found): no three cards to puzzle over. The picks are one tap away (the "change" pill on
-the ready screen).
+**The first run goes straight to "screen + me"** (or "my screen" when no camera is found): no three cards to puzzle over. The picks live in EXPERT > hardware > *what to share*.
 
 - **It shares a whole screen, never a window or a dragged region.** "My screen" and "screen + me" ask the portal for monitors only (OBS's `pipewire-desktop-capture-source`),
   so you can **change workspaces and the stream follows**. A window or a region was what once made half a picture and a black rest.
-  The choice is remembered (`~/.config/mobs/screen-token-desktop`); **the screen chip on the ready screen ("eDP-1 1920x1080 (change)")** forgets it and asks again.
+  The choice is remembered (`~/.config/mobs/screen-token-desktop`); **the screen chip on the ready screen** opens the guide's screen page, and *choose again* there forgets it and asks again.
 - **The webcam is a picture-in-picture WINDOW on your screen, and you move it with SUPER + drag, even while you are live** (Fred, 2026-10-10: "capture the entire screen and put
   the webcam in a pip and allow me to SUPER drag it around during live"). In "screen + me" MOBS captures the **entire screen** and shows your camera in a small window
   (`qml/PipWindow.qml`, a Qt Multimedia camera view). On Hyprland, `PipController` floats it, **pins it to every workspace** (so changing workspaces keeps you in the stream),
@@ -110,12 +157,12 @@ the ready screen).
 
 ![the webcam window's badge in every state (a stand-in picture instead of the camera)](../../docs/app/pip-badges.png)
 ![a real Hyprland in the practice VM, mid-take: MOBS has stepped out, so the picture is the desktop plus the webcam window](../../docs/app/pip-hidden-while-recording-vm.png)
-- **GO LIVE to X is always a bold red button** beside Record, whether or not a stream key is saved: without one it opens EXPERT > live (the key is per machine).
+- **GO LIVE to X is the one big red button** on the ready screen (see "Easy mode" above); with no stream key saved it opens the guide at the page that gets one (the key is per machine).
 - **A black picture is caught before it reaches X** (Fred, 2026-10-10: the live picture box and a whole take were pure black while MOBS said the stream was fine). The portal can hand
   MOBS a screen share whose frames are all zeros: on gus a dragged **Region** did it, and a stuck portal can too. MOBS now watches the live picture. Once the screen source is up and
   the picture stays black for 6 s it says so in red on the picture and on the ready screen and **refuses GO LIVE** until the picture is real (GO LIVE also waits for one real frame
   after the screen is chosen). If a live picture turns black mid-broadcast, the recording screen says so and a desktop notification fires; MOBS never cuts the stream or the recording
-  by itself. Fix: click **(change)** and pick your screen on the **Screens** tab, never Region. Still black: `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal`
+  by itself. Fix: press the screen chip (it turns red and says "screen is black: fix it") and *choose again*; never Region. Still black: `systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal`
   (that ends other apps' screen shares). A camera-only pick is never judged, since a covered lens is the person's choice. The log line is `[capture] the screen picture has been black for ... ms`.
 
 ## The dock: your webcam and the chat below you
@@ -132,6 +179,9 @@ webcam window (`qml/PipWindow.qml`) is therefore **one window with up to two sta
 alone*. A short window squeezes the video (it crops) before the chat card goes. **A plain drag on your webcam or the chat moves the stack** (SUPER + drag works from anywhere); the bottom edge, the right edge and the
 corner resize it, and their grips fade in only while the pointer is over the window (the compositor does the move and resize itself: `xdg_toplevel` move/resize, no `hyprctl` per frame).
 The dock with chat remembers its own place (`pipPlaceChat`), separate from the camera alone (`pipPlace`). It is captured with the rest of the screen, so **viewers see the chat card too**.
+
+**The chat in MOBS itself (built 2026-10-12, see "Easy mode" above).** The card under the webcam can show your own livestream's Live Chat, taken from X's page in MOBS's own signed-in browser view.
+It needs nothing on another computer. The route below stays as a second way to fill the same card.
 
 **The real chat: from your own browser on another computer (built 2026-10-12, the script on the other computer is NOT built).** Fred's choice (2026-10-12): X gives a program no chat
 without an approved API app, so a small script in **your own logged-in browser on another computer** (his Mac, `fnix`) reads the chat the way you read it and POSTs it to MOBS over the tailnet.
@@ -166,18 +216,14 @@ Mode 0600; at 4 MB it rotates to `mobs.log.1` and `.2`.
 MOBS can broadcast a take to X (or any RTMP/RTMPS server) while it records. **The saved file is always the full-quality 1080p copy**, whatever happens
 to the broadcast; the stream is a second, constant-bitrate encode of the same picture and sound.
 
-**Set it up once** (EXPERT > live): **the address is already filled in** (`rtmp://va.pscp.tv:80/x`, what X's Live Studio shows for US East; change it for another
+**Set it up once.** The setup guide does this with pictures (see "Easy mode" above); EXPERT > live is the same page without the guide. **The address is already filled in** (`rtmp://va.pscp.tv:80/x`, what X's Live Studio shows for US East; change it for another
 region or `rtmps://va.pscp.tv:443/x` for encryption), so **only the stream key has to be pasted** (studio.x.com/live > New livestream > RTMP; X may need Premium and
 Live Studio is in beta, so check X's page). The quality defaults to **X recommended**, the "recommended" column of X's own encoder panel: **H.264, 1920x1080, 30 fps,
 9 Mbps, AAC 128 kbps stereo at 44.1 kHz, a keyframe every 3 seconds**. Lighter choices: light (720p, 3 Mbps) and standard (1080p, 6 Mbps).
 **The stream key is a password.** It is kept in its own owner-only file (`~/.config/mobs/stream-key`, mode 0600), never in the settings file, never shown
 again after saving, never printed, and scrubbed out of any error text. QML has no way to read it back. Once saved, the page says so and has a **close EXPERT** button.
 
-**To start:** on the ready screen press the red **GO LIVE to X** button beside the Record circle. One click arms the broadcast and starts the take (with no key saved yet
-the same button reads "set up go live" and opens EXPERT > live). **Going live is a deliberate step every time**; the other way is the **go live** chip, which arms it for
-Record or the hotkey instead. It turns red
-("LIVE: armed"), the title reads "ready to go LIVE" and a red line says "Record BROADCASTS to X: this screen is public until you stop." Then Record. Arming is
-never remembered: it clears when the take ends, when MOBS restarts, and by itself after 15 minutes if no take starts.
+**To start:** on the ready screen press the big red **GO LIVE to X** button. One click arms the broadcast and starts the take (with no key saved yet it opens the guide at the page that gets one). **Going live is a deliberate step every time**; the other way is the **hotkey** chip, which makes SUPER + SHIFT + V go LIVE instead of just recording. A red line says "GO LIVE broadcasts to X: this screen is public until you stop." Arming is never remembered: it clears when the take ends, when MOBS restarts, and by itself after 15 minutes if no take starts.
 
 **While live** the recording screen shows a LIVE pill (CONNECTING, LIVE, RECONNECTING, or a red outlined NOT LIVE), the bitrate and any dropped frames, and the
 header says LIVE. **Pause is off while you broadcast**: viewers would keep watching while the saved file skipped that stretch.

@@ -586,7 +586,7 @@ void ObsBackend::pollAudio() {
     const bool desktopFrames = m_desktop && m_desktopFrameAt && now - m_desktopFrameAt.load() < 500;
     QString problem;
     if (now - m_audioStarted > 4000) {
-        if (m_mic && !micFrames) problem = "microphone is not sending audio; check the input in EXPERT > audio";
+        if (m_mic && !micFrames) problem = "microphone is not sending audio: press the microphone button and choose another";
         if (m_desktop && !desktopFrames) problem += (problem.isEmpty() ? "" : "\n") + QString("desktop audio is not sending frames; check the selected output");
     }
     emit audioLevels(micFrames ? m_micDb.load() : -60, desktopFrames ? m_desktopDb.load() : -60, micFrames, desktopFrames, problem);

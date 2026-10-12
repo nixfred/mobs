@@ -150,10 +150,10 @@ Rectangle {
                 }
             }
             Column {
-                visible: drawer.tab === 5; width: Math.min(700, parent.width); spacing: 16
-                Txt { text: "what to share"; font.pixelSize: 16; font.bold: true }
+                visible: drawer.tab === 5; width: Math.min(700, parent.width); spacing: 10
                 Row {
                     spacing: 12
+                    Txt { anchors.verticalCenter: parent.verticalCenter; text: "what to share"; font.pixelSize: 16; font.bold: true; rightPadding: 8 }
                     Repeater {
                         model: [["screen + me", 2], ["screen only", 1], ["just my camera", 3]]
                         Button { required property var modelData; objectName: "share" + modelData[1]; text: modelData[0]; primary: App.pick === modelData[1]; onClicked: App.choose(modelData[1]) }
@@ -164,8 +164,8 @@ Rectangle {
                     spacing: 12
                     Button { text: "software (x264)"; primary: !Prefs.hardware; onClicked: Prefs.setHardware(false) }
                     Button { text: "NVIDIA H.264"; primary: Prefs.hardware; enabled: Engine.nvencAvailable; onClicked: Prefs.setHardware(true) }
+                    Button { text: "check hardware"; onClicked: Engine.checkHardware() }
                 }
-                Button { text: "check hardware"; onClicked: Engine.checkHardware() }
                 Txt { width: parent.width; wrapMode: Text.WordWrap; text: Engine.hardwareKnown ? Engine.hardwareMessage : "Check hardware to detect NVIDIA support. This initializes the recording engine without opening the screen picker, camera or microphone."; font.pixelSize: 13; color: Omarchy.secondaryText }
                 Txt { width: parent.width; wrapMode: Text.WordWrap; text: "Software is the reliable default. NVIDIA uses less CPU and needs a supported GPU and driver. Your choice applies to the next recording."; font.pixelSize: 13; color: Omarchy.tertiaryText }
             }
