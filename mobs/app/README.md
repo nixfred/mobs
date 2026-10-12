@@ -102,6 +102,11 @@ the ready screen).
 - **The webcam window's size and place.** It opens at **20% of the screen's width (480 to 1024 px)**, so it stays visible once the broadcast is scaled to 1080p (a 480 px window on a 5120 px
   ultrawide would be a 180 px dot). Only a place **you chose** (moved with SUPER + drag or resized) is remembered; where MOBS put it is recomputed for whatever screen is there next time.
   A small badge in its corner says **REC**, **LIVE**, **CONNECTING**, **RECONNECTING** or **NOT LIVE**; the viewers see it too, which is how streams usually say LIVE.
+- **A webcam window that gets closed during a take comes back.** The window is pinned to every workspace, so it follows you around, but a close (a stray SUPER + Q on it) used to take you
+  off the stream for good while the take carried on: nothing in MOBS brought it back until you stopped. Now, **during a take** (starting, recording, paused), MOBS puts it back where you last
+  left it, a moment after the close, and a notice says "your webcam window was closed ... MOBS put it back" once it is really there. It stops after **three closes inside a minute** (you mean
+  it): the log says "closed again and again during a take: MOBS leaves it closed", a notice says so, and the take is stopped and started again to reset it. **Before a take and after one a
+  closed window stays closed**, as it always did, and with the webcam window turned off in EXPERT nothing is reopened. Test: `check_ui.py "webcam window"` (script step `closepip`).
 
 ![the webcam window's badge in every state (a stand-in picture instead of the camera)](../../docs/app/pip-badges.png)
 ![a real Hyprland in the practice VM, mid-take: MOBS has stepped out, so the picture is the desktop plus the webcam window](../../docs/app/pip-hidden-while-recording-vm.png)

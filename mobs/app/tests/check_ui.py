@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         env.pop(key, None)
     case_count = 0
 
-    def check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra="", default_preview=False):
+    def check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra="", default_preview=False, expect_log=()):
         global case_count
         if case_filter and case_filter not in name:
             return
@@ -42,6 +42,12 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
             raise AssertionError(f"{name} ({size}): exit {result.returncode}\n{output}")
         if ("script: forcequit" if steps.endswith(",forcequit") else "script: quit") not in result.stdout:
             raise AssertionError(f"{name}: script did not complete\n{output}")
+        if expect_log:
+            log_file = Path(case_env["MOBS_LOG_FILE"])
+            log_text = log_file.read_text() if log_file.exists() else ""
+            for line in expect_log:
+                if line not in log_text:
+                    raise AssertionError(f"{name}: the log never said {line!r}\n{log_text[-1500:]}")
         print(f"PASS {name} ({size})", flush=True)
 
     for size in ("860x560", "1024x768", "1180x720"):
@@ -87,6 +93,14 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         check("screen + me shows the webcam as a window and the ready screen still fits", "pick=2,preview=1,wait=0.4,expect=pipWanted:1,expect=pipShown:1,checklayout", size, True)
     check("the webcam window follows the picture: on with the preview, off without it", "pick=2,preview=0,wait=0.2,expect=pipWanted:0,expect=pipShown:0,preview=1,wait=0.3,expect=pipShown:1,preview=0,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("a take always shows the webcam window, and it goes with the take", "pick=2,preview=0,expect=pipShown:0,start,expect=state:recording,wait=0.4,expect=pipWanted:1,expect=pipShown:1,stop,waitidle,wait=0.3,expect=pipShown:0", fake_backend=True)
+    # A stray SUPER + Q closed the webcam window in the middle of a take on 2026-10-12 and the stream carried on without the person in it, for good.
+    check("a webcam window closed during a take is put back and says so", "pick=2,preview=0,start,expect=state:recording,wait=0.4,expect=pipShown:1,closepip,wait=0.2,expect=pipShown:0,wait=0.9,expect=pipShown:1,checkpip,expect=state:recording",
+          fake_backend=True, expect_log=("webcam window closed during a take: putting it back", "webcam window put back: it was closed during a take"))
+    check("a webcam window closed before a take stays closed", "pick=2,preview=1,wait=0.4,expect=pipShown:1,closepip,wait=1.2,expect=pipShown:0", fake_backend=True)
+    check("a webcam window closed again and again during a take is left closed, and the log says so",
+          "pick=2,preview=0,start,expect=state:recording,wait=0.4,closepip,wait=0.8,closepip,wait=0.8,closepip,wait=0.8,expect=pipShown:1,closepip,wait=1.2,expect=pipShown:0,expect=state:recording",
+          fake_backend=True, expect_log=("closed again and again during a take: MOBS leaves it closed",))
+    check("a webcam window put back when the take is over is not put back again", "pick=2,preview=0,start,expect=state:recording,wait=0.4,closepip,wait=0.9,expect=pipShown:1,stop,waitidle,wait=0.5,expect=pipShown:0", fake_backend=True)
     check("the webcam window is off when the setting is off, and the picture has no drag handle then either way", "pick=2,preview=1,wait=0.4,expect=pipWanted:0,expect=pipShown:0", fake_backend=True, ini_extra="pip=false\n")
     check("my screen and just my camera have no webcam window", "pick=1,preview=1,wait=0.3,expect=pipShown:0,pick=3,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")

@@ -3,8 +3,10 @@
 #include "chatmodel.h"
 #include "engine.h"
 #include "mobslog.h"
+#include "notifier.h"
 #include "settings.h"
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -171,6 +173,11 @@ void PipController::rememberActive() {
 
 void PipController::windowShown() {
     m_shown = true; m_tries = 0;
+    if (m_reopenAskedAt && QDateTime::currentMSecsSinceEpoch() - m_reopenAskedAt < 5000) {   // this is the put-back after a close, not a first showing
+        m_reopenAskedAt = 0;
+        MobsLog::write("pip", "webcam window put back: it was closed during a take");
+        Notifier::send("MOBS: your webcam window was closed", "You were off the stream for a moment. MOBS put it back.", true);
+    }
     const QCameraFormat f = format();
     MobsLog::write("pip", testPattern() ? QString("webcam window shown (a stand-in picture, no camera)")
         : QString("webcam window shown: camera \"%1\", format %2x%3 at up to %4 fps").arg(device().description()).arg(f.resolution().width()).arg(f.resolution().height()).arg(int(f.maxFrameRate())));
@@ -236,6 +243,37 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
 
 void PipController::windowHidden() {
     m_shown = false; m_placeTimer.stop();
+    rememberWhereItWasLeft();
+    reopenIfClosedDuringATake();
+}
+
+bool PipController::reopenAllowed(const QString &engineState, int reopensInTheLastMinute) {
+    const bool taking = engineState == "starting" || engineState == "recording" || engineState == "paused";
+    return taking && reopensInTheLastMinute < 3;
+}
+
+// The window went while a take is on and the picture still wants it: it was CLOSED (a stray SUPER + Q), not taken away by the take ending or the setting going off.
+// Put it back, where the person last left it, and say so once it is really back (windowShown). Before a take, and after one, a closed window stays closed as always.
+void PipController::reopenIfClosedDuringATake() {
+    if (!wanted() || QCoreApplication::closingDown()) return;
+    const QString st = m_engine->state();
+    if (st != "starting" && st != "recording" && st != "paused") return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    while (!m_reopens.isEmpty() && now - m_reopens.first() > 60000) m_reopens.removeFirst();
+    if (!reopenAllowed(st, int(m_reopens.size()))) {
+        if (m_gaveUp) return;
+        m_gaveUp = true;
+        MobsLog::write("pip", "webcam window closed again and again during a take: MOBS leaves it closed");
+        Notifier::send("MOBS: your webcam is off the stream", "You closed it again, so MOBS stopped putting it back. Stop and start the take, or turn the webcam window off in settings.", true);
+        return;
+    }
+    m_reopens.append(now);
+    m_reopenAskedAt = now;
+    MobsLog::write("pip", "webcam window closed during a take: putting it back");
+    QTimer::singleShot(300, this, [this] { if (wanted()) emit reopenRequested(); });   // a moment, so the compositor has finished with the old window
+}
+
+void PipController::rememberWhereItWasLeft() {
     if (!onHyprland()) return;
     const QJsonArray clients = hyprJson({"clients", "-j"}).array();
     const QJsonObject c = clientAt(clients, addressOf(clients, kTitle, QCoreApplication::applicationPid()));
@@ -254,6 +292,7 @@ void PipController::windowHidden() {
 
 void PipController::onEngineState() {
     const QString st = m_engine->state();
+    if (st == "idle") { m_gaveUp = false; m_reopens.clear(); }   // the next take starts with a clean slate
     if (st == "recording" && !m_mainHidden) hideMain();
     else if (st == "idle" && m_mainHidden) restoreMain();
 }

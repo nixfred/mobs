@@ -602,6 +602,10 @@ int main(int argc, char *argv[]) {
                 for (auto *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle) w->resize(wh.value(0).toInt(), wh.value(1).toInt());
                 QTimer::singleShot(0, &app, *run);
             }
+            else if (st == "closepip") {   // the compositor closes the webcam window, as a stray SUPER + Q does
+                for (auto *w : QGuiApplication::allWindows()) if (w->title() == PipController::kTitle) w->close();
+                QTimer::singleShot(0, &app, *run);
+            }
             else if (st.startsWith("mic=")) { prefs.setMicOn(st.mid(4) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("review=")) { std::printf("script: review %d\n", int(review.open(st.mid(7)))); waitFor([&] { return !review.loading(); }, 35000, "the recording to open"); }
             else if (st.startsWith("savedtake=") && dynamic_cast<ScriptBackend *>(backend.get())) { emit backend->finished(st.mid(10)); QTimer::singleShot(0, &app, *run); }

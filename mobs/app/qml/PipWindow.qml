@@ -31,6 +31,12 @@ Window {
     transientParent: null       // a window of its own, not a dialog of the main one
     visible: Pip.wanted && win.visible
     onVisibleChanged: { if (visible) Pip.windowShown(); else Pip.windowHidden() }
+    // Closed in the middle of a take (a stray SUPER + Q): the compositor's close does not change anything the binding above depends on, so it would stay gone.
+    // PipController asks for it back; writing the binding again shows the window if the take still wants it (and the main window is still there).
+    Connections {
+        target: Pip
+        function onReopenRequested() { pip.visible = Qt.binding(function() { return Pip.wanted && win.visible }) }
+    }
 
     CaptureSession {
         camera: Camera {

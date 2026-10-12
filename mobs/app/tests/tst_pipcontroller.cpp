@@ -148,6 +148,15 @@ private slots:
         prefs.setPip(false); QVERIFY(changed.count() >= 1);
         changed.clear(); st.choose(1); QVERIFY(changed.count() >= 1);
     }
+    // ---- a webcam window closed in the middle of a take
+    void aClosedWebcamWindowIsPutBackOnlyDuringATakeAndNotWhenItKeepsBeingClosed() {
+        for (const char *taking : {"starting", "recording", "paused"}) {
+            QVERIFY2(PipController::reopenAllowed(taking, 0), taking);
+            QVERIFY2(PipController::reopenAllowed(taking, 2), taking);
+            QVERIFY2(!PipController::reopenAllowed(taking, 3), taking);    // closed again and again: the person means it
+        }
+        for (const char *notTaking : {"idle", "stopping", ""}) QVERIFY2(!PipController::reopenAllowed(notTaking, 0), notTaking);   // before or after a take it stays closed
+    }
 };
 QTEST_MAIN(PipControllerTests)
 #include "tst_pipcontroller.moc"

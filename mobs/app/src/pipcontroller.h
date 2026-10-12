@@ -66,9 +66,18 @@ public:
     static QString encodePlace(const QRect &rect, const QString &monitor);
     static bool decodePlace(const QString &text, QRect *rect, QString *monitor);
     static bool shouldHide(const QJsonObject &monitor, const QSize &captured, int monitorCount); // is MOBS's window on the monitor that is in the picture?
+    // A webcam window closed in the middle of a take (a stray SUPER + Q) takes you off the stream while the take carries on. During a take MOBS puts it back,
+    // at most three times a minute so it never fights a person who really means to close it. Before and after a take a closed window stays closed.
+    static bool reopenAllowed(const QString &engineState, int reopensInTheLastMinute);
 signals:
     void changed();
+    void reopenRequested();                            // the window was closed during a take: the QML window should show itself again
 private:
+    void rememberWhereItWasLeft();
+    void reopenIfClosedDuringATake();
+    QList<qint64> m_reopens;                           // when MOBS put the window back (ms since epoch): the last minute decides whether to keep doing it
+    qint64 m_reopenAskedAt = 0;                        // a put-back was asked for then: the window showing again within a few seconds is that put-back
+    bool m_gaveUp = false;                             // closed again and again: said so once, then left alone until the next take
     bool onHyprland() const;
     QJsonDocument hyprJson(const QStringList &args) const;
     bool hyprEval(const QString &lua) const;
