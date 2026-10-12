@@ -29,6 +29,7 @@
 #include <memory>
 #include <QtQml/qqml.h>
 #include "chatmodel.h"
+#include "chatrelay.h"
 #include "guestcall.h"
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
@@ -189,6 +190,17 @@ int main(int argc, char *argv[]) {
     ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
+    // The real chat, when asked for (INI chatRelay=true, or MOBS_CHAT_RELAY_PORT in a test): a script in the person's own browser on another computer
+    // POSTs what his viewers say, over the tailnet, and the card under the webcam shows it. Off by default: a program that listens is a decision.
+    ChatRelay relay(&chat);
+    if (prefs.chatRelay() || !qEnvironmentVariable("MOBS_CHAT_RELAY_PORT").isEmpty()) {
+        const QString hostText = qEnvironmentVariable("MOBS_CHAT_RELAY_HOST");
+        QHostAddress host = hostText.isEmpty() ? ChatRelay::tailnetAddress() : QHostAddress(hostText);
+        if (host.isNull()) { MobsLog::write("chat", "no tailnet address found (is tailscale up?): the chat relay listens on this computer only"); host = QHostAddress::LocalHost; }
+        bool portGiven = false;
+        const int envPort = qEnvironmentVariable("MOBS_CHAT_RELAY_PORT").toInt(&portGiven);
+        relay.start(host, quint16(portGiven ? qBound(0, envPort, 65535) : prefs.chatRelayPort()));
+    }
     // The call with a guest, in the card above the webcam. A scripted run gets a stand-in (no web page, no clipboard, no desktop notice) unless MOBS_CALL_REAL=1.
     GuestCall call(!qEnvironmentVariable("MOBS_SCRIPT").isEmpty() && qEnvironmentVariable("MOBS_CALL_REAL") != "1");
     call.setTakeProbe([&] { return recorder.active(); });
@@ -320,7 +332,7 @@ int main(int argc, char *argv[]) {
             if (pw) find(pw->contentItem());
             return hit;
         };
-        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &call]() mutable {
+        *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &call, &relay]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
             std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
@@ -473,6 +485,8 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "pictureProblem") ok = recorder.pictureProblem().contains(condition[1]);
                 else if (ok && condition[0] == "pictureProblemEmpty") ok = recorder.pictureProblem().isEmpty() == (condition[1] == "1");
                 else if (ok && condition[0] == "chatCount") ok = chat.count() == condition[1].toInt();
+                else if (ok && condition[0] == "chatConnected") ok = chat.connected() == (condition[1] == "1");   // the other computer's script has called lately
+                else if (ok && condition[0] == "pipPlain") { QQuickItem *item = pipItem(condition[1]); ok = item && item->property("textFormat").toInt() == int(Qt::PlainText); }   // a stranger's words are shown as plain text
                 else if (ok && condition[0] == "chatWanted") ok = pip.chatWanted() == (condition[1] == "1");
                 else if (ok && condition[0] == "guestOn") ok = pip.guestOn() == (condition[1] == "1");
                 else if (ok && condition[0] == "callActive") ok = call.active() == (condition[1] == "1");
@@ -541,6 +555,17 @@ int main(int argc, char *argv[]) {
                 QTimer::singleShot(0, &app, *run);
             }
             else if (st == "chatoff") { chat.setConfigured(false); QTimer::singleShot(0, &app, *run); }
+            else if (st.startsWith("relaypost=")) {   // relaypost=name|words: what the other computer's script does, over a real socket to MOBS's own chat relay
+                static int seq = 0;
+                const QStringList p = st.mid(10).split('|');
+                if (!relay.listening()) { std::fprintf(stderr, "script: the chat relay is not listening\n"); app.exit(4); return; }
+                const QByteArray body = QJsonDocument(QJsonObject{{"messages", QJsonArray{QJsonObject{{"id", QString::number(++seq)}, {"name", p.value(0)}, {"text", p.value(1)}}}}}).toJson(QJsonDocument::Compact);
+                auto *socket = new QTcpSocket(&app);
+                QObject::connect(socket, &QTcpSocket::connected, socket, [socket, body] { socket->write("POST /chat HTTP/1.1\r\nHost: mobs\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body); });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                socket->connectToHost(QHostAddress::LocalHost, relay.port());
+                QTimer::singleShot(0, &app, *run);
+            }
             else if (st.startsWith("guest=")) { const QStringList p = st.mid(6).split('|'); pip.setGuest(p.value(0), p.value(1)); QTimer::singleShot(0, &app, *run); }   // guest=name|status; guest= sends them away
             else if (st.startsWith("call=")) { call.invite(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // call=name: that viewer is brought into a call (call= : nobody named)
             else if (st == "callend") { call.end(); QTimer::singleShot(0, &app, *run); }

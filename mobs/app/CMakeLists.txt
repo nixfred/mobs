@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 enable_testing()
 
-find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick DBus Multimedia Test WebEngineQuick)   # WebEngineQuick: the call with a guest (qt6-webengine); only the mobs program links it
+find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick DBus Network Multimedia Test WebEngineQuick)   # WebEngineQuick: the call with a guest (qt6-webengine); only the mobs program links it
 find_package(libobs REQUIRED)
 
 # QTP0001: embed the QML module under :/qt/qml/<URI>, where Qt's default import path looks. Without it the module's
@@ -16,9 +16,9 @@ find_package(libobs REQUIRED)
 qt_policy(SET QTP0001 NEW)
 set(MONOLOGUE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../monologue/src)
 
-add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/notifier.cpp src/pipcontroller.cpp src/chatmodel.cpp src/guestcall.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
+add_library(mobs-core STATIC src/recorderbackend.h src/mobslog.cpp src/notifier.cpp src/pipcontroller.cpp src/chatmodel.cpp src/chatrelay.cpp src/guestcall.cpp src/palette.cpp src/appstate.cpp src/camera.cpp src/audiodevices.cpp src/settings.cpp src/previewmodel.cpp src/review.cpp src/engine.cpp src/control.cpp src/obsbackend.cpp ${MONOLOGUE_SRC}/theme.cpp ${MONOLOGUE_SRC}/edit.cpp ${MONOLOGUE_SRC}/mediautils.cpp ${MONOLOGUE_SRC}/thumbnails.cpp)
 target_include_directories(mobs-core PUBLIC src ${MONOLOGUE_SRC})
-target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Multimedia OBS::libobs)
+target_link_libraries(mobs-core PUBLIC Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Network Qt6::Multimedia OBS::libobs)
 
 qt_add_executable(mobs src/main.cpp)
 # Monologue's timeline editor, used UNMODIFIED from its subtree: mapped into this QML module under its own file name.
@@ -33,7 +33,7 @@ qt_add_qml_module(mobs
 qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml qml/ChatPanel.qml qml/GuestCall.qml)   # the opening screen, the webcam window, its chat card and the call card
 target_link_libraries(mobs PRIVATE mobs-core Qt6::WebEngineQuick)
 
-foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel guestcall)
+foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay guestcall)
   add_executable(tst_${t} tests/tst_${t}.cpp)
   target_link_libraries(tst_${t} PRIVATE mobs-core Qt6::Test)
   # QTest pulls all of QtCore, which trips GCC 16 over Qt's own QBitArray (same flag Monologue uses).

@@ -187,6 +187,13 @@ private slots:
         { QSettings low(d.path() + "/low.ini", QSettings::IniFormat); Settings c(&low, nullptr, d.path() + "/key"); c.setStreamQuality(0); }
         QSettings low2(d.path() + "/low.ini", QSettings::IniFormat); QCOMPARE(Settings(&low2, nullptr, d.path() + "/key").streamQuality(), 0);   // a lower choice is remembered
     }
+    void theChatRelayIsOffUntilAskedForAndItsPortIsKeptInRange() {
+        QTemporaryDir d; const QString path = d.path() + "/relay.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s); QVERIFY(!c.chatRelay()); QCOMPARE(c.chatRelayPort(), 8799); }   // off by default: a program that listens is a decision
+        { QSettings s(path, QSettings::IniFormat); s.setValue("chatRelay", true); s.setValue("chatRelayPort", 70000); s.sync(); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2);
+        QVERIFY(c2.chatRelay()); QCOMPARE(c2.chatRelayPort(), 65535);   // a port past the end is pulled back in
+    }
     void aboutNamesTheEngineAndTheLicence() {
         QTemporaryDir d; QSettings s(d.path() + "/s.ini", QSettings::IniFormat);
         Settings c(&s);

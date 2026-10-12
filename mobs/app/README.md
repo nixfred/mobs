@@ -135,7 +135,20 @@ alone*. A short window squeezes the videos (they crop) before the chat card goes
 corner resize it, and their grips fade in only while the pointer is over the window (the compositor does the move and resize itself: `xdg_toplevel` move/resize, no `hyprctl` per frame).
 The dock with chat remembers its own place (`pipPlaceChat`), separate from the camera alone (`pipPlace`). It is captured with the rest of the screen, so **viewers see the chat card too**.
 
-**Where the chat comes from.** `ChatModel` only keeps and shows messages; a feed fills it. There is **no feed by default**, and then there is no chat card. `MOBS_FAKE_CHAT=1 mobs` runs a
+**The real chat: from your own browser on another computer (built 2026-10-12, the script on the other computer is NOT built).** Fred's choice (2026-10-12): X gives a program no chat
+without an approved API app, so a small script in **your own logged-in browser on another computer** (his Mac, `fnix`) reads the chat the way you read it and POSTs it to MOBS over the tailnet.
+MOBS's side is `ChatRelay` (`src/chatrelay.*`). **Off by default**: set `chatRelay=true` in `~/.config/mobs/mobs.conf` (`chatRelayPort`, 8799 by default). It listens on the **tailnet address**
+(`tailscale ip -4`) only, falls back to this computer alone when there is no tailscale, and refuses any caller that is not this computer or inside 100.64.0.0/10. There is no login: the tailnet is
+the security. The contract: `POST /chat` with `{"messages":[{"id":"stable per line","name":"viewer","text":"words"}]}` answers 204 (an empty list is a heartbeat, a single object works too, an id
+seen before is ignored so the script may resend); `GET /health` answers 200. The card says "waiting for the chat script on your other computer" until the first call and "went quiet" 20 seconds
+after the last. **What arrives is words from strangers**: control and bidi characters are removed, a line is capped (1000 characters kept, 400 shown), it is shown as **plain text, never as markup**,
+and it only ever appears in the card: nothing is sent back to X or to a viewer. Try it from any tailnet computer:
+`curl -sS -X POST http://gus.tail0940f.ts.net:8799/chat -d '{"messages":[{"id":"t1","name":"test","text":"hello from fnix"}]}'`. **Not built: the script on the Mac.** It has to read x.com's chat
+panel in a logged-in browser, which needs a short session with the person at the Mac and a live broadcast with chat to look at the page. It is automated reading of X's pages, which X's rules
+forbid (a small account risk, accepted by Fred), so it stays read-only and runs only in his own browser. Tests: `tst_chatrelay` (parser, cleaning, who may call, a real socket) and
+`check_ui.py "chat relay"` (the card fills, the words are plain text).
+
+**Where the chat comes from, otherwise.** `ChatModel` only keeps and shows messages; a feed fills it. There is **no feed by default**, and then there is no chat card. `MOBS_FAKE_CHAT=1 mobs` runs a
 made-up flow labelled **DEMO** so the dock can be seen and tried without X. The real feed has to be X's official Livestream API (research, 2026-10-10): chat is **push-only**, an
 Activity API `broadcast.chat` event delivered to a public HTTPS webhook (OAuth 2.0 PKCE, scope `broadcast.read`), the API is open only to whitelisted apps, and the docs never say whether a
 broadcast started from Live Studio over RTMP is covered. There is no confirmed chat-only pop-out URL, the old Periscope chat socket is reported closed, and X's developer guidelines forbid

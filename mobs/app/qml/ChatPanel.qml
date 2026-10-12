@@ -79,8 +79,8 @@ Item {
                 Column {
                     width: row.width - (root.compact ? 0 : 37)
                     spacing: 1
-                    Txt { width: parent.width; text: row.name; elide: Text.ElideRight; font.pixelSize: 12; font.bold: true; color: Qt.hsla(row.hue, 0.7, 0.70, 1) }
-                    Txt { width: parent.width; text: row.text; wrapMode: Text.Wrap; font.pixelSize: 13 }
+                    Txt { objectName: "chatName"; width: parent.width; text: row.name; textFormat: Text.PlainText; elide: Text.ElideRight; font.pixelSize: 12; font.bold: true; color: Qt.hsla(row.hue, 0.7, 0.70, 1) }
+                    Txt { objectName: "chatBody"; width: parent.width; text: row.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.pixelSize: 13 }
                 }
             }
         }

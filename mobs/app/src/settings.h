@@ -58,6 +58,8 @@ public:
     bool pip() const { return m_pip; }
     bool stayOut() const { return m_stayOut; }
     bool chat() const { return m_chat; }
+    bool chatRelay() const { return m_chatRelay; }           // listen for the chat that another computer sends (INI key chatRelay, off unless asked for)
+    int chatRelayPort() const { return m_chatRelayPort; }    // INI key chatRelayPort, 8799 by default
     QString aboutText() const;
     QString streamUrl() const { return m_streamUrl; }
     bool streamKeySaved() const { return m_keySaved; }
@@ -100,6 +102,8 @@ private:
     AudioSpec m_audio;
     bool m_hardware = false;
     bool m_mic = true, m_review = true, m_splash = true, m_pip = true, m_stayOut = true, m_chat = true;
+    bool m_chatRelay = false;
+    int m_chatRelayPort = 8799;
     QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
     int m_streamQuality = 2;

@@ -101,6 +101,16 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=2,preview=0,start,expect=state:recording,wait=0.4,closepip,wait=0.8,closepip,wait=0.8,closepip,wait=0.8,expect=pipShown:1,closepip,wait=1.2,expect=pipShown:0,expect=state:recording",
           fake_backend=True, expect_log=("closed again and again during a take: MOBS leaves it closed",))
     check("a webcam window put back when the take is over is not put back again", "pick=2,preview=0,start,expect=state:recording,wait=0.4,closepip,wait=0.9,expect=pipShown:1,stop,waitidle,wait=0.5,expect=pipShown:0", fake_backend=True)
+    # The real chat: a script in the person's own browser on another computer POSTs what his viewers say; MOBS shows it as plain text under the webcam.
+    relay_env = {"MOBS_CHAT_RELAY_HOST": "127.0.0.1", "MOBS_CHAT_RELAY_PORT": "0"}
+    check("the chat relay is off unless it is asked for", "pick=2,preview=1,wait=0.4,expect=chatWanted:0", fake_backend=True)
+    check("the chat relay puts a posted message in the card under the webcam and says the other computer is alive",
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:1,expect=chatConnected:0,relaypost=ana|hello there,wait=0.7,expect=chatCount:1,expect=chatConnected:1,checkpip",
+          fake_backend=True, extra_env=relay_env,
+          expect_log=("relay listening on 127.0.0.1", "relay: first call from", "relay: 1 new chat line(s)", "relay: your other computer is connected"))
+    check("the chat relay shows what strangers type as plain text, never as markup",
+          "pick=2,preview=1,wait=0.4,relaypost=eve|<b>bold</b> <img src=\"http://x.invalid/a.png\"> hi,wait=0.7,expect=chatCount:1,piphover=chatRow,wait=0.3,expect=pipPlain:chatBody,expect=pipPlain:chatName",
+          fake_backend=True, extra_env=relay_env)
     check("the webcam window is off when the setting is off, and the picture has no drag handle then either way", "pick=2,preview=1,wait=0.4,expect=pipWanted:0,expect=pipShown:0", fake_backend=True, ini_extra="pip=false\n")
     check("my screen and just my camera have no webcam window", "pick=1,preview=1,wait=0.3,expect=pipShown:0,pick=3,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")

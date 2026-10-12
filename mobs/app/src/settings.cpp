@@ -38,6 +38,8 @@ Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
     m_pip = m_settings->value("pip", true).toBool();
     m_stayOut = m_settings->value("stayOut", true).toBool();
     m_chat = m_settings->value("chat", true).toBool();
+    m_chatRelay = m_settings->value("chatRelay", false).toBool();
+    m_chatRelayPort = qBound(0, m_settings->value("chatRelayPort", 8799).toInt(), 65535);
     const QString url = m_settings->value("streamUrl").toString().trimmed();
     if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;
     m_streamQuality = qBound(0, m_settings->value("streamQuality", 2).toInt(), 2);
