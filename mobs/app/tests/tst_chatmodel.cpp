@@ -75,9 +75,10 @@ private slots:
         QCOMPARE(ChatModel::xIdFrom("https://x.com/i/live-studio/" + id), id);
         QCOMPARE(ChatModel::xIdFrom("  https://x.com/i/broadcasts/" + id + "?s=20 \n"), id);
         QCOMPARE(ChatModel::xIdFrom("https://studio.x.com/i/live-studio/" + id), id);
+        QCOMPARE(ChatModel::xIdFrom("https://studio.x.com/live/" + id + "?rwebShell=1"), id);   // the address Live Studio really uses
         QCOMPARE(ChatModel::xIdFrom("look: https://twitter.com/i/broadcasts/" + id + "/ ok"), id);
         for (const char *no : {"", "hello", "1PJqrNXnQywxb", "https://x.com/home", "https://x.com/i/live-studio/short", "https://x.com/i/live-studio/",
-                               "https://evilx.com/i/live-studio/1PJqrNXnQywxb", "https://x.com.evil.example/i/live-studio/1PJqrNXnQywxb", "https://x.com/i/spaces/1PJqrNXnQywxb"})
+                               "https://evilx.com/i/live-studio/1PJqrNXnQywxb", "https://x.com.evil.example/i/live-studio/1PJqrNXnQywxb", "https://x.com/i/spaces/1PJqrNXnQywxb", "https://studio.x.com/live/short", "https://evilstudio.x.com/live/1PJqrNXnQywxb", "https://x.com/live/1PJqrNXnQywxb"})
             QVERIFY2(ChatModel::xIdFrom(no).isEmpty(), no);
     }
     void attachingTheXChatMakesTheCardAndDetachingTakesItAway() {

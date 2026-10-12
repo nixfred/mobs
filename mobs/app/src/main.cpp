@@ -284,7 +284,9 @@ int main(int argc, char *argv[]) {
     // X, inside MOBS: where its cookies are kept, the page the person signs in on, and the page of a livestream (%1 = its id). Tests point the last two at stand-in files.
     engine.rootContext()->setContextProperty("xStoragePath", qEnvironmentVariable("MOBS_WEB_DIR", cfg + "/web"));
     engine.rootContext()->setContextProperty("xLoginUrl", qEnvironmentVariable("MOBS_X_LOGIN_URL", "https://x.com/i/flow/login"));
-    engine.rootContext()->setContextProperty("xChatUrlTemplate", qEnvironmentVariable("MOBS_X_CHAT_URL", "https://x.com/i/live-studio/%1"));
+    engine.rootContext()->setContextProperty("xChatUrlTemplate", qEnvironmentVariable("MOBS_X_CHAT_URL", "https://studio.x.com/live/%1"));   // the page itself: x.com/i/live-studio/<id> holds it in an iframe a script cannot see into
+    engine.rootContext()->setContextProperty("xStudioUrl", qEnvironmentVariable("MOBS_X_STUDIO_URL", "https://studio.x.com/live"));   // the guide opens it once after sign-in, to see that Live Studio opens for this account
+    engine.rootContext()->setContextProperty("xChatTries", qEnvironmentVariableIntValue("MOBS_X_TRIES") > 0 ? qEnvironmentVariableIntValue("MOBS_X_TRIES") : 12);   // tests shorten how long the chat card is looked for
     engine.loadFromModule("Mobs", "Main");
     syncPreview();   // a preview left on last time starts with the app
     if (engine.rootObjects().isEmpty()) return 1;
@@ -493,8 +495,24 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "chatXId") ok = chat.xId() == condition[1];
                 else if (ok && condition[0] == "xSignedIn") ok = prefs.xSignedIn() == (condition[1] == "1");
                 else if (ok && condition[0] == "xCrop") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("cropState").toString() == condition[1]; }
-                else if (ok && condition[0] == "xHiddenAtLeast") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("hiddenCount").toInt() >= condition[1].toInt(); }   // MOBS's window is kept up while the person finishes going live
+                else if (ok && condition[0] == "xRegion") { QQuickItem *view = pipItem("xChatView"); ok = view && QString("%1x%2").arg(qRound(view->property("regionW").toDouble())).arg(qRound(view->property("regionH").toDouble())) == condition[1]; }   // the part of X's page that is shown, in the page's own pixels
+                else if (ok && condition[0] == "xPixels") {   // xPixels:RRGGBB=some|none: does the chat card show a patch of that colour? Proves that only the Live Chat card is on screen
+                    QQuickItem *view = pipItem("xChatView");
+                    ok = false;
+                    if (view && view->window()) {
+                        const QImage shot = view->window()->grabWindow().convertToFormat(QImage::Format_RGB32);
+                        const qreal dpr = shot.devicePixelRatio();
+                        const QRectF scene = view->mapRectToScene(QRectF(0, 0, view->width(), view->height()));
+                        const QRect area = QRect(qRound(scene.x() * dpr), qRound(scene.y() * dpr), qRound(scene.width() * dpr), qRound(scene.height() * dpr)).intersected(shot.rect());
+                        const QRgb want = QColor("#" + condition[1].section('=', 0, 0)).rgb();
+                        int near = 0;
+                        for (int y = area.top(); y <= area.bottom(); ++y) for (int x = area.left(); x <= area.right(); ++x) { const QRgb p = shot.pixel(x, y); if (qAbs(qRed(p) - qRed(want)) < 10 && qAbs(qGreen(p) - qGreen(want)) < 10 && qAbs(qBlue(p) - qBlue(want)) < 10) ++near; }
+                        ok = condition[1].section('=', 1, 1) == "none" ? near == 0 : near > 400;
+                        if (!ok) std::fprintf(stderr, "script: xPixels %s: %d matching pixels in %dx%d\n", qPrintable(condition[1]), near, area.width(), area.height());
+                    } else std::fprintf(stderr, "script: xPixels: no chat view or window (view %p)\n", static_cast<void *>(view));
+                }   // MOBS's window is kept up while the person finishes going live
                 else if (ok && condition[0] == "setupStep") ok = prefs.setupStep() == condition[1].toInt();
+                else if (ok && condition[0] == "setupChatStudio") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("studio").toString() == condition[1]; }   // does Live Studio open for the signed-in account?
                 else if (ok && condition[0] == "setupDone") ok = prefs.setupDone() == (condition[1] == "1");
                 else if (ok && condition[0] == "cameraLocked") ok = state.cameraLocked() == (condition[1] == "1");
                 else if (ok && condition[0] == "micLocked") ok = prefs.micLocked() == (condition[1] == "1");

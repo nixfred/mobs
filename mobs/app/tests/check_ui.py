@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         "MOBS_NO_HOTKEY": "1", "MOBS_NO_OPEN": "1", "MOBS_FAKE_CAMERAS": "1", "MOBS_FAKE_AUDIO": "1",
         "MOBS_WEB_DIR": str(root / "web"), "MOBS_X_LOGIN_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri(),
         "MOBS_X_CHAT_URL": (Path(__file__).resolve().parent / "fake-studio.html").as_uri() + "?id=%1",
+        "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-live.html").as_uri(),
         "MOBS_TEST_SOURCE": "colour", "MOBS_TEST_CAMERA": "colour",
         "MOBS_TOKEN_FILE": str(root / "token"), "MOBS_THEME_DIR": str(root / "theme"),
     }
@@ -129,12 +130,21 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "opening https://studio.x.com/live", "guided setup finished"))
     check("the setup guide opens again where the person stopped", "wait=0.5,expect=setupOpen:1,expect=setupStep:3,click=setupBack,expect=setupStep:2", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=3\n")
     check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
+    check("after the sign-in the guide checks that Live Studio opens, and says so",
+          "setupstep=8,wait=0.5,expect=setupChatStudio:idle,xurl=https://x.com/home,wait=4,expect=setupChatStudio:ok", fake_backend=True, extra_env=setup_env)
+    check("when Live Studio does not open the guide says so and still lets the person go on",
+          "setupstep=8,wait=0.5,xurl=https://x.com/home,wait=9,expect=setupChatStudio:failed,expect=xSignedIn:1,click=setupNext,expect=setupStep:9", fake_backend=True,
+          extra_env=setup_env | {"MOBS_X_TRIES": "1", "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri()})
     check("signing in to X is noticed from its home page only", "setupstep=8,wait=0.5,expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,wait=0.2,click=setupNext,expect=setupStep:9",
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
-          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=3.8,expect=xCrop:cropped,expect=xHiddenAtLeast:3,checkpip",
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x444,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
           fake_backend=True, expect_log=("X chat attached",))
+    check("a chat card that X answers with a sign-in page says so",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=7,expect=xCrop:signedout", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
+    check("a livestream page with no chat card says so",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/NOCHAT000001,expect=chatXId:NOCHAT000001,wait=7,expect=xCrop:missing", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
     check("a link that is not a Live Studio link attaches nothing", "pick=2,preview=1,wait=0.4,xattach=https://example.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("the chat of a livestream ends with the take", "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/broadcasts/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,start,expect=state:recording,stop,waitidle,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("a web address pasted as the stream key is refused", "setupstep=7,wait=0.4,clip=rtmp://va.pscp.tv:80/x,click=setupPasteKey,wait=0.2,expect=streamReady:0", fake_backend=True, extra_env=setup_env)

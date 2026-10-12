@@ -72,8 +72,9 @@ void ChatModel::clear() {
 }
 
 QString ChatModel::xIdFrom(const QString &text) {
-    // x.com or twitter.com, then /i/live-studio/ or /i/broadcasts/, then the id. The id must follow a slash or a dot, so "evilx.com/..." never matches.
-    static const QRegularExpression re(R"((?:^|[/.])(?:x|twitter)\.com/i/(?:live-studio|broadcasts)/([A-Za-z0-9]{8,24})(?:[/?#\s]|$))");
+    // x.com or twitter.com with /i/live-studio/ or /i/broadcasts/, or studio.x.com with /live/ (the address of Live Studio itself), then the id.
+    // The id must follow a slash or a dot, so "evilx.com/..." never matches.
+    static const QRegularExpression re(R"((?:^|[/.])(?:(?:x|twitter)\.com/i/(?:live-studio|broadcasts)|studio\.x\.com/live)/([A-Za-z0-9]{8,24})(?:[/?#\s]|$))");
     const QRegularExpressionMatch m = re.match(text.trimmed());
     return m.hasMatch() ? m.captured(1) : QString();
 }
