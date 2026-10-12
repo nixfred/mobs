@@ -135,6 +135,8 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("when Live Studio does not open the guide says so and still lets the person go on",
           "setupstep=8,wait=0.5,xurl=https://x.com/home,wait=9,expect=setupChatStudio:failed,expect=xSignedIn:1,click=setupNext,expect=setupStep:9", fake_backend=True,
           extra_env=setup_env | {"MOBS_X_TRIES": "1", "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri()})
+    check("X's sign-in page is told passkeys do not exist, so it never waits for one",
+          "setupstep=8,wait=2.5,expect=setupChatTitle:passkey=NotAllowedError/gone", fake_backend=True, extra_env=setup_env)
     check("signing in to X is noticed from its home page only", "setupstep=8,wait=0.5,expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,wait=0.2,click=setupNext,expect=setupStep:9",
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.

@@ -512,6 +512,7 @@ int main(int argc, char *argv[]) {
                     } else std::fprintf(stderr, "script: xPixels: no chat view or window (view %p)\n", static_cast<void *>(view));
                 }   // MOBS's window is kept up while the person finishes going live
                 else if (ok && condition[0] == "setupStep") ok = prefs.setupStep() == condition[1].toInt();
+                else if (ok && condition[0] == "setupChatTitle") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("pageTitle").toString() == condition[1]; }   // what the stand-in sign-in page reports it saw
                 else if (ok && condition[0] == "setupChatStudio") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("studio").toString() == condition[1]; }   // does Live Studio open for the signed-in account?
                 else if (ok && condition[0] == "setupDone") ok = prefs.setupDone() == (condition[1] == "1");
                 else if (ok && condition[0] == "cameraLocked") ok = state.cameraLocked() == (condition[1] == "1");

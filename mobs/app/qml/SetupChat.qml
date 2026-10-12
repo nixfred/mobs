@@ -11,6 +11,18 @@ Item {
     readonly property bool canSkip: true
     readonly property string skipText: "skip: no chat in the picture"
     property string studio: "idle"        // idle, checking, ok or failed: does Live Studio open for this account?
+    property string pageTitle: web.title  // for tests: the stand-in sign-in page writes what it saw here
+    // X's sign-in page asks the browser for a PASSKEY the moment it loads. A passkey lives on a phone or in a password manager, neither of which a small
+    // embedded browser can reach, and Qt's browser waits for an answer that never comes: the page spins forever (Fred hit exactly that). So the page is
+    // told, before any of its own code runs, that passkeys do not exist here. X then goes straight to the email, username and password way in.
+    readonly property string noPasskeys: [
+        "(function () {",
+        "  try { delete window.PublicKeyCredential } catch (e) {}",
+        "  try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }) } catch (e) {}",
+        "  var refuse = function () { return Promise.reject(new DOMException('Passkeys are not available in this window.', 'NotAllowedError')) };",
+        "  try { if (navigator.credentials) { navigator.credentials.get = refuse; navigator.credentials.create = refuse } } catch (e) {}",
+        "})()"
+    ].join("\n")
     property int tries: 0
     property url target: xLoginUrl
     function startCheck() { if (studio === "idle") { studio = "checking"; tries = 0; target = xStudioUrl } }
@@ -39,7 +51,7 @@ Item {
             font.pixelSize: 13
             color: Prefs.xSignedIn && root.studio !== "failed" ? Omarchy.green : Omarchy.tertiaryText
             width: parent.width; wrapMode: Text.WordWrap
-            text: !Prefs.xSignedIn ? "Sign in below. When you see your X home page you are done."
+            text: !Prefs.xSignedIn ? "Sign in below with your email or username and password. Passkeys and Google or Apple sign-in cannot work in this box. When you see your X home page you are done."
                 : root.studio === "ok" ? "Signed in, and Live Studio opens for your account. Press NEXT."
                 : root.studio === "failed" ? "Signed in, but Live Studio did not open here (it needs X Premium). You can still go live; the chat just will not show. Press NEXT."
                 : "Signed in. Checking that Live Studio opens for your account..."
@@ -58,6 +70,8 @@ Item {
                 settings.fullScreenSupportEnabled: false
                 settings.pluginsEnabled: false
                 onUrlChanged: Prefs.noteXUrl(url.toString())
+                userScripts.collection: [ { name: "no passkeys", sourceCode: root.noPasskeys, injectionPoint: WebEngineScript.DocumentCreation, worldId: WebEngineScript.MainWorld, runsOnSubFrames: true } ]
+                onWebAuthUxRequested: function (request) { request.cancel() }   // a request that still arrives is refused at once, so nothing can hang
             }
         }
     }

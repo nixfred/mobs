@@ -1,5 +1,13 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Sign in (a stand-in page for tests)</title></head>
+<head><meta charset="utf-8"><title>Sign in (a stand-in page for tests)</title>
+<script>
+  // What X's sign-in page does the moment it loads: it asks for a passkey. The title says what happened to the request, and whether passkeys exist at all.
+  var exists = (typeof PublicKeyCredential === 'undefined') ? 'gone' : 'present';
+  navigator.credentials.get({ publicKey: { challenge: new Uint8Array(8), timeout: 5000 } }).then(
+    function () { document.title = 'passkey=asked/' + exists; },
+    function (e) { document.title = 'passkey=' + e.name + '/' + exists; });
+</script>
+</head>
 <body style="background:#000;color:#eee;font-family:sans-serif"><h2>stand-in sign-in page</h2><p>Tests only: no network, no account.</p></body>
 </html>

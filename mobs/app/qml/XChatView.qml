@@ -59,6 +59,7 @@ Item {
         settings.fullScreenSupportEnabled: false
         settings.pluginsEnabled: false
         settings.focusOnNavigationEnabled: false
+        onWebAuthUxRequested: function (request) { request.cancel() }   // the chat card never signs in: a passkey request is refused at once, never left waiting
         onLoadingChanged: function (info) { if (info.status === WebEngineView.LoadSucceededStatus) { root.tries = 0; root.misses = 0; look.restart() } }
         onNavigationRequested: function (request) {   // the card is for reading: nothing in it takes the view to another site
             const target = request.url.toString()
