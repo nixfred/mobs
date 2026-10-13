@@ -58,6 +58,31 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(devices.error().contains("timed out"), 6000);
         QTRY_VERIFY(!devices.scanning()); QVERIFY(!devices.ready());
     }
+    void lockingTheSystemDefaultMicrophoneLocksTheDeviceItIsRightNow() {
+        QTemporaryDir dir; const QString path = dir.path() + "/pactl";
+        QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("#!/bin/sh\ncase \"$*\" in\n *get-default-source*) echo alsa_input.usb-headset;;\n"
+                " *) printf '[{\"name\":\"alsa_input.usb-headset\",\"description\":\"USB headset\"},{\"name\":\"alsa_input.pci-0\",\"description\":\"Built-in\"}]';;\nesac\n");
+        f.close();
+        QVERIFY(f.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        AudioDevices devices(nullptr, path); devices.refresh();
+        QTRY_VERIFY(devices.ready());
+        QCOMPARE(devices.resolveDefault("default"), QString("alsa_input.usb-headset"));   // the real device, so a headset plugged in later does not take over
+        QCOMPARE(devices.resolveDefault("alsa_input.pci-0"), QString("alsa_input.pci-0"));  // a named one stays as it is
+    }
+    void aSystemDefaultThatCannotBeNamedStaysTheSystemDefault() {
+        QTemporaryDir dir; const QString path = dir.path() + "/pactl";
+        QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("#!/bin/sh\ncase \"$*\" in\n *get-default-source*) echo some.output.monitor;;\n"
+                " *) printf '[{\"name\":\"alsa_input.pci-0\",\"description\":\"Built-in\"}]';;\nesac\n");   // the default is not one of the microphones listed
+        f.close();
+        QVERIFY(f.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        AudioDevices devices(nullptr, path); devices.refresh();
+        QTRY_VERIFY(devices.ready());
+        QCOMPARE(devices.resolveDefault("default"), QString("default"));
+        AudioDevices none(nullptr, "/no/such/pactl");
+        QCOMPARE(none.resolveDefault("default"), QString("default"));                       // no audio service: nothing to resolve, nothing breaks
+    }
 };
 QTEST_MAIN(AudioDeviceTests)
 #include "tst_audiodevices.moc"

@@ -50,6 +50,16 @@ QString AudioDevices::name(const QString &id, bool desktop) const {
     for (const auto &item : (desktop ? m_desktops : m_mics)) if (item.toMap()["id"].toString() == id) return item.toMap()["name"].toString();
     return desktop ? "unavailable output" : "unavailable microphone";
 }
+QString AudioDevices::resolveDefault(const QString &id) const {
+    if (id != "default") return id;
+    if (qEnvironmentVariable("MOBS_FAKE_AUDIO") == "1") return qEnvironmentVariable("MOBS_FAKE_DEFAULT_SOURCE", id);   // tests: a stand-in system default
+    QProcess p;
+    p.start(m_program, {"get-default-source"});
+    if (!p.waitForStarted(500) || !p.waitForFinished(1000) || p.exitCode() != 0) return id;   // a click must not hang on a wedged audio service: a second and a half at most
+    const QString name = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    for (const auto &item : m_mics) if (item.toMap()["id"].toString() == name) return name;
+    return id;
+}
 QString AudioDevices::problem(const AudioSpec &audio, bool mic) const {
     if (!mic && !audio.desktop) return {};
     if (!m_ready) return m_error.isEmpty() ? "checking audio inputs; try again in a moment" : m_error;

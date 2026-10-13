@@ -42,6 +42,17 @@ private slots:
         c.Toggle();
         QCOMPARE(b.began, 1); QCOMPARE(b.lastPick, 2);
     }
+    void toggleDoesNotStartATakeWhileTheSetupGuideIsOpenButStillStopsOne() {
+        QSettings s(dir.path() + "/g.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);
+        FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);
+        st.openSetup();
+        c.Toggle();
+        QCOMPARE(b.began, 0); QCOMPARE(e.state(), QString("idle"));   // the guide covers the window and takes every key: a take started now would have nothing to see
+        st.closeSetup();
+        c.Toggle(); emit b.started();
+        st.openSetup();
+        c.Toggle(); QCOMPARE(b.ended, 1);                              // a take that is running can always be stopped
+    }
     void secondToggleStops() {
         QSettings s(dir.path() + "/c.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);
         FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);

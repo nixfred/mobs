@@ -17,8 +17,9 @@ QtMessageHandler g_previous = nullptr;
 void qtHandler(QtMsgType type, const QMessageLogContext &context, const QString &message) {
     static const char *const names[] = {"debug", "warning", "critical", "fatal", "info"};
     MobsLog::write("qt", QString("%1: %2").arg(names[type < 5 ? type : 0], message));
-    if (g_previous) g_previous(type, context, message);
-    else std::fprintf(stderr, "%s\n", qPrintable(message));
+    const QString clean = MobsLog::scrub(message);   // the line that goes on to stderr (the journal, under a launcher) must not carry the stream key either
+    if (g_previous) g_previous(type, context, clean);
+    else std::fprintf(stderr, "%s\n", qPrintable(clean));
 }
 }
 
@@ -40,6 +41,13 @@ void MobsLog::init() {
 QString MobsLog::path() { QMutexLocker lock(&g_mutex); return g_file.isOpen() ? g_file.fileName() : QString(); }
 
 void MobsLog::secret(const QString &text) { QMutexLocker lock(&g_mutex); g_secret = text; }
+
+QString MobsLog::scrub(const QString &text) {
+    QMutexLocker lock(&g_mutex);
+    QString out = text;
+    if (!g_secret.isEmpty()) out.replace(g_secret, "***");
+    return out;
+}
 
 void MobsLog::write(const char *category, const QString &text) {
     QMutexLocker lock(&g_mutex);

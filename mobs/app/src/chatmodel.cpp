@@ -85,16 +85,47 @@ bool ChatModel::attachX(const QString &textOrLink) {
     if (id == m_xId) return true;
     if (m_staleIds.contains(id)) { MobsLog::write("chat", "that livestream was already on air before this broadcast began: not attached"); return false; }
     m_xId = id;
+    m_finderNote.clear();
     if (!m_configured) { m_configured = true; m_xConfigured = true; }
     m_demo = false; m_connected = true; m_status.clear();
     MobsLog::write("chat", "X chat attached: the card under the webcam shows the Live Chat of your livestream");   // nothing the person copied is ever logged
     emit statusChanged();
+    emit attached(id);
     return true;
+}
+
+bool ChatModel::attachXByHand(const QString &textOrLink) {
+    const QString id = xIdFrom(textOrLink);
+    if (id.isEmpty()) return false;
+    if (m_staleIds.removeAll(id) > 0) MobsLog::write("chat", "you gave this livestream yourself: taken although it was on air before the broadcast began");
+    return attachX(textOrLink);
+}
+
+QString ChatModel::xTypedNote(const QString &text) const {
+    const QString typed = text.trimmed();
+    if (typed.isEmpty() || !xIdFrom(typed).isEmpty()) return QString();     // nothing typed, or a link that is taken
+    return QStringLiteral("That is not a livestream link MOBS knows. In Live Studio open your livestream and copy the address from the browser's address bar instead.");
+}
+
+void ChatModel::rememberClipboard() {
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    m_clipboardAtStart = clipboard ? clipboard->text() : QString();
+}
+
+void ChatModel::setFinderNote(const QString &note) {
+    if (note == m_finderNote) return;
+    m_finderNote = note;
+    emit statusChanged();
 }
 
 bool ChatModel::attachXFromClipboard() {
     const QClipboard *clipboard = QGuiApplication::clipboard();
-    return clipboard && attachX(clipboard->text());
+    if (!clipboard) return false;
+    const QString text = clipboard->text();
+    if (!text.isEmpty() && text.trimmed() == m_clipboardAtStart.trimmed()) return false;   // it was already there when the broadcast began: an old link, not one copied for this livestream
+    const QString id = xIdFrom(text);
+    if (!id.isEmpty() && id != m_xId && m_usedIds.contains(id)) return false;               // a livestream of an earlier broadcast, wherever and whenever it was copied
+    return attachX(text);
 }
 
 QString ChatModel::xClipboardNote() const {
@@ -102,7 +133,9 @@ QString ChatModel::xClipboardNote() const {
     const QClipboard *clipboard = QGuiApplication::clipboard();
     const QString text = clipboard ? clipboard->text().trimmed() : QString();
     if (text.isEmpty() || text.size() > 400) return QString();
+    if (text == m_clipboardAtStart.trimmed()) return QString();         // what was there before the broadcast is not commented on
     const QString id = xIdFrom(text);
+    if (!id.isEmpty() && m_usedIds.contains(id)) return QStringLiteral("That livestream is from an earlier broadcast. Use the one you just started.");
     if (!id.isEmpty()) return m_staleIds.contains(id) ? QStringLiteral("That livestream was already on air before this broadcast began. Use the one you just started.") : QString();   // otherwise a link that would have been taken
     static const QRegularExpression xLink(R"((?:^|[/.])(?:x|twitter)\.com/)");
     if (!xLink.match(text).hasMatch()) return QString();                                      // whatever else was copied is none of MOBS's business, and is never shown
@@ -111,6 +144,8 @@ QString ChatModel::xClipboardNote() const {
 
 void ChatModel::detachX() {
     m_staleIds.clear();   // the next broadcast starts clean
+    m_clipboardAtStart.clear();
+    if (!m_finderNote.isEmpty()) { m_finderNote.clear(); if (m_xId.isEmpty()) emit statusChanged(); }
     if (m_xId.isEmpty()) return;
     m_xId.clear();
     if (m_xConfigured) { m_configured = false; m_xConfigured = false; m_connected = false; m_status = QStringLiteral("chat is not connected"); }

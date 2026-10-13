@@ -102,6 +102,55 @@ private slots:
         m.detachX();
         QVERIFY(m.attachX("https://studio.x.com/live/1OLDoldOLDold1"));                                      // the next broadcast starts clean
     }
+    void aLinkTypedByHandMayBeOneThatWasOnAirBeforeButTheFinderNeverIs() {
+        ChatModel m;
+        m.setStaleIds({"1OLDoldOLDold1", "1ALSOalsoALSO1"});
+        QVERIFY(!m.attachX("https://studio.x.com/live/1OLDoldOLDold1"));                                    // what the finder or the clipboard finds: refused
+        QVERIFY(m.attachXByHand("https://studio.x.com/live/1OLDoldOLDold1")); QCOMPARE(m.xId(), QString("1OLDoldOLDold1"));   // what the person typed: they said which one it is
+        QVERIFY(m.isStale("1ALSOalsoALSO1")); QVERIFY(!m.isStale("1OLDoldOLDold1"));                       // only that one is let off
+        QVERIFY(!m.attachXByHand("not a link")); QCOMPARE(m.xId(), QString("1OLDoldOLDold1"));              // and a non-link changes nothing
+    }
+    void typedTextThatIsNotATakenLinkGetsAnExplanation() {
+        ChatModel m;
+        QVERIFY(m.xTypedNote("").isEmpty()); QVERIFY(m.xTypedNote("   ").isEmpty());                         // nothing typed: nothing to say
+        QVERIFY(m.xTypedNote("https://studio.x.com/live/1PJqrNXnQywxb").isEmpty());                         // a link that will be taken
+        QVERIFY(!m.xTypedNote("hello").isEmpty()); QVERIFY(!m.xTypedNote("https://example.com/x").isEmpty());
+    }
+    void aFinderNoteStaysUntilALivestreamIsAttachedOrTheTakeEnds() {
+        ChatModel m; QSignalSpy changed(&m, &ChatModel::statusChanged);
+        m.setFinderNote("two are on air"); QCOMPARE(m.finderNote(), QString("two are on air")); QCOMPARE(changed.count(), 1);
+        m.setFinderNote("two are on air"); QCOMPARE(changed.count(), 1);                                    // the same note again: nothing to announce
+        QVERIFY(m.attachX("https://studio.x.com/live/1PJqrNXnQywxb")); QVERIFY(m.finderNote().isEmpty());   // a livestream is attached: the note has done its job
+        m.setFinderNote("late"); m.detachX(); QVERIFY(m.finderNote().isEmpty());                            // and the next broadcast starts without it
+    }
+    void aLinkThatWasOnTheClipboardBeforeTheBroadcastIsNeverPickedUpByItself() {
+        if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
+        ChatModel m;
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1OLDoldOLDold1");
+        m.rememberClipboard();                                                                              // the broadcast begins with an old livestream's address on the clipboard
+        QVERIFY(!m.attachXFromClipboard()); QVERIFY(m.xId().isEmpty()); QVERIFY(m.xClipboardNote().isEmpty());   // not taken, and not commented on
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1NEWnewNEWnew1");
+        QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1NEWnewNEWnew1"));                    // copied after the broadcast began: this one is taken
+        m.detachX();
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1OLDoldOLDold1");
+        QVERIFY(m.attachXFromClipboard());                                                                  // the next broadcast starts clean: nothing was remembered
+    }
+    void anAddressFromAnEarlierBroadcastIsNeverPickedUpFromTheClipboardAndTheOldOneIsComparedWithoutSpaces() {
+        if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
+        ChatModel m; QSignalSpy attached(&m, &ChatModel::attached);
+        m.setUsedIds({"1LASTlastLAST1"});
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1LASTlastLAST1");
+        QVERIFY(!m.attachXFromClipboard()); QVERIFY(!m.xClipboardNote().isEmpty());                        // an earlier broadcast's, wherever it was copied: refused, and why
+        QVERIFY(m.attachXByHand("https://studio.x.com/live/1LASTlastLAST1")); QCOMPARE(attached.count(), 1);   // typed by the person: always taken
+        QCOMPARE(attached.at(0).at(0).toString(), QString("1LASTlastLAST1"));
+        m.detachX();
+        QGuiApplication::clipboard()->setText("  https://studio.x.com/live/1NEWnewNEWnew1  \n");
+        QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1NEWnewNEWnew1"));                    // a new one, even with spaces and a line break around it
+        ChatModel n;
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1OLDoldOLDold1\n"); n.rememberClipboard();
+        QGuiApplication::clipboard()->setText("https://studio.x.com/live/1OLDoldOLDold1");                  // a clipboard manager gave it back without the line break
+        QVERIFY(!n.attachXFromClipboard());
+    }
     void aLinkOnTheClipboardIsAttachedOnlyOnTheOffscreenPlatform() {
         if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
         ChatModel m;

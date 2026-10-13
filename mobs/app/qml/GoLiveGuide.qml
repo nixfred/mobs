@@ -11,7 +11,12 @@ Rectangle {
     color: Omarchy.background
     property bool opened: false
     property string linkNote: ""   // set when the person copied an X link that is not a livestream link
+    property string typedNote: ""  // why the text the person TYPED here was not taken: it stays until they type again (the clipboard check below runs every two seconds and would wipe it)
     function pickUpLink() { linkNote = Chat.attachXFromClipboard() ? "" : Chat.xClipboardNote() }
+    Connections {   // a livestream attached by the finder or a copied link: what was said about a typed one is over
+        target: Chat
+        function onStatusChanged() { if (Chat.xId !== "") root.typedNote = "" }
+    }
     TapHandler {}   // clicks stop here: the recording screen underneath is not what this moment is about
     Connections {
         target: Engine
@@ -33,9 +38,10 @@ Rectangle {
         Txt {
             objectName: "goLiveStatus"
             width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; font.pixelSize: 13
-            color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.green : Omarchy.yellow
+            color: Engine.streamState === "failed" || Engine.streamState === "ended" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.green : Omarchy.yellow
             text: Engine.streamState === "live" ? "X is receiving your stream" + (Engine.streamKbps > 0 ? " (" + (Engine.streamKbps / 1000).toFixed(1) + " Mbps)" : "")
                 : Engine.streamState === "failed" ? "NOT LIVE: " + Engine.streamProblem
+                : Engine.streamState === "ended" ? "NOT LIVE: the connection to X was closed."
                 : Engine.streamState === "reconnecting" ? Engine.streamProblem : "connecting to X..."
         }
         Row {
@@ -52,7 +58,9 @@ Rectangle {
                     width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; lineHeight: 1.2
                     text: "1. In Live Studio press New Livestream.\n2. Pick your source" + (Prefs.sourceName !== "" ? ", " + Prefs.sourceName : "") + ". A green dot means MOBS is connected to it.\n3. Choose Public (or Private to try it out), then press Go Live.\n4. Press Post livestream on X so your followers know."
                 }
-                Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "MOBS opened Live Studio. No green dot? You picked another source than the one whose key MOBS has. Live Studio's player starts muted: press its speaker icon to hear yourself." }
+                Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "MOBS opened Live Studio. No green dot? You picked another source than the one whose key MOBS has. "
+                    + (Prefs.desktopOn ? "Live Studio's player starts muted: leave it muted, your computer's sound is on air and the player would play it back as an echo."   // (the stream carries what the computer plays)
+                                       : "Live Studio's player starts muted: press its speaker icon to hear yourself.") }
             }
         }
         Row {
@@ -70,12 +78,14 @@ Rectangle {
                 objectName: "goLiveChatStatus"
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(560, root.width - 48 - 260); wrapMode: Text.WordWrap; font.pixelSize: 13
-                color: Chat.xId !== "" ? Omarchy.green : root.linkNote !== "" ? Omarchy.yellow : Omarchy.secondaryText
-                text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : "Chat: MOBS finds your livestream by itself once you have pressed Go Live. If it does not, press Copy URL in Live Studio and come back."
+                color: root.typedNote !== "" || (Chat.xId === "" && (root.linkNote !== "" || Chat.finderNote !== "")) ? Omarchy.yellow : Chat.xId !== "" ? Omarchy.green : Omarchy.secondaryText
+                text: root.typedNote !== "" ? root.typedNote : Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : Chat.finderNote !== "" ? Chat.finderNote : "Chat: MOBS finds your livestream by itself once you have pressed Go Live. If it does not, press Copy URL in Live Studio and come back."
             }
             Rectangle {
                 width: 240; height: 36; radius: 18; color: Omarchy.lighterBackground; border.color: Omarchy.selection
-                TextInput { id: pasted; objectName: "goLiveLinkInput"; anchors { fill: parent; leftMargin: 14; rightMargin: 14 } verticalAlignment: TextInput.AlignVCenter; clip: true; font.pixelSize: 12; color: Omarchy.foreground; onAccepted: { if (Chat.attachX(text)) text = "" } }
+                TextInput { id: pasted; objectName: "goLiveLinkInput"; anchors { fill: parent; leftMargin: 14; rightMargin: 14 } verticalAlignment: TextInput.AlignVCenter; clip: true; font.pixelSize: 12; color: Omarchy.foreground
+                    onTextEdited: root.typedNote = ""
+                    onAccepted: { if (Chat.attachXByHand(text)) { text = ""; root.typedNote = ""; root.linkNote = "" } else root.typedNote = Chat.xTypedNote(text) } }
                 Txt { anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter } visible: pasted.text === ""; text: Chat.xId === "" ? "or paste the link here" : "wrong livestream? paste the right link"; font.pixelSize: 12; color: Omarchy.tertiaryText }
             }
         }

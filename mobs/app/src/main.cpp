@@ -42,7 +42,8 @@ public:
         emit started(); emit audioLevels(-18, -24, spec.mic, spec.audio.desktop, QString());
         if (m_streams) {   // a pretend broadcast: connecting first, live a moment later (the steps below then break it on purpose)
             emit streamState("connecting", QString());
-            QTimer::singleShot(400, this, [this] { if (m_streams) { emit streamState("live", QString()); emit streamStats(9000, 0); } });
+            if (qEnvironmentVariable("MOBS_FAKE_STREAM_NEVER_LIVE") != "1")   // =1: the server never answers, as with a wrong key or no network
+                QTimer::singleShot(400, this, [this] { if (m_streams) { emit streamState("live", QString()); emit streamStats(9000, 0); } });
         }
     }
     void pause(bool) override {}
@@ -190,20 +191,43 @@ int main(int argc, char *argv[]) {
     ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
+    // The livestreams whose chat was attached in earlier broadcasts are remembered (the last 20), so an old address that is still on the clipboard is never taken for a new one.
+    chat.setUsedIds(settings.value("xUsedIds").toStringList());
+    QObject::connect(&chat, &ChatModel::attached, &chat, [&settings, &chat](const QString &id) {
+        QStringList ids = settings.value("xUsedIds").toStringList();
+        ids.removeAll(id); ids.prepend(id);
+        while (ids.size() > 20) ids.removeLast();
+        settings.setValue("xUsedIds", ids); settings.sync();
+        chat.setUsedIds(ids);
+    });
     QObject::connect(&recorder, &Engine::stateChanged, &chat, [&] { if (recorder.state() == "idle") chat.detachX(); });   // a livestream's chat belongs to that livestream
     // Stopping the video does not end the livestream on X: it stays open, public, with viewers watching a dead stream, until it is ended in Live Studio (found by Fred's first
     // real go-live: 62 viewers on a stream that had stopped). So when a take that was broadcasting ends, however it ends (stopped, or failed and went straight to idle), say so
     // and open the livestream in Live Studio: the livestream itself if MOBS found it, else the list of livestreams. The chat is detached when the take ends, so the id is kept here.
+    // Only when X actually received the stream during the take (it reached "live"): a broadcast that never connected (a wrong key, no network) left nothing open on X, and
+    // saying "viewers see a dead stream" then, and opening a browser, would be wrong. Without a livestream id the wording is conditional: the person may not have pressed Go Live.
     auto broadcastTake = std::make_shared<bool>(false);
+    auto wentLive = std::make_shared<bool>(false);
     auto liveId = std::make_shared<QString>();
     QObject::connect(&chat, &ChatModel::statusChanged, &state, [&, liveId] { if (!chat.xId().isEmpty()) *liveId = chat.xId(); });
-    QObject::connect(&recorder, &Engine::stateChanged, &state, [&, broadcastTake, liveId] {
+    QObject::connect(&recorder, &Engine::streamChanged, &state, [&, wentLive] { if (recorder.streamState() == "live") *wentLive = true; });
+    QObject::connect(&recorder, &Engine::stateChanged, &state, [&, broadcastTake, wentLive, liveId] {
         const QString now = recorder.state();
         const bool taking = now == "starting" || now == "recording" || now == "paused";
-        if (taking && recorder.streamRequested()) { *broadcastTake = true; return; }
-        if (taking || !*broadcastTake) return;
+        if (taking && recorder.streamRequested()) {
+            if (now == "starting") chat.rememberClipboard();   // a livestream link that is already on the clipboard now is an old one: never picked up as this broadcast's
+            *broadcastTake = true;
+            return;
+        }
+        if (taking) return;
+        const bool reached = *wentLive;
+        *wentLive = false;
+        if (!*broadcastTake) return;
         *broadcastTake = false;
-        Notifier::send("MOBS: your livestream is still open on X", "The video has stopped, but the livestream stays open on X until you press End livestream in Live Studio. Until then viewers see a dead stream.", true);
+        if (!reached) { liveId->clear(); MobsLog::write("app", "the broadcast ended without X ever receiving the stream: nothing is open on X, so no notice"); return; }
+        Notifier::send("MOBS: your livestream is still open on X",
+                       liveId->isEmpty() ? "The video has stopped. If you pressed Go Live in X, that livestream stays open until you press End livestream in Live Studio, and until then viewers see a dead stream."
+                                         : "The video has stopped, but the livestream stays open on X until you press End livestream in Live Studio. Until then viewers see a dead stream.", true);
         state.openUrl(liveId->isEmpty() ? QStringLiteral("https://studio.x.com/live") : "https://studio.x.com/live/" + *liveId);
         liveId->clear();
     });
@@ -357,7 +381,7 @@ int main(int argc, char *argv[]) {
         *run = [=, &app, &recorder, &state, &preview, &review, &prefs, &qmlWarnings, &backend, &pip, &chat, &relay]() mutable {
             if (*idx >= steps->size()) return;
             const QString st = steps->at((*idx)++);
-            std::printf("script: %s\n", qPrintable(st)); std::fflush(stdout);
+            std::printf("script: %s\n", qPrintable(st.startsWith("streamkey=") ? QStringLiteral("streamkey=<kept private>") : st)); std::fflush(stdout);   // the key is never printed, not even in a test hook's echo
             if (st == "start") { recorder.start(state.pick()); QTimer::singleShot(0, &app, *run); }
             else if (st == "waitrec") waitFor([&] { return recorder.state() == "recording"; }, 90000, "recording to begin");
             else if (st == "waitidle") waitFor([&] { return recorder.state() == "idle"; }, 30000, "the file to be saved");
@@ -509,6 +533,7 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "setupOpen") ok = state.setupOpen() == (condition[1] == "1");   // the guided setup is showing
                 else if (ok && condition[0] == "mainHeld") ok = pip.mainHeld() == (condition[1] == "1");
                 else if (ok && condition[0] == "chatXId") ok = chat.xId() == condition[1];
+                else if (ok && condition[0] == "finderNote") ok = condition[1] == "none" ? chat.finderNote().isEmpty() : chat.finderNote().startsWith(condition[1]);   // finderNote:TEXT: what the livestream finder tells the person begins like this; finderNote:none: nothing
                 else if (ok && condition[0] == "xSignedIn") ok = prefs.xSignedIn() == (condition[1] == "1");
                 else if (ok && condition[0] == "xCrop") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("cropState").toString() == condition[1]; }
                 else if (ok && condition[0] == "xRegion") { QQuickItem *view = pipItem("xChatView"); ok = view && QString("%1x%2").arg(qRound(view->property("regionW").toDouble())).arg(qRound(view->property("regionH").toDouble())) == condition[1]; }   // the part of X's page that is shown, in the page's own pixels

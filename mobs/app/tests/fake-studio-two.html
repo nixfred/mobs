@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Live Studio | X Studio (a stand-in page for tests: two new livestreams at once)</title></head>
+<body style="background:#000;color:#eee;font-family:sans-serif">
+<h2>Live Studio</h2>
+<ul><li>Livestreams</li><li>Sources</li></ul>
+<div>Date Source Visibility Views</div>
+<h3>Live Now</h3>
+<div id="live"></div>
+<h3>Past</h3>
+<div><a href="/live/1OLDoldOLDold2">An older stream</a></div>
+<script>
+  // Two livestreams go on air in the same moment (the person's own and one from another device on the same account): MOBS cannot tell which is this broadcast's.
+  setTimeout(function () {
+    var d = document.getElementById('live');
+    ['1PJqrNmYLjYxb', '1TWOtwoTWOtwo2'].forEach(function (id) { var a = document.createElement('a'); a.setAttribute('href', '/live/' + id); a.textContent = 'Stream ' + id; d.appendChild(a); });
+  }, 6500);
+</script>
+<p>Tests only: no network, no account.</p>
+</body>
+</html>

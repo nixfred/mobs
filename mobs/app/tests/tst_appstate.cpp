@@ -64,6 +64,16 @@ private slots:
         QCOMPARE(a.screen(), 2);       // back on ready, with the pick kept
         QCOMPARE(a.pick(), 1);
     }
+    void whatToShareIsForTheNextTakeNotTheOneThatIsRunning() {
+        QTemporaryDir d; QSettings s(d.path() + "/n.ini", QSettings::IniFormat);
+        AppState a(&s); a.choose(2);
+        a.setRecording(true);
+        QSignalSpy picks(&a, &AppState::pickChanged);
+        a.choose(1); a.choose(3);                                  // clicked in EXPERT during a take: the window on the stream must not change with it
+        QCOMPARE(a.pick(), 2); QCOMPARE(picks.count(), 0); QCOMPARE(a.screen(), 3);
+        a.setRecording(false);
+        a.choose(1); QCOMPARE(a.pick(), 1);                        // after the take it works again
+    }
     // ---- camera choice, corner and size ---------------------------------------------------------------------------
     static QList<CameraInfo> twoCameras() {
         return {{"/dev/v4l/by-id/usb-brio-video-index0", "Logitech BRIO", true}, {"/dev/v4l/by-id/usb-hd-video-index0", "HD Webcam", false}};

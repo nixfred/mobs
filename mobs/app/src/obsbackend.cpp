@@ -72,14 +72,13 @@ static_assert(LOG_ERROR == obslog::Error && LOG_WARNING == obslog::Warning && LO
 
 static void obsLogHandler(int level, const char *fmt, va_list args, void *) {
     static const bool verbose = qEnvironmentVariable("MOBS_VERBOSE") == "1";
-    if (level <= obslog::Info) {                       // the log FILE keeps libobs's informational lines (never its per-frame debug ones)
-        va_list copy; va_copy(copy, args);
-        char line[2048]; vsnprintf(line, sizeof line, fmt, copy); va_end(copy);
-        MobsLog::write(level <= obslog::Error ? "libobs-error" : level <= obslog::Warning ? "libobs-warn" : "libobs", QString::fromUtf8(line));
-    }
-    if (!obsLogWanted(level, verbose)) return;         // the journal still only gets warnings and errors
-    vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
+    const bool toFile = level <= obslog::Info;         // the log FILE keeps libobs's informational lines (never its per-frame debug ones)
+    const bool toJournal = obsLogWanted(level, verbose);   // the journal still only gets warnings and errors
+    if (!toFile && !toJournal) return;                 // (a debug line per camera frame is dropped before anything is formatted)
+    const QString line = QString::vasprintf(fmt, args);
+    if (toFile) MobsLog::write(level <= obslog::Error ? "libobs-error" : level <= obslog::Warning ? "libobs-warn" : "libobs", line);
+    // The file log scrubs the stream key in write(); the copy on stderr goes to the journal under a launcher, so it is scrubbed the same way.
+    if (toJournal) fprintf(stderr, "%s\n", MobsLog::scrub(line).toLocal8Bit().constData());
 }
 
 ObsBackend::ObsBackend(QString tokenFile, QObject *parent) : RecorderBackend(parent), m_tokenFile(std::move(tokenFile)) {
@@ -613,6 +612,9 @@ void ObsBackend::stopOutput() {
         m_streamShown = "ended";
         stopStream();
     }
+    // Also when the take failed before the broadcast got an output (the picker timed out, the camera never started, no encoder): the key is kept for one take only, and the
+    // scrubber that hides it from every line is switched off with it (stopStream does the same, but only when there was an output).
+    m_spec.stream.key.clear(); m_streamKey.clear(); MobsLog::secret({});
     if (m_out) {
         signal_handler_disconnect(obs_output_get_signal_handler(m_out), "stop", &ObsBackend::outputStopped, this);
         obs_output_release(m_out); m_out = nullptr;
@@ -682,7 +684,10 @@ void ObsBackend::poll() {
             if (code != OBS_OUTPUT_SUCCESS) {
                 const char *detail = obs_output_get_last_error(m_out);
                 const QString why = detail ? QString::fromUtf8(detail) : QString();
-                fail(why.isEmpty() ? QString("recording stopped unexpectedly (output code %1)").arg(code) : why);
+                QString message = why.isEmpty() ? QString("recording stopped unexpectedly (output code %1)").arg(code) : why;
+                // A take lost to a full disk is usually still a playable file: say where it is, so nobody thinks the whole take is gone.
+                if (QFileInfo(m_path).size() > 0) message += QString(". What was recorded so far is in %1").arg(m_path);
+                fail(message);
                 return;
             }
             const QString done = m_path;

@@ -142,6 +142,24 @@ private slots:
         prefs.setPip(false); QVERIFY(changed.count() >= 1);
         changed.clear(); st.choose(1); QVERIFY(changed.count() >= 1);
     }
+    // ---- text from outside that goes into a Lua string for hyprctl
+    void aWorkspaceNameCanNeverEndALuaStringAndAddCode() {
+        QCOMPARE(PipController::luaString("3"), QString("\"3\""));
+        QCOMPARE(PipController::luaString("special:mobs"), QString("\"special:mobs\""));
+        QCOMPARE(PipController::luaString("a\"}); os.execute(\"x\") --"), QString("\"a\\\"}); os.execute(\\\"x\\\") --\""));   // the quote that would end the string is escaped
+        QCOMPARE(PipController::luaString("back\\slash"), QString("\"back\\\\slash\""));
+        QCOMPARE(PipController::luaString("two\nlines"), QString("\"two\\010lines\""));                                     // a line break becomes Lua's decimal escape
+    }
+    // ---- the chat card's self-check: how much of the card is lit
+    void aBlackPictureHasNothingLitAndOneWithTextHasSome() {
+        QCOMPARE(PipController::litShare(QImage()), 0.0);
+        QImage card(100, 40, QImage::Format_ARGB32); card.fill(Qt::black);
+        QCOMPARE(PipController::litShare(card), 0.0);                       // a card whose picture never reached the window
+        for (int y = 10; y < 20; ++y) for (int x = 10; x < 30; ++x) card.setPixel(x, y, qRgb(255, 255, 255));   // a heading's worth of text
+        QVERIFY(PipController::litShare(card) > 1.0);
+        QImage dim(100, 40, QImage::Format_ARGB32); dim.fill(qRgb(40, 44, 52));
+        QCOMPARE(PipController::litShare(dim), 0.0);                        // the dark glass of the card itself is not "lit"
+    }
     // ---- a webcam window closed in the middle of a take
     void aClosedWebcamWindowIsPutBackOnlyDuringATakeAndNotWhenItKeepsBeingClosed() {
         for (const char *taking : {"starting", "recording", "paused"}) {

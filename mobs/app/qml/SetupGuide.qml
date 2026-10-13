@@ -16,6 +16,10 @@ Rectangle {
     readonly property bool pageCanNext: page ? page.canNext : false
     function go(n) {
         const to = Math.max(0, Math.min(last, n))
+        // The webcam page puts the webcam window up, and it keeps the camera open for the rest of the guide. Going back to the CAMERA page (or before it) must let go of it:
+        // that page opens the same camera for its own picture, and a webcam allows one reader, so the picture would stay black. Only then: the microphone and screen pages
+        // in between do not touch the camera, and the screen page needs the shared picture kept (its NEXT waits for a frame, which letting go would throw away).
+        if (to <= titles.indexOf("camera")) App.setSetupPreview(false)
         if (to !== step) Prefs.setSetupStep(to)
     }
     function next() {
