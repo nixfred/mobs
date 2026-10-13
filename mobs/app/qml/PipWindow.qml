@@ -42,6 +42,7 @@ Window {
         }
         videoOutput: video
     }
+    XLiveFinder { x: 0; y: 0 }   // finds the livestream that is on air, so the chat card can open its chat without a copied link
     Rectangle {   // you
         id: videoCard
         objectName: "pipVideoCard"

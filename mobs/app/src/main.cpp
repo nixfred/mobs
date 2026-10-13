@@ -191,6 +191,17 @@ int main(int argc, char *argv[]) {
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
     QObject::connect(&recorder, &Engine::stateChanged, &chat, [&] { if (recorder.state() == "idle") chat.detachX(); });   // a livestream's chat belongs to that livestream
+    // Stopping the video does not end the livestream on X: it stays open, public, with viewers watching a dead stream, until it is ended in Live Studio (found by Fred's first real
+    // go-live: 62 viewers on a stream that had stopped). So when a take that was broadcasting stops and the livestream is known, say so and open it there.
+    auto lastState = std::make_shared<QString>();
+    QObject::connect(&recorder, &Engine::stateChanged, &state, [&, lastState] {
+        const QString now = recorder.state();
+        if (now == "stopping" && *lastState != "stopping" && recorder.streamRequested() && !chat.xId().isEmpty()) {
+            Notifier::send("MOBS: your livestream is still open on X", "The video has stopped, but the livestream stays open on X until you press End livestream in Live Studio. Until then viewers see a dead stream.", true);
+            state.openUrl("https://studio.x.com/live/" + chat.xId());
+        }
+        *lastState = now;
+    });
     // The real chat, when asked for (INI chatRelay=true, or MOBS_CHAT_RELAY_PORT in a test): a script in the person's own browser on another computer
     // POSTs what his viewers say, over the tailnet, and the card under the webcam shows it. Off by default: a program that listens is a decision.
     ChatRelay relay(&chat);
@@ -496,6 +507,7 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "xSignedIn") ok = prefs.xSignedIn() == (condition[1] == "1");
                 else if (ok && condition[0] == "xCrop") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("cropState").toString() == condition[1]; }
                 else if (ok && condition[0] == "xRegion") { QQuickItem *view = pipItem("xChatView"); ok = view && QString("%1x%2").arg(qRound(view->property("regionW").toDouble())).arg(qRound(view->property("regionH").toDouble())) == condition[1]; }   // the part of X's page that is shown, in the page's own pixels
+                else if (ok && condition[0] == "xRegionTall") { QQuickItem *view = pipItem("xChatView"); const QStringList range = condition[1].split('-'); const double h = view ? view->property("regionH").toDouble() : -1; ok = view && range.size() == 2 && h >= range[0].toDouble() && h <= range[1].toDouble(); }   // xRegionTall:MIN-MAX: the shown part of the card is that tall, in page pixels
                 else if (ok && condition[0] == "xPixels") {   // xPixels:RRGGBB=some|none: does the chat card show a patch of that colour? Proves that only the Live Chat card is on screen
                     QQuickItem *view = pipItem("xChatView");
                     ok = false;
@@ -512,6 +524,9 @@ int main(int argc, char *argv[]) {
                     } else std::fprintf(stderr, "script: xPixels: no chat view or window (view %p)\n", static_cast<void *>(view));
                 }   // MOBS's window is kept up while the person finishes going live
                 else if (ok && condition[0] == "setupStep") ok = prefs.setupStep() == condition[1].toInt();
+                else if (ok && condition[0] == "sourceName") ok = prefs.sourceName() == condition[1];
+                else if (ok && condition[0] == "setupSourceMode") { auto *page = window->findChild<QObject *>("setupSource"); ok = page && page->property("mode").toString() == condition[1]; }   // "" until the person says whether a source exists
+                else if (ok && condition[0] == "goLiveSteps") { auto *steps = window->findChild<QObject *>("goLiveSteps"); ok = steps && steps->property("text").toString().contains(condition[1]); }   // the go-live window's steps say this
                 else if (ok && condition[0] == "setupChatTitle") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("pageTitle").toString() == condition[1]; }   // what the stand-in sign-in page reports it saw
                 else if (ok && condition[0] == "goLiveNote") { auto *line = window->findChild<QObject *>("goLiveChatStatus"); ok = line && line->property("text").toString().contains(condition[1]); }   // the go-live window's chat line says this
                 else if (ok && condition[0] == "setupChatStudio") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("studio").toString() == condition[1]; }   // does Live Studio open for the signed-in account?
@@ -586,6 +601,7 @@ int main(int argc, char *argv[]) {
                 else std::fprintf(stderr, "script: setupjs needs the sign-in page and a readable file\n");
                 QTimer::singleShot(0, &app, *run);
             }
+            else if (st.startsWith("sourcename=")) { prefs.setSourceName(st.mid(11)); QTimer::singleShot(0, &app, *run); }   // the name of the source on X, as typed on the key page
             else if (st.startsWith("xurl=")) { prefs.noteXUrl(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // the sign-in browser showed this page
             else if (st.startsWith("xattach=")) { std::printf("script: xattach %d\n", int(chat.attachX(st.mid(8)))); QTimer::singleShot(0, &app, *run); }   // a Live Studio link was copied
             else if (st.startsWith("setupstep=")) { prefs.setSetupStep(st.mid(10).toInt()); QTimer::singleShot(0, &app, *run); }   // jump the guided setup to a page

@@ -62,6 +62,19 @@ private slots:
         QCOMPARE(PipController::fitInside(QRect(2900, 900, 480, 270), m), QRect(1080 + 1920 - 480, 40 + (1080 - 40) - 270, 480, 270));   // hanging off the corner: pulled inside
         QVERIFY(PipController::fitInside(QRect(100, 100, 480, 270), m).isNull());          // that place is on ANOTHER monitor: not valid here
     }
+    void aChatCardThatTurnsOnLaterGivesTheWindowRoomWithoutMovingItsCorner() {
+        const QJsonObject m = PipController::monitorById(monitors(), 1);
+        const QRect videoOnly(1500, 100, 480, 270);                                   // 16:9 at 480 wide
+        const QRect withChat = PipController::rectForChat(videoOnly, true, m);
+        QCOMPARE(withChat.topLeft(), videoOnly.topLeft()); QCOMPARE(withChat.width(), 480);   // the same corner and width
+        QCOMPARE(withChat.height(), 270 + PipController::chatHeightFor(480));         // the chat card is added underneath
+        QCOMPARE(PipController::rectForChat(withChat, false, m), videoOnly);          // and taken away again
+        const QRect already(1500, 100, 480, 270 + 300);                               // a window the person made tall keeps their size
+        QCOMPARE(PipController::rectForChat(already, true, m), already);
+        const QRect low(1500, 40 + 1080 - 40 - 270, 480, 270);                        // at the bottom of the monitor there is no room below: it is pulled up
+        const QRect lifted = PipController::rectForChat(low, true, m);
+        QVERIFY(lifted.bottom() <= 40 + 1080 - 1); QVERIFY(lifted.height() > 270);
+    }
     void theDefaultSizeScalesWithTheScreenSoTheWebcamIsVisibleOnceTheBroadcastIsScaledTo1080p() {
         const auto mon = [](int w, int h, double scale) { return QJsonObject{{"x", 0}, {"y", 0}, {"width", w}, {"height", h}, {"scale", scale}, {"reserved", QJsonArray{0, 43, 0, 0}}}; };
         QCOMPARE(PipController::defaultSize(mon(5120, 2160, 1.0)), QSize(1024, 576));    // Fred's ultrawide: 20% of the width, capped

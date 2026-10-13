@@ -16,7 +16,7 @@ Item {
         Txt { text: "Copy the stream key"; font.pixelSize: 26; font.bold: true }
         Txt {
             width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; color: Omarchy.foreground; lineHeight: 1.25
-            text: "In Manage Sources, click the key icon (the red ring) next to your source. X shows a Server URL and a Stream Key. Copy the Stream Key, then press the button below. MOBS already knows the server."
+            text: "In Manage Sources, click the key icon (the red ring) next to YOUR source. X shows a Server URL and a Stream Key. Copy the Stream Key, then press the button below. MOBS already knows the server."
         }
         GuideImage { name: "x-source-card.png"; maxWidth: 560; maxHeight: 80; rings: [{ x: 0.79, y: 0.275, w: 0.045, h: 0.3 }] }
         Row {
@@ -39,6 +39,23 @@ Item {
                     onAccepted: { root.problem = Prefs.setStreamKey(text); if (root.problem === "") text = "" }
                 }
                 Txt { anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter } visible: typed.text === ""; text: "or type it here and press Enter"; font.pixelSize: 12; color: Omarchy.tertiaryText }
+            }
+        }
+        Row {   // which source this key belongs to: the go-live window repeats it, so the right one is picked there
+            spacing: 10
+            Txt { anchors.verticalCenter: parent.verticalCenter; text: "The name of that source:"; font.pixelSize: 13; color: Omarchy.secondaryText }
+            Rectangle {
+                width: 240; height: 36; radius: 18; color: Omarchy.lighterBackground; border.color: Omarchy.selection
+                TextInput {
+                    id: sourceInput
+                    objectName: "setupSourceName"
+                    anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
+                    verticalAlignment: TextInput.AlignVCenter; clip: true; maximumLength: 40
+                    font.pixelSize: 13; color: Omarchy.foreground
+                    Component.onCompleted: text = Prefs.sourceName
+                    onTextEdited: Prefs.setSourceName(text)
+                }
+                Txt { anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter } visible: sourceInput.text === ""; text: "for example MOBS or Gus"; font.pixelSize: 12; color: Omarchy.tertiaryText }
             }
         }
         Txt {

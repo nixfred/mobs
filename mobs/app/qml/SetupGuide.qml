@@ -10,7 +10,7 @@ Rectangle {
     color: Omarchy.background
     visible: App.setupOpen
     property int step: Math.max(0, Math.min(Prefs.setupStep, titles.length - 1))   // a step saved by an older build can never point past the last page
-    readonly property var titles: ["welcome", "camera", "microphone", "your screen", "your webcam", "open X", "make a source", "stream key", "chat", "going live", "all set"]
+    readonly property var titles: ["welcome", "camera", "microphone", "your screen", "your webcam", "open X", "your source", "stream key", "chat", "going live", "all set"]
     readonly property int last: titles.length - 1
     readonly property var page: pageLoader.item
     readonly property bool pageCanNext: page ? page.canNext : false

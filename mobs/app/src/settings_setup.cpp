@@ -16,6 +16,22 @@ void Settings::setSetupDone(bool done) {
     emit changed();
 }
 
+// The name of the person's source on X ("Gus", "MOBS"). X does the real work with it; MOBS only remembers the name so the go-live window can say which one to pick.
+QString Settings::cleanSourceName(const QString &name) {
+    QString out;
+    for (const QChar c : name)
+        if (c.category() != QChar::Other_Control && c != QLatin1Char('<') && c != QLatin1Char('>') && c != QLatin1Char('&')) out += c;   // no markup: it is shown as text
+    return out.simplified().left(40);
+}
+
+void Settings::setSourceName(const QString &name) {
+    const QString clean = cleanSourceName(name);
+    if (clean == m_sourceName) return;
+    m_sourceName = clean;
+    m_settings->setValue("sourceName", clean); m_settings->sync();
+    emit changed();
+}
+
 void Settings::setSetupStep(int step) {
     step = qBound(0, step, 20);
     if (step == m_setupStep) return;

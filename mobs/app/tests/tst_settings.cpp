@@ -202,6 +202,18 @@ private slots:
         c2.unlockMic(); QVERIFY(!c2.micLocked());
         c2.lockMic(""); QVERIFY(!c2.micLocked());                              // nothing to lock
     }
+    void theNameOfTheSourceIsKeptAndCleaned() {
+        QTemporaryDir d; const QString path = d.path() + "/source.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QVERIFY(c.sourceName().isEmpty());
+          c.setSourceName("  Gus  "); QCOMPARE(c.sourceName(), QString("Gus")); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2);
+        QCOMPARE(c2.sourceName(), QString("Gus"));                                                      // kept for the next start
+        c2.setSourceName("<b>My   door</b>\n"); QVERIFY(!c2.sourceName().contains('<')); QVERIFY(!c2.sourceName().contains('>')); QVERIFY(!c2.sourceName().contains('\n'));
+        QVERIFY(!c2.sourceName().contains("  "));                                                       // no markup, no line breaks, no runs of spaces
+        c2.setSourceName(QString(80, 'x')); QCOMPARE(c2.sourceName().size(), 40);                       // a name, not an essay
+        c2.setSourceName(""); QVERIFY(c2.sourceName().isEmpty());
+    }
     void aStreamKeyFromTheClipboardIsSavedOnlyWhenItLooksLikeOne() {
         if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
         QTemporaryDir d; QSettings s(d.path() + "/key.ini", QSettings::IniFormat);

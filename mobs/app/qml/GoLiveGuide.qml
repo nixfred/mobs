@@ -19,7 +19,7 @@ Rectangle {
         function onStreamChanged() { if (Engine.streamState === "live" && !root.opened) { root.opened = true; App.openUrl("https://studio.x.com/live") } }
         function onStateChanged() { if (Engine.state === "idle") root.opened = false }
     }
-    // The chat under the webcam: the person presses Copy URL in Live Studio, comes back here, and MOBS picks the link up by itself.
+    // The chat under the webcam: MOBS finds the livestream by itself once it is on air (XLiveFinder). If it cannot, the person presses Copy URL in Live Studio, comes back here, and MOBS picks the link up.
     Connections {
         target: Qt.application
         function onStateChanged() { if (root.visible && Qt.application.state === Qt.ApplicationActive && Chat.xId === "") root.pickUpLink() }
@@ -28,8 +28,8 @@ Rectangle {
     Column {
         anchors.centerIn: parent
         width: Math.min(880, root.width - 48)
-        spacing: 12
-        Txt { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Your video is on its way to X. Nobody can see it yet."; font.pixelSize: 24; font.bold: true }
+        spacing: root.height < 560 ? 7 : 12   // the smallest window has no room to spare
+        Txt { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Your video is on its way to X. Nobody can see it yet."; font.pixelSize: root.height < 560 ? 21 : 24; font.bold: true }
         Txt {
             objectName: "goLiveStatus"
             width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; font.pixelSize: 13
@@ -42,16 +42,17 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 22
             GuideImage {
-                name: "x-create-livestream.png"; maxWidth: 360; maxHeight: 190
+                name: "x-create-livestream.png"; maxWidth: 360; maxHeight: root.height < 560 ? 150 : 190
                 rings: [{ x: 0.26, y: 0.399, w: 0.575, h: 0.073 }, { x: 0.854, y: 0.901, w: 0.086, h: 0.06 }]
             }
             Column {
                 width: Math.min(400, root.width - 48 - 400 - 22); spacing: 8
                 Txt {
+                    objectName: "goLiveSteps"
                     width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; lineHeight: 1.2
-                    text: "1. In Live Studio press New Livestream.\n2. Pick your source. A green dot means MOBS is connected.\n3. Choose Public, then press Go Live.\n4. Press Post livestream on X so your followers know."
+                    text: "1. In Live Studio press New Livestream.\n2. Pick your source" + (Prefs.sourceName !== "" ? ", " + Prefs.sourceName : "") + ". A green dot means MOBS is connected to it.\n3. Choose Public (or Private to try it out), then press Go Live.\n4. Press Post livestream on X so your followers know."
                 }
-                Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "MOBS opened Live Studio in your browser. If it did not, press the first button." }
+                Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "MOBS opened Live Studio. No green dot? You picked another source than the one whose key MOBS has. Live Studio's player starts muted: press its speaker icon to hear yourself." }
             }
         }
         Row {
@@ -70,7 +71,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(560, root.width - 48 - 260); wrapMode: Text.WordWrap; font.pixelSize: 13
                 color: Chat.xId !== "" ? Omarchy.green : root.linkNote !== "" ? Omarchy.yellow : Omarchy.secondaryText
-                text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : "Chat: after Go Live press Copy URL in Live Studio and come back. MOBS picks the link up by itself."
+                text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : "Chat: MOBS finds your livestream by itself once you have pressed Go Live. If it does not, press Copy URL in Live Studio and come back."
             }
             Rectangle {
                 visible: Chat.xId === ""

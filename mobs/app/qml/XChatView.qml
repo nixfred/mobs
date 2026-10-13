@@ -5,7 +5,8 @@ import MobsCore
 // The chat of the person's own livestream, the way X shows it to them. Read-only: the box for typing is cut off, because the person answers out loud.
 // X's Live Studio page is a desktop page. Below about 900 px wide it turns into a phone layout where the chat card sits far down the page, so MOBS never
 // gives the page a small window. The page lives in a big hidden one (pageW x pageH: the desktop layout, always) and only the "Live Chat" card's part of it
-// is shown, scaled to the width of the dock. The card is found by what it SAYS (its heading), never by a class name that X can change any day, and the
+// is shown, scaled to the width of the dock and ending at the newest message (X lists messages from the top of the card and leaves the rest empty, so a short
+// dock shows the newest ones at its bottom). The card is found by what it SAYS (its heading), never by a class name that X can change any day, and the
 // page is never changed: MOBS reads where the card is, and nothing else, from it.
 // The address is Live Studio itself (studio.x.com/live/<id>). x.com/i/live-studio/<id> holds the same page inside an iframe, which a script on the outer page cannot see into.
 Item {
@@ -38,7 +39,10 @@ Item {
         "  if (cr.y < 0 || cr.y + cr.h > window.innerHeight) { card.scrollIntoView({ block: 'start' }); cr = rectOf(card); }",
         "  var bottom = cr.y + cr.h, boxes = card.querySelectorAll('input,textarea,[contenteditable=\"true\"],[role=\"textbox\"]');",
         "  for (var k = 0; k < boxes.length; k++) { var row = boxes[k]; while (row.parentElement && row.parentElement !== card && rectOf(row.parentElement).h < 100) row = row.parentElement; var rr = rectOf(row); if (rr.y > cr.y + 60 && rr.y < bottom) bottom = rr.y; }",
-        "  return JSON.stringify({ state: 'ok', x: cr.x, y: cr.y, w: cr.w, h: bottom - cr.y, input: bottom < cr.y + cr.h });",
+        "  var last = cr.y, texts = document.createTreeWalker(card, NodeFilter.SHOW_TEXT), tn;",
+        "  while ((tn = texts.nextNode())) { if (!tn.textContent.trim()) continue; var rg = document.createRange(); rg.selectNodeContents(tn); var tb = rg.getBoundingClientRect(); if (tb.height > 0 && tb.top >= cr.y && tb.bottom <= bottom + 1 && tb.bottom > last) last = tb.bottom; }",
+        "  var end = Math.min(bottom, Math.max(last + 16, cr.y + 140));",
+        "  return JSON.stringify({ state: 'ok', x: cr.x, y: cr.y, w: cr.w, h: end - cr.y, input: bottom < cr.y + cr.h });",
         "})()"
     ].join("\n")
 

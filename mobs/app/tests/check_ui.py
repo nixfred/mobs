@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         env.pop(key, None)
     case_count = 0
 
-    def _check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra="", default_preview=False, expect_log=()):
+    def _check(name, steps, size="860x560", fake_backend=False, folder_override=None, extra_env=None, ini_extra="", default_preview=False, expect_log=(), forbid_log=(), limit=15):
         global case_count
         if case_filter and case_filter not in name:
             return
@@ -39,18 +39,21 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
             case_env["MOBS_FAKE_BACKEND"] = "1"
             Path(case_env["MOBS_SETTINGS"]).write_text(f"[General]\nfolder={folder_override or root / 'takes'}\nreviewAfter=false\n{base_ini}{ini_extra}")
         case_env.update(extra_env or {})
-        result = subprocess.run([binary], env=case_env, capture_output=True, text=True, timeout=15)
+        result = subprocess.run([binary], env=case_env, capture_output=True, text=True, timeout=limit)   # limit: seconds this scenario may take
         output = result.stdout + result.stderr
         if result.returncode or "TypeError:" in output or "ReferenceError:" in output or "Unable to assign" in output:
             raise AssertionError(f"{name} ({size}): exit {result.returncode}\n{output}")
         if ("script: forcequit" if steps.endswith(",forcequit") else "script: quit") not in result.stdout:
             raise AssertionError(f"{name}: script did not complete\n{output}")
-        if expect_log:
+        if expect_log or forbid_log:
             log_file = Path(case_env["MOBS_LOG_FILE"])
             log_text = log_file.read_text() if log_file.exists() else ""
             for line in expect_log:
                 if line not in log_text:
                     raise AssertionError(f"{name}: the log never said {line!r}\n{log_text[-1500:]}")
+            for line in forbid_log:   # something that must NOT have happened
+                if line in log_text:
+                    raise AssertionError(f"{name}: the log said {line!r}, which must not happen\n{log_text[-1500:]}")
         print(f"PASS {name} ({size})", flush=True)
 
     failures = []
@@ -124,12 +127,21 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the setup guide walks from welcome to FINISH and keeps what was chosen",
           "wait=0.5,expect=setupOpen:1,expect=setupStep:0,click=setupNext,expect=setupStep:1,expect=cameraLocked:0,click=setupLockCamera,expect=cameraLocked:1,click=setupNext,expect=setupStep:2,"
           "click=setupLockMic,expect=micLocked:1,click=setupNext,expect=setupStep:3,click=setupShowScreen,wait=0.8,expect=previewFrame:1,click=setupNext,expect=setupStep:4,wait=0.5,expect=pipShown:1,click=setupNext,"
-          "expect=setupStep:5,click=setupOpenStudio,click=setupNext,expect=setupStep:6,click=setupNext,expect=setupStep:7,expect=streamReady:0,clip=abc123TESTKEY,click=setupPasteKey,expect=streamReady:1,click=setupNext,"
+          "expect=setupStep:5,click=setupOpenStudio,click=setupNext,expect=setupStep:6,expect=setupSourceMode:,click=setupMakeSource,expect=setupSourceMode:make,click=setupNext,expect=setupStep:7,expect=streamReady:0,clip=abc123TESTKEY,click=setupPasteKey,expect=streamReady:1,click=setupNext,"
           "expect=setupStep:8,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,click=setupNext,expect=setupStep:9,click=setupNext,expect=setupStep:10,click=setupNext,expect=setupOpen:0,expect=setupDone:1,expect=setupStep:0",
           fake_backend=True, extra_env=setup_env,
           expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "opening https://studio.x.com/live", "guided setup finished"))
     check("the setup guide opens again where the person stopped", "wait=0.5,expect=setupOpen:1,expect=setupStep:3,click=setupBack,expect=setupStep:2", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=3\n")
     check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
+    check("the source page asks whether a source exists, holds the person until they answer, and shows the steps that fit the answer",
+          "setupstep=6,wait=0.4,expect=setupSourceMode:,checklayout,key=Space,wait=0.2,expect=setupStep:6,click=setupHaveSource,expect=setupSourceMode:have,checklayout,"
+          "click=setupMakeSource,expect=setupSourceMode:make,checklayout,key=Space,wait=0.2,expect=setupStep:7", fake_backend=True, extra_env=setup_env)
+    check("the name of the source is kept, and the key page and the done page fit with it",
+          "setupstep=7,wait=0.3,sourcename=Gus,expect=sourceName:Gus,checklayout,setupstep=10,wait=0.3,checklayout", fake_backend=True, extra_env=setup_env)
+    check("the go-live window names the source to pick",
+          "streamurl=rtmp://live.example/x,streamkey=test-key-123,sourcename=Gus,pick=1,arm=1,start,expect=state:recording,wait=0.6,expect=mainHeld:1,expect=goLiveSteps:Gus. A green dot,checklayout", fake_backend=True)
+    check("the go-live window still reads well when no source name was given",
+          "streamurl=rtmp://live.example/x,streamkey=test-key-123,pick=1,arm=1,start,expect=state:recording,wait=0.6,expect=mainHeld:1,expect=goLiveSteps:Pick your source. A green dot,checklayout", fake_backend=True)
     check("after the sign-in the guide checks that Live Studio opens, and says so",
           "setupstep=8,wait=0.5,expect=setupChatStudio:idle,xurl=https://x.com/home,wait=4,expect=setupChatStudio:ok", fake_backend=True, extra_env=setup_env)
     check("when Live Studio does not open the guide says so and still lets the person go on",
@@ -141,8 +153,24 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
-          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x444,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
           fake_backend=True, expect_log=("X chat attached",))
+    live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"   # a saved address and key, for every scenario that goes live
+    check("a livestream nobody has written in yet shows the heading, at the least height",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none", fake_backend=True)
+    # The livestream that is on air is found by MOBS itself: no link to copy.
+    check("the livestream that is Live Now in Live Studio is found by itself and its chat attached",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:1PJqrNmYLjYxb,wait=4,expect=xCrop:shown,expect=xPixels:ff00ff=none", fake_backend=True, limit=30)
+    check("when nothing is on air in Live Studio no chat is attached",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:,expect=chatWanted:0", fake_backend=True,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
+    check("stopping a take whose livestream is known says it is still open on X and opens it in Live Studio",
+          live_setup + "xurl=https://x.com/home,xattach=https://studio.x.com/live/1PJqrNmYLjYxb,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=1,stop,waitidle", fake_backend=True,
+          expect_log=("opening https://studio.x.com/live/1PJqrNmYLjYxb",))
+    check("stopping a plain recording opens nothing", "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/1PJqrNmYLjYxb,start,expect=state:recording,wait=1,stop,waitidle", fake_backend=True,
+          forbid_log=("opening https://studio.x.com/live/",))
+    check("a signed-out person's broadcast is not searched for a livestream",
+          live_setup + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:", fake_backend=True)
     check("a chat card that X answers with a sign-in page says so",
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=7,expect=xCrop:signedout", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
     check("a livestream page with no chat card says so",
@@ -157,7 +185,6 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")
     check("there is no webcam to drag in the other picks", "pick=1,wait=0.3,expect=camMoved:0,checklayout", fake_backend=True)
     # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.
-    live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"
     for size in ("860x560", "1024x768", "1180x720"):
         check("live setup page with a saved key fits", live_setup + "pro=1,tab=6,expect=streamReady:1,wait=0.1,checklayout", size)
         check("ready screen armed to go live fits", live_setup + "pick=1,arm=1,expect=armed:1,wait=0.1,checklayout", size, True)
@@ -186,7 +213,8 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env={"MOBS_HOLD_MS": "700"}, expect_log=("hiding it now",))
     check("a copied X link that is not a livestream link gets a note, and a real one attaches the chat",
           live_setup + "xurl=https://x.com/home,clip=https://x.com/NixFred/status/1234567890123456789,pick=1,arm=1,start,expect=state:recording,wait=3,expect=mainHeld:1,expect=goLiveNote:not a livestream link,checklayout,"
-          "clip=https://x.com/i/broadcasts/1PJqrNXnQywxb,wait=3,expect=chatXId:1PJqrNXnQywxb,expect=goLiveNote:Chat attached", fake_backend=True)
+          "clip=https://x.com/i/broadcasts/1PJqrNXnQywxb,wait=3,expect=chatXId:1PJqrNXnQywxb,expect=goLiveNote:Chat attached", fake_backend=True,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
     check("stopping the stream ends the hold", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.5,expect=mainHeld:1,click=goLiveStop,waitidle,expect=mainHeld:0", fake_backend=True)
     check("arming without an address or key sends the user to set them up",
           "pick=1,arm=1,expect=armed:1,start,expect=state:idle,expect=message:go live needs,expect=setupOpen:1,expect=setupStep:5,wait=0.1,checklayout", fake_backend=True)

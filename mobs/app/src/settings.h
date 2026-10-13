@@ -32,6 +32,7 @@ class Settings : public QObject {
     Q_PROPERTY(bool setupDone READ setupDone NOTIFY changed)           // the guided setup was finished once (it can be opened again any time)
     Q_PROPERTY(int setupStep READ setupStep NOTIFY changed)            // where the guided setup stopped, so it picks up there next time
     Q_PROPERTY(bool xSignedIn READ xSignedIn NOTIFY changed)           // the person signed in to X inside MOBS, so the chat can show under the webcam
+    Q_PROPERTY(QString sourceName READ sourceName NOTIFY changed)      // what the person calls their source on X: shown again when they go live, so they pick the right one
     Q_PROPERTY(bool micLocked READ micLocked NOTIFY changed)           // the person pressed "this is my microphone": it stays until they change it
     Q_PROPERTY(QString aboutText READ aboutText CONSTANT)
 public:
@@ -67,6 +68,9 @@ public:
     bool setupDone() const { return m_setupDone; }
     int setupStep() const { return m_setupStep; }
     bool micLocked() const { return m_micLocked; }
+    QString sourceName() const { return m_sourceName; }
+    Q_INVOKABLE void setSourceName(const QString &name);
+    static QString cleanSourceName(const QString &name);   // plain words only, at most 40 characters: it is shown as text
     bool xSignedIn() const { return m_xSignedIn; }
     Q_INVOKABLE void setXSignedIn(bool in);
     Q_INVOKABLE void noteXUrl(const QString &url);      // the sign-in browser shows a page: X's own home page means the person is signed in
@@ -122,6 +126,7 @@ private:
     int m_chatRelayPort = 8799;
     bool m_setupDone = false, m_micLocked = false, m_xSignedIn = false;
     int m_setupStep = 0;
+    QString m_sourceName;
     QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
     int m_streamQuality = 2;

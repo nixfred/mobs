@@ -33,7 +33,7 @@ qt_add_qml_module(mobs
 qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml qml/ChatPanel.qml)   # the opening screen, the webcam window and its chat card
 target_link_libraries(mobs PRIVATE mobs-core Qt6::WebEngineQuick)
 # The guided setup ("easy mode"): its pages, and the REAL pictures of X's screens it points at (cropped from real screenshots, never drawn).
-qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/SetupChat.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupStudio.qml qml/SetupSource.qml qml/SetupKey.qml qml/SetupHow.qml qml/SetupDone.qml
+qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/XLiveFinder.qml qml/FlowPicture.qml qml/SetupChat.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupStudio.qml qml/SetupSource.qml qml/SetupKey.qml qml/SetupHow.qml qml/SetupDone.qml
     RESOURCES assets/guide/x-live-studio.png assets/guide/x-manage-sources.png assets/guide/x-source-card.png assets/guide/x-create-livestream.png assets/guide/x-livestream-live.png)
 
 foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay)

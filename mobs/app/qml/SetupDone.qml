@@ -11,7 +11,7 @@ Item {
         { ok: App.cameraLocked || App.pick === 1, text: App.pick === 1 ? "No camera: your stream is your screen and your voice" : "Camera: " + (App.hasCamera ? App.cameraName : App.lockedCameraName) },
         { ok: Prefs.micLocked || !Prefs.micOn, text: Prefs.micOn ? "Microphone: " + Audio.name(Prefs.micDevice) : "No microphone" },
         { ok: Preview.hasFrame, text: Preview.hasFrame ? "Screen: your whole screen, every workspace" : "Screen: not shared yet. MOBS asks again when you go live." },
-        { ok: Prefs.streamReady, text: Prefs.streamReady ? "X: stream key saved" : "X: no stream key yet. Open the setup guide again to add it." }
+        { ok: Prefs.streamReady, text: Prefs.streamReady ? (Prefs.sourceName !== "" ? "X: stream key saved, for your source " + Prefs.sourceName : "X: stream key saved") : "X: no stream key yet. Open the setup guide again to add it." }
     ]
     Column {
         anchors.centerIn: parent

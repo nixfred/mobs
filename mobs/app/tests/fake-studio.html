@@ -22,6 +22,8 @@
 <script>
   // id=SIGNEDOUT01 stands for X asking for a sign-in instead of showing the livestream
   if ((new URLSearchParams(location.search).get('id') || '').indexOf('SIGNEDOUT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>See what\'s happening</h1><p>Sign in to X</p>'; });
+  // id=QUIETCHAT01 stands for a livestream nobody has written in yet: the card has its heading and an empty list
+  if ((new URLSearchParams(location.search).get('id') || '').indexOf('QUIET') === 0) addEventListener('DOMContentLoaded', function () { document.querySelector('.list').innerHTML = ''; });
   // id=NOCHAT00001 stands for a Live Studio page that has no chat card
   else if ((new URLSearchParams(location.search).get('id') || '').indexOf('NOCHAT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>Details</h1><p>Visibility: Private</p>'; });
 </script>
@@ -33,7 +35,7 @@
   <div class="charts"><h3>Concurrent viewers</h3></div>
   <div class="chat">
     <h3><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="#fff"/></svg><span>Live Chat</span></h3>
-    <div class="list"><div>ana: hello there</div><div>bo: what theme is that?</div></div>
+    <div class="list"><div>ana: hello there</div><div>bo: what theme is that?</div><div>cy: love the cursor</div><div>di: is that live?</div><div>ed: hi from Brazil</div><div>fay: nice setup</div></div>
     <div class="typing"><input placeholder="Send a message..."></div>
   </div>
 </div>

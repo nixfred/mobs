@@ -57,6 +57,7 @@ public:
     static QSize defaultSize(const QJsonObject &monitor, bool withChat = false);                                        // 20% of the usable width (480..1024): visible once the broadcast is scaled to 1080p
     static QRect defaultRect(const QJsonObject &monitor, const QSize &size, int margin = 24);   // top-right of the monitor's usable area
     static QRect fitInside(const QRect &want, const QJsonObject &monitor);                      // a remembered place that still lies on the monitor
+    static QRect rectForChat(const QRect &now, bool chatOn, const QJsonObject &monitor);        // the window's rect when the chat card turns on or off: same corner and width
     static QString encodePlace(const QRect &rect, const QString &monitor);
     static bool decodePlace(const QString &text, QRect *rect, QString *monitor);
     static bool shouldHide(const QJsonObject &monitor, const QSize &captured, int monitorCount); // is MOBS's window on the monitor that is in the picture?
@@ -82,6 +83,7 @@ private:
     bool hyprEval(const QString &lua) const;
     void rememberActive();
     void tryPlace();
+    void resizeForChat();   // the chat card turned on or off while the window is on screen
     void place(const QString &address, const QJsonArray &clients);
     void onEngineState();
     void hideMain();
@@ -94,6 +96,7 @@ private:
     bool m_shown = false;
     QString m_prevActive;     // what had the keyboard when the window was about to appear
     QRect m_placed;           // where WE put the window: only a different place is worth remembering
+    bool m_chatPlaced = false; // does the window's current size have room for the chat card?
     QSize m_captureSize;
     bool m_mainHidden = false;
     QString m_hiddenAddress, m_homeWorkspace;

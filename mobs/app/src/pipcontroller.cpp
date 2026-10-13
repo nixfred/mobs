@@ -55,7 +55,10 @@ bool PipController::chatWanted() const { return wanted() && m_prefs->chat() && m
 
 void PipController::setChat(ChatModel *chat) {
     m_chat = chat;
-    if (m_chat) connect(m_chat, &ChatModel::statusChanged, this, &PipController::changed);
+    if (m_chat) {
+        connect(m_chat, &ChatModel::statusChanged, this, &PipController::changed);
+        connect(m_chat, &ChatModel::statusChanged, this, [this] { QTimer::singleShot(250, this, &PipController::resizeForChat); });   // after the interface has had its say
+    }
 }
 
 bool PipController::testPattern() const {
@@ -201,8 +204,44 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
     // A new window takes the keyboard. Give it straight back: the person is typing in something else.
     if (!m_prevActive.isEmpty() && m_prevActive != address && !clientAt(clients, m_prevActive).isEmpty()) dsp(QString("focus({window=\"address:%1\"})").arg(m_prevActive));
     m_placed = rect;
+    m_chatPlaced = chatOn;
     MobsLog::write("pip", QString("webcam window %1 placed at %2,%3 %4x%5 on %6 (floating, pinned to every workspace); SUPER + drag moves it, SUPER + right-drag resizes it")
         .arg(address).arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height()).arg(monitor.value("name").toString()));
+}
+
+// The livestream is found once the person has pressed Go Live, so the chat card usually turns on AFTER the dock window is already on screen. The size of a
+// floating window belongs to the compositor: Qt asking for a taller window is not honoured on Hyprland (the chat card then had no room and the dock showed no
+// chat at all). So the window is resized here, keeping its corner and its width; the person's own size is kept when it already has room for a chat card.
+QRect PipController::rectForChat(const QRect &now, bool chatOn, const QJsonObject &monitor) {
+    const int videoH = now.width() * 9 / 16;
+    if (chatOn && now.height() >= videoH + 160) return now;   // already tall enough to hold a chat card
+    QRect want = now;
+    want.setHeight(chatOn ? videoH + chatHeightFor(now.width()) : videoH);
+    const QRect fitted = fitInside(want, monitor);
+    return fitted.isNull() ? want : fitted;
+}
+
+void PipController::resizeForChat() {
+    if (!m_shown || !onHyprland() || m_placed.isNull()) return;   // not placed yet: place() reads the chat state itself
+    const bool chatOn = chatWanted();
+    if (chatOn == m_chatPlaced) return;                            // the size already suits this state
+    const QJsonArray clients = hyprJson({"clients", "-j"}).array();
+    const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
+    const QJsonObject c = clientAt(clients, address);
+    if (address.isEmpty() || c.isEmpty()) return;
+    const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
+    const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
+    if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
+    const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
+    const QRect want = rectForChat(now, chatOn, monitor);
+    m_chatPlaced = chatOn;
+    m_placeKey = chatOn ? QStringLiteral("pipPlaceChat") : QStringLiteral("pipPlace");
+    if (want == now) { m_placed = now; return; }
+    const QString win = QString("window=\"address:%1\"").arg(address);
+    hyprEval(QString("hl.dispatch(hl.dsp.window.resize({x=%1,y=%2,%3}))").arg(want.width()).arg(want.height()).arg(win));
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({x=%1,y=%2,%3}))").arg(want.x()).arg(want.y()).arg(win));
+    m_placed = want;
+    MobsLog::write("pip", QString("the chat card turned %1: webcam window resized to %2x%3 at %4,%5").arg(chatOn ? "on" : "off").arg(want.width()).arg(want.height()).arg(want.x()).arg(want.y()));
 }
 
 void PipController::windowHidden() {

@@ -82,13 +82,13 @@ Item {
             }
             Chip {
                 objectName: "checkX"; glyph: "X"; clickable: true; tint: Prefs.streamReady ? Omarchy.green : Omarchy.red
-                text: Prefs.streamReady ? "X connected" : "connect X"
+                text: Prefs.streamReady ? (Prefs.sourceName !== "" ? "X: " + Prefs.sourceName : "X connected") : "connect X"
                 onClicked: root.guide(Prefs.streamReady ? 7 : 5)
             }
             Chip {
                 objectName: "checkChat"; glyph: "\uf086"; clickable: true
                 tint: Chat.xId !== "" ? Omarchy.green : Prefs.xSignedIn ? Omarchy.yellow : Omarchy.tertiaryText
-                text: Chat.xId !== "" ? "chat attached" : Prefs.xSignedIn ? "chat: add your link when live" : "add chat"
+                text: Chat.xId !== "" ? "chat attached" : Prefs.xSignedIn ? "chat: found when you go live" : "add chat"
                 onClicked: root.guide(8)
             }
         }
