@@ -47,11 +47,13 @@ Item {
                 visible: Engine.audioProblem !== ""
                 text: Engine.audioProblem
             }
-            BigButton { objectName: "setupLockMic"; text: Prefs.micLocked ? "LOCKED IN" : "THIS IS MY MICROPHONE"; implicitHeight: 46; implicitWidth: 300; enabled: Prefs.micOn && !Prefs.micLocked; onClicked: Prefs.lockMic(Prefs.micDevice) }
+            BigButton { objectName: "setupLockMic"; text: Prefs.micLocked ? "LOCKED IN" : "THIS IS MY MICROPHONE"; implicitHeight: 46; implicitWidth: 300; enabled: Prefs.micOn && !Prefs.micLocked; onClicked: Prefs.lockMic(Audio.resolveDefault(Prefs.micDevice)) }   // "System default" locks the microphone that is the default now, not whatever becomes it later
             Txt {
                 width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 13; color: Omarchy.green
                 visible: Prefs.micLocked
-                text: "Locked in: " + Audio.name(Prefs.micDevice) + ". It stays until you change it here."
+                // "default" is left only when the system's default could not be named just now (the audio service did not answer): then it really does follow the system, and says so
+                text: Prefs.micDevice === "default" ? "Locked in: your system's default microphone. MOBS could not tell which one that is just now, so it uses whichever the system has."
+                                                    : "Locked in: " + Audio.name(Prefs.micDevice) + ". It stays until you change it here."
             }
             Toggle { width: parent.width; label: "also share my computer's sound"; on: Prefs.desktopOn; onToggled: Prefs.setDesktopOn(!Prefs.desktopOn) }
         }

@@ -42,6 +42,13 @@ private slots:
         QVERIFY(!text.contains("super-secret-key-9"));
         QVERIFY(text.contains("connecting rtmp://host/app/*** now"));
     }
+    void everyOtherCopyOfALineIsScrubbedToo() {   // libobs's and Qt's lines also go to stderr, which is the journal under a launcher
+        MobsLog::secret("super-secret-key-9");
+        QCOMPARE(MobsLog::scrub("libobs: could not reach rtmp://host/app/super-secret-key-9"), QString("libobs: could not reach rtmp://host/app/***"));
+        QCOMPARE(MobsLog::scrub("nothing to hide here"), QString("nothing to hide here"));
+        MobsLog::secret({});
+        QCOMPARE(MobsLog::scrub("super-secret-key-9 is no secret once it is cleared"), QString("super-secret-key-9 is no secret once it is cleared"));
+    }
     void qtWarningsAreKeptToo() {
         qWarning("a warning from somewhere");
         QVERIFY(read(file()).contains("[qt] warning: a warning from somewhere"));

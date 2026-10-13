@@ -10,4 +10,5 @@ void init();                                          // opens the file (rotatin
 QString path();                                       // "" when no file could be opened
 void write(const char *category, const QString &text);  // "2026-10-10 16:31:02.123 [engine] text". Safe from any thread; a no-op before init()
 void secret(const QString &text);                     // scrub this from every later line (the stream key); empty clears it
+QString scrub(const QString &text);                   // the text with the secret replaced by ***: for every OTHER copy of a line (stderr, so the journal), never only the file's
 }

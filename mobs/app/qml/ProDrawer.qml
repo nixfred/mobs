@@ -156,7 +156,7 @@ Rectangle {
                     Txt { anchors.verticalCenter: parent.verticalCenter; text: "what to share"; font.pixelSize: 16; font.bold: true; rightPadding: 8 }
                     Repeater {
                         model: [["screen + me", 2], ["screen only", 1], ["just my camera", 3]]
-                        Button { required property var modelData; objectName: "share" + modelData[1]; text: modelData[0]; primary: App.pick === modelData[1]; onClicked: App.choose(modelData[1]) }
+                        Button { required property var modelData; objectName: "share" + modelData[1]; text: modelData[0]; primary: App.pick === modelData[1]; enabled: !Engine.active; onClicked: App.choose(modelData[1]) }   // for the next take
                     }
                 }
                 Txt { text: "recording encoder"; font.pixelSize: 16; font.bold: true }

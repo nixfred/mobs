@@ -53,9 +53,9 @@ private slots:
 private:
     void answer(QTcpSocket *socket, const Request &request);
     ChatModel *m_chat;
+    int m_open = 0;            // declared BEFORE the server: when the server goes it deletes its sockets, and each one's `destroyed` writes here, so this must outlive it
     QTcpServer m_server;
     QTimer m_status;
     QElapsedTimer m_contact;   // valid once the other computer has called; elapsed() is the time since its last call
     bool m_alive = false;
-    int m_open = 0;
 };

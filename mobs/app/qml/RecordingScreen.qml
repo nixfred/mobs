@@ -68,13 +68,13 @@ Item {
                     width: badgeText.implicitWidth + 24; height: 28; radius: 14
                     color: Engine.streamState === "live" ? Omarchy.red : "transparent"
                     border.width: 2
-                    border.color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.red : Omarchy.yellow
+                    border.color: Engine.streamState === "failed" || Engine.streamState === "ended" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.red : Omarchy.yellow
                     Txt {
                         id: badgeText
                         anchors.centerIn: parent
                         font.pixelSize: 13; font.bold: true
-                        text: Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING"
-                        color: Engine.streamState === "live" ? Omarchy.accentForeground : Engine.streamState === "failed" ? Omarchy.red : Omarchy.yellow
+                        text: Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" || Engine.streamState === "ended" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING"
+                        color: Engine.streamState === "live" ? Omarchy.accentForeground : Engine.streamState === "failed" || Engine.streamState === "ended" ? Omarchy.red : Omarchy.yellow
                     }
                 }
             }
@@ -91,9 +91,10 @@ Item {
                 visible: Engine.streamRequested && Engine.state !== "stopping" && text !== ""
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                 font.pixelSize: 13
-                color: Engine.streamState === "failed" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.secondaryText : Omarchy.yellow
+                color: Engine.streamState === "failed" || Engine.streamState === "ended" ? Omarchy.red : Engine.streamState === "live" ? Omarchy.secondaryText : Omarchy.yellow
                 text: Engine.streamState === "live" ? "X is receiving your stream (" + (Engine.streamKbps / 1000).toFixed(1) + " Mbps" + (Engine.streamDropped > 0 ? ", " + Engine.streamDropped + " frames dropped" : "") + ")"
                     : Engine.streamState === "failed" ? "NOT LIVE: " + Engine.streamProblem + ". The recording is still being saved."
+                    : Engine.streamState === "ended" ? "NOT LIVE: the connection to X was closed. The recording is still being saved."
                     : Engine.streamState === "reconnecting" ? Engine.streamProblem
                     : Engine.streamState === "connecting" ? "connecting to the server..." : ""
             }

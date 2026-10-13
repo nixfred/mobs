@@ -15,14 +15,24 @@ Item {
     id: root
     objectName: "xLiveFinder"
     width: 2; height: 2; clip: true; z: -1
-    readonly property bool wanted: Prefs.xSignedIn && Engine.streamRequested && Engine.streamState === "live" && Chat.xId === ""
+    // From the moment the broadcast starts connecting, not from "live": the list of what is on air has to be read BEFORE the person can press Go Live in Live Studio
+    // (they can only do that once MOBS is connected), or their own new livestream could end up in the list of old ones.
+    readonly property bool wanted: Prefs.xSignedIn && Engine.broadcasting && Chat.xId === ""
     property int tries: 0           // looks in this take: kept across a reconnect, so a shaky line does not make it start over for ever
     property bool gaveUp: false
+    property int calm: 0            // looks in a row with fewer than two new livestreams on the list (the "two are on air" note goes away after a few)
     property var onAirBefore: null     // the ids that were already on air when the broadcast began (null until the list has been read twice, the same)
     property string lastSeen: ""
     Connections {
         target: Engine
-        function onStateChanged() { if (Engine.state === "idle") { root.tries = 0; root.gaveUp = false; root.onAirBefore = null; root.lastSeen = "" } }
+        function onStateChanged() { if (Engine.state === "idle") { root.tries = 0; root.gaveUp = false; root.calm = 0; root.onAirBefore = null; root.lastSeen = "" } }
+    }
+    // True (and the person told) once the finder has looked for about a quarter of an hour: 400 looks, one every 2.5 s. Both timers below ask, so a page stuck in "loading" cannot keep the hidden browser alive for a whole take.
+    function tired() {
+        if (tries <= 400) return false
+        gaveUp = true
+        Chat.setFinderNote("MOBS could not find your livestream on X by itself. In Live Studio press Copy URL, then paste the link here.")
+        return true
     }
     // https only, a plain host name (no user name before it, no other port), and it is x.com or twitter.com or a subdomain of one of them.
     function onXHost(target) {
@@ -71,7 +81,7 @@ Item {
                     interval: 2500; repeat: true; running: !web.loading
                     onTriggered: {
                         root.tries++
-                        if (root.tries > 400) { root.gaveUp = true; return }   // about a quarter of an hour: the person is not going to press Go Live
+                        if (root.tired()) return   // about a quarter of an hour: the person is not going to press Go Live
                         const reloadEvery = root.tries < 20 ? 4 : root.tries < 60 ? 12 : 24   // every 10 s, then every 30 s, then every minute
                         web.runJavaScript(root.findScript, WebEngineScript.ApplicationWorld, function (result) {
                             let info = {}
@@ -84,10 +94,23 @@ Item {
                                 return
                             }
                             const fresh = info.ids.filter(function (id) { return root.onAirBefore.indexOf(id) < 0 })
-                            if (fresh.length > 0) Chat.attachX("https://studio.x.com/live/" + fresh[0])
+                            if (fresh.length > 1) {   // two new livestreams at once: which one is this broadcast's cannot be guessed (the order on the page means nothing), so the person is asked
+                                Chat.setFinderNote("Two livestreams are on air, so MOBS cannot tell which one is yours. In Live Studio press Copy URL on yours, then paste the link here.")
+                                root.calm = 0
+                                if (root.tries % reloadEvery === 0) web.reload()   // the list is still looked at, so the question goes away by itself when one of them ends
+                                return
+                            }
+                            // Fewer than two new ones: the question is over once that has been so for four looks in a row (ten seconds). Not at once: right after a reload
+                            // the list can be empty for a moment, and the note must not flicker off and on.
+                            if (++root.calm >= 4) Chat.setFinderNote("")
+                            if (fresh.length === 1) Chat.attachX("https://studio.x.com/live/" + fresh[0])
                             else if (root.tries % reloadEvery === 0) web.reload()
                         })
                     }
+                }
+                Timer {   // a page that stays "loading" for ever (a stuck connection) never lets the look timer run: every 45 s of it counts as 18 looks, and the page is stopped and asked for again
+                    interval: 45000; repeat: true; running: web.loading
+                    onTriggered: { root.tries += 18; if (root.tired()) return; web.stop(); web.reload() }
                 }
             }
         }

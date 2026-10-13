@@ -2,6 +2,7 @@
 #include "appstate.h"
 #include "engine.h"
 #include "mobslog.h"
+#include "notifier.h"
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusError>
@@ -43,6 +44,13 @@ bool Control::registerOnSessionBus() {
 
 void Control::Toggle() {
     MobsLog::write("control", "hotkey: toggle");
+    // The setup guide covers the whole window and takes every key for itself: a take started now would run with nothing to see and no key to stop it but this one.
+    // (Stopping a take that is already running is always allowed.)
+    if (!m_engine->active() && m_state->setupOpen()) {
+        MobsLog::write("control", "hotkey: not starting a take while the setup guide is open");
+        Notifier::send("MOBS: finish the setup guide first", "The guide is still open, so no recording was started. Finish it, or press \"skip the guide\", then press the keys again.", true);
+        return;
+    }
     if (!m_engine->active() && m_state->pick() == 0) m_state->choose(1);   // hotkey on a fresh install: my screen
     m_engine->toggle(m_state->pick());
 }

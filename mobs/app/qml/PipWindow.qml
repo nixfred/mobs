@@ -37,8 +37,12 @@ Window {
     CaptureSession {
         camera: Camera {
             cameraDevice: Pip.device; cameraFormat: Pip.format; active: pip.visible && !Pip.testPattern && Pip.device.id !== ""
-            onErrorOccurred: (error, errorString) => Pip.cameraProblem(errorString)
-            onActiveChanged: Pip.cameraProblem(active ? "camera started" : "camera stopped")
+            onErrorOccurred: (error, errorString) => Pip.cameraFailed(errorString)
+            onActiveChanged: {
+                Pip.cameraProblem(active ? "camera started" : "camera stopped")
+                // The window asks for the camera for as long as it is showing: if the camera stops while it still is, nobody asked for it (unplugged, taken by another program)
+                if (!active && pip.visible && !Pip.testPattern && Pip.device.id !== "") Pip.cameraFailed("the camera stopped by itself")
+            }
         }
         videoOutput: video
     }
@@ -59,7 +63,7 @@ Window {
             objectName: "pipBadge"
             z: 10                       // above the picture, whatever is declared after it (the stand-in used to paint over it)
             readonly property bool broadcast: Engine.streamRequested
-            readonly property string word: broadcast ? (Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING")
+            readonly property string word: broadcast ? (Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" || Engine.streamState === "ended" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING")
                                                      : (Engine.state === "paused" ? "PAUSED" : "REC")
             visible: broadcast || Engine.state === "recording" || Engine.state === "paused"
             x: 8; y: 8

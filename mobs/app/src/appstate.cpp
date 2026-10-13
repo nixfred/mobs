@@ -44,6 +44,9 @@ QString AppState::displayText() const {
 
 void AppState::choose(int pick) {
     if (pick < 1 || pick > 3) return;
+    // What to share is for the NEXT take: a running take keeps the scene it started with, while the webcam window, the header and the screen all follow the pick,
+    // so a click on a "what to share" button in EXPERT during a take used to close the webcam window on the stream.
+    if (m_recording) { MobsLog::write("app", QString("share choice %1 asked for during a take: it waits for the next one").arg(pick)); return; }
     if (pick != 1) ensureCamera();                    // a camera pick must not start with "no camera" if one exists
     if (pick != m_pick) MobsLog::write("app", QString("pick -> %1").arg(pick));
     if (pick != m_pick) { m_pick = pick; m_settings->setValue("pick", pick); m_settings->sync(); emit pickChanged(); }

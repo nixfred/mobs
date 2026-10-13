@@ -71,8 +71,10 @@ QCameraDevice PipController::device() const {
     const QString node = QFileInfo(path).canonicalFilePath();     // /dev/v4l/by-id/...-index0 -> /dev/video0
     const auto inputs = QMediaDevices::videoInputs();
     for (const QCameraDevice &d : inputs) if (!node.isEmpty() && QString::fromUtf8(d.id()) == node) return d;
-    for (const QCameraDevice &d : inputs) if (d.description() == m_state->cameraName()) return d;
-    return {};
+    // By name only when the name is unique: with two identical webcams the name cannot say which one is the person's, and picking the other one would be the silent swap a locked camera exists to prevent.
+    QCameraDevice named; int same = 0;
+    for (const QCameraDevice &d : inputs) if (d.description() == m_state->cameraName()) { named = d; ++same; }
+    return same == 1 ? named : QCameraDevice();
 }
 
 // 1280x720 (MJPEG when the camera has it, for the frame rate), else the smallest format that is still at least 640x360.
@@ -92,6 +94,34 @@ QCameraFormat PipController::format() const {
 }
 
 void PipController::cameraProblem(const QString &what) { MobsLog::write("pip", "camera: " + what); }
+
+void PipController::cameraFailed(const QString &what) {
+    MobsLog::write("pip", "camera error: " + what);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!m_engine->active() || now - m_cameraNotifiedAt < 60000) return;   // only mid-take, and not again at once
+    m_cameraNotifiedAt = now;
+    Notifier::send("MOBS: your camera stopped", "Your face may be frozen or missing on the stream. Check that the camera is plugged in and that no other program is using it.", true);
+}
+
+// The share of a picture that is bright (gray above 96), looking at every second pixel in each direction. A drawn chat card has text and a heading on it, even an empty
+// one; a card whose picture never reached the window is black, and so is every sample of it.
+double PipController::litShare(const QImage &image) {
+    if (image.isNull() || image.width() < 2 || image.height() < 2) return 0;
+    qint64 lit = 0, seen = 0;
+    for (int y = 0; y < image.height(); y += 2) for (int x = 0; x < image.width(); x += 2) { ++seen; if (qGray(image.pixel(x, y)) > 96) ++lit; }
+    return 100.0 * double(lit) / double(seen);
+}
+
+bool PipController::chatCardLooks(const QVariant &image) {
+    const QImage card = image.value<QImage>();
+    if (card.isNull()) return true;                   // nothing to judge: never cry wolf
+    const double share = litShare(card);
+    static int pretendBlack = qEnvironmentVariable("MOBS_TEST_BLACK_CARD") == "1" ? 1 : 0;   // a test makes the FIRST look report black, to run the card's way back
+    const bool black = share < 0.05 || pretendBlack-- > 0;
+    MobsLog::write("pip", QString("the chat card as drawn: %1% of its %2x%3 pixels are bright: %4")
+        .arg(share, 0, 'f', 2).arg(card.width()).arg(card.height()).arg(black ? "BLACK, the card is drawing nothing on this graphics stack" : "it is drawing"));
+    return !black;
+}
 
 void PipController::setCaptureSize(int width, int height) {
     m_captureSize = QSize(width, height);
@@ -128,8 +158,25 @@ bool PipController::hyprEval(const QString &lua) const {
     p.start(QStandardPaths::findExecutable("hyprctl"), {"eval", lua});
     if (!p.waitForFinished(2000)) return false;
     const QString out = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-    if (p.exitCode() != 0 || (!out.isEmpty() && out != "ok")) MobsLog::write("pip", "hyprctl eval said: " + out + " for " + lua.left(120));
-    return p.exitCode() == 0;
+    const bool ok = p.exitCode() == 0 && (out.isEmpty() || out == "ok");   // an error text with exit code 0 is a failure too (Hyprland 0.56 evaluates Lua and says so in words)
+    if (!ok) MobsLog::write("pip", "hyprctl eval said: " + out + " for " + lua.left(120));
+    return ok;
+}
+
+// Where the compositor says a window is right now ("" when it is not in its list, or the list did not come).
+QString PipController::workspaceNameOf(const QString &address) const {
+    return clientAt(hyprJson({"clients", "-j"}).array(), address).value("workspace").toObject().value("name").toString();
+}
+
+QString PipController::luaString(const QString &text) {
+    QString out = QStringLiteral("\"");
+    for (const QChar c : text) {
+        if (c == QLatin1Char('"')) out += QStringLiteral("\\\"");
+        else if (c == QLatin1Char('\\')) out += QStringLiteral("\\\\");
+        else if (c.unicode() < 0x20) out += QStringLiteral("\\%1").arg(int(c.unicode()), 3, 10, QLatin1Char('0'));   // Lua's decimal escape: \010 for a line break
+        else out += c;
+    }
+    return out + QLatin1Char('"');
 }
 
 void PipController::rememberActive() {
@@ -157,7 +204,7 @@ void PipController::tryPlace() {
     const QJsonArray clients = hyprJson({"clients", "-j"}).array();
     const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
     if (address.isEmpty()) {
-        if (++m_tries > 100) { m_placeTimer.stop(); MobsLog::write("pip", "gave up waiting for the compositor to list the webcam window"); }
+        if (++m_tries > 250) { m_placeTimer.stop(); MobsLog::write("pip", "gave up waiting for the compositor to list the webcam window (10 s)"); }   // a loaded session can take seconds to list a new window
         return;
     }
     m_placeTimer.stop();
@@ -329,9 +376,12 @@ void PipController::hideMainNow() {
 
 void PipController::onEngineState() {
     const QString st = m_engine->state();
-    if (st == "idle") { m_gaveUp = false; m_reopens.clear(); }   // the next take starts with a clean slate
+    if (st == "idle") { m_gaveUp = false; m_reopens.clear(); m_hideTries = 0; m_restoreTries = 0; m_reopenAskedAt = 0; }   // the next take starts with a clean slate (a put-back asked for just as the last take ended is not this take's)
+    // The webcam window is up but no camera could be chosen for it (the locked one is not found by its id and two cameras share its name, say): without a word the face is
+    // missing from the stream and the window is just black.
+    if (st == "recording" && wanted() && !testPattern() && device().isNull()) cameraFailed("no camera could be chosen for the webcam window: the locked camera was not found by its id, and its name is not unique");
     if (st == "recording" && !m_mainHidden && !m_held) { if (m_engine->streamRequested() && m_prefs->stayOut()) holdMain(); else hideMain(); }
-    else if (st == "idle") { releaseHold(); if (m_mainHidden) restoreMain(); }
+    else if (st == "idle") { releaseHold(); if (m_mainHidden || !m_hiddenAddress.isEmpty()) restoreMain(); }   // (a hide whose answer was lost may still have moved the window)
     else if (st == "stopping") releaseHold();
 }
 
@@ -350,19 +400,47 @@ void PipController::hideMain() {
     const QJsonArray monitors = hyprJson({"monitors", "-j"}).array();
     const QJsonObject monitor = monitorById(monitors, mine.value("monitor").toInt());
     const QString workspace = mine.value("workspace").toObject().value("name").toString();
-    if (workspace.isEmpty() || workspace.startsWith("special")) return;
+    if (workspace.isEmpty()) return;
+    if (workspace.startsWith("special")) {
+        // Already on a hidden workspace. If that is where an earlier try of ours put it (the answer of that try was lost, but the move happened), it is ours: it counts as hidden
+        // and will be brought back. Otherwise it is where the person put it, and it is left alone.
+        if (!m_hiddenAddress.isEmpty() && mine.value("address").toString() == m_hiddenAddress) { m_mainHidden = true; m_hideTries = 0; MobsLog::write("pip", "MOBS's window was already on the hidden workspace: from an earlier try"); }
+        return;
+    }
     if (!shouldHide(monitor, m_captureSize, monitors.size())) { MobsLog::write("pip", "MOBS's window is not on the monitor in the picture: left where it is"); return; }
-    m_hiddenAddress = mine.value("address").toString(); m_homeWorkspace = workspace; m_mainHidden = true;
-    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=\"special:mobs\",follow=false,window=\"address:%1\"}))").arg(m_hiddenAddress));
+    // It counts as hidden only when the compositor's own list of windows says it is on the hidden workspace. The answer of the move itself is not trusted either way: a refused
+    // move used to be remembered as done (MOBS stayed in the picture for the whole take), and one that timed out AFTER moving the window would be forgotten, stranding it there.
+    // So the way back (where it was, and which window) is remembered BEFORE the move and kept until the window is back.
+    const QString address = mine.value("address").toString();
+    m_hiddenAddress = address; m_homeWorkspace = workspace;
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=\"special:mobs\",follow=false,window=%1}))").arg(luaString("address:" + address)));
+    if (!workspaceNameOf(address).startsWith("special")) {
+        MobsLog::write("pip", QString("could not move MOBS's window out of the picture (try %1 of 3)").arg(m_hideTries + 1));
+        if (++m_hideTries < 3) QTimer::singleShot(1500, this, [this] { if (m_engine->state() == "recording" && !m_mainHidden && !m_held) hideMain(); });
+        else Notifier::send("MOBS: its window is in the picture", "MOBS could not step its own window out of the picture, so the stream shows MOBS itself. Move it to another workspace or minimise it.", true);   // not left to the log
+        return;
+    }
+    m_hideTries = 0;
+    m_mainHidden = true;
     MobsLog::write("pip", QString("MOBS's window hidden from the picture (on special:mobs); it returns to workspace %1 when the take ends. SUPER + SHIFT + V stops the take.").arg(workspace));
 }
 
 void PipController::restoreMain() {
     const QString address = m_hiddenAddress, workspace = m_homeWorkspace;
-    m_mainHidden = false; m_hiddenAddress.clear(); m_homeWorkspace.clear();
-    if (address.isEmpty() || !onHyprland()) return;
-    if (clientAt(hyprJson({"clients", "-j"}).array(), address).isEmpty()) return;   // closed meanwhile
-    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=\"%1\",follow=false,window=\"address:%2\"}))").arg(workspace, address));
+    const auto forget = [this] { m_mainHidden = false; m_hiddenAddress.clear(); m_homeWorkspace.clear(); m_restoreTries = 0; };
+    if (address.isEmpty() || !onHyprland()) { forget(); return; }
+    if (clientAt(hyprJson({"clients", "-j"}).array(), address).isEmpty()) { forget(); return; }   // closed meanwhile
+    // The workspace name is the person's own (a named workspace in their Hyprland config): quoted for Lua, so no name can end the string and add code.
+    hyprEval(QString("hl.dispatch(hl.dsp.window.move({workspace=%1,follow=false,window=%2}))").arg(luaString(workspace), luaString("address:" + address)));
+    const QString nowOn = workspaceNameOf(address);
+    if (nowOn.isEmpty() || nowOn.startsWith("special")) {
+        // What is needed to bring the window back is KEPT until the compositor's own list shows it off the hidden workspace: it is asked again a few times now, and at the end of the next take.
+        MobsLog::write("pip", QString("could not put MOBS's window back on workspace %1 (try %2 of 3): it is still on the hidden workspace special:mobs").arg(workspace).arg(m_restoreTries + 1));
+        if (++m_restoreTries < 3) QTimer::singleShot(1500, this, [this] { if ((m_mainHidden || !m_hiddenAddress.isEmpty()) && m_engine->state() == "idle") restoreMain(); });
+        else Notifier::send("MOBS: its window did not come back", "The compositor refused to bring MOBS's window back from its hidden workspace (special:mobs).", true);
+        return;
+    }
+    forget();
     MobsLog::write("pip", QString("MOBS's window is back on workspace %1").arg(workspace));
 }
 

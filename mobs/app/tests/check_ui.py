@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         "MOBS_TEST_SOURCE": "colour", "MOBS_TEST_CAMERA": "colour",
         "MOBS_TOKEN_FILE": str(root / "token"), "MOBS_THEME_DIR": str(root / "theme"),
     }
-    for key in ("MOBS_FAKE_BACKEND", "MOBS_FAKE_STOP_HANG", "MOBS_TEST_AUDIO", "MOBS_TEST_DESKTOP_AUDIO", "MOBS_SCRIPT", "MOBS_SETTINGS", "MOBS_GRAB", "MOBS_SPLASH", "MOBS_SPLASH_AT", "MOBS_PICK", "MOBS_SCREEN", "MOBS_WINDOW_SIZE"):
+    for key in ("MOBS_FAKE_BACKEND", "MOBS_FAKE_STOP_HANG", "MOBS_FAKE_STREAM_NEVER_LIVE", "MOBS_TEST_BLACK_CARD", "MOBS_TEST_AUDIO", "MOBS_TEST_DESKTOP_AUDIO", "MOBS_SCRIPT", "MOBS_SETTINGS", "MOBS_GRAB", "MOBS_SPLASH", "MOBS_SPLASH_AT", "MOBS_PICK", "MOBS_SCREEN", "MOBS_WINDOW_SIZE"):
         env.pop(key, None)
     case_count = 0
 
@@ -132,6 +132,9 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env,
           expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "opening https://studio.x.com/live", "guided setup finished"))
     check("the setup guide opens again where the person stopped", "wait=0.5,expect=setupOpen:1,expect=setupStep:3,click=setupBack,expect=setupStep:2", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=3\n")
+    check("going back from the webcam page keeps the shared picture for the screen page, and lets go of the camera only at the camera page, which opens it again",
+          "wait=0.5,expect=setupOpen:1,expect=setupStep:4,wait=0.6,expect=pipShown:1,click=setupBack,expect=setupStep:3,wait=0.6,expect=pipShown:1,"
+          "click=setupBack,expect=setupStep:2,wait=0.4,expect=pipShown:1,click=setupBack,expect=setupStep:1,wait=0.6,expect=pipShown:0", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=4\n")
     check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
     check("the source page asks whether a source exists, holds the person until they answer, and shows the steps that fit the answer",
           "setupstep=6,wait=0.4,expect=setupSourceMode:,checklayout,key=Space,wait=0.2,expect=setupStep:6,click=setupHaveSource,expect=setupSourceMode:have,checklayout,"
@@ -153,8 +156,12 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
-          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
-          fake_backend=True, expect_log=("X chat attached",))
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,wait=1.2,checkpip",
+          fake_backend=True, expect_log=("X chat attached", "the chat card as drawn", "it is drawing"), forbid_log=("BLACK, the card is drawing nothing",))   # the card looks at its own pixels and says so
+    check("a chat card that looks black is not left black: the page is asked for again, and the card is looked at again until it draws",
+          "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,wait=6.5,expect=xCrop:shown,wait=12,expect=xPixels:0a6e5c=some", fake_backend=True,
+          extra_env={"MOBS_TEST_BLACK_CARD": "1"}, limit=45,
+          expect_log=("the card is black: asking X's page again (1 of 3)", "BLACK, the card is drawing nothing", "it is drawing"))   # the first look is made to report black
     live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"   # a saved address and key, for every scenario that goes live
     check("a livestream nobody has written in yet shows the heading, at the least height",
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,wait=1.2,expect=xFresh:3", fake_backend=True)   # a quiet chat page keeps being asked for fresh frames, so a stale black one cannot stay
@@ -164,6 +171,12 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a livestream that was already on air when the broadcast began is never taken for this one",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=14,expect=chatXId:,expect=chatWanted:0", fake_backend=True, limit=40,
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-stale.html").as_uri()})
+    check("two livestreams that go on air at once are not guessed between: the person is asked to paste the right link",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=14,expect=chatXId:,expect=chatWanted:0,expect=finderNote:Two livestreams", fake_backend=True, limit=40,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-two.html").as_uri()})
+    check("a livestream link that was already on the clipboard when the broadcast began is not taken for it",
+          live_setup + "clip=https://studio.x.com/live/1OLDoldOLDold9,xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=5,expect=mainHeld:1,expect=chatXId:,expect=chatWanted:0", fake_backend=True, limit=30,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
     check("a new livestream is found even when it only shows after the page is reloaded",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=19,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, limit=45,
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-reload.html").as_uri()})
@@ -171,6 +184,10 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=1,stop,waitidle", fake_backend=True,
           expect_log=("opening https://studio.x.com/live",), forbid_log=("opening https://studio.x.com/live/",),
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
+    check("a broadcast X never received leaves nothing open: stopping it says nothing and opens no browser",
+          live_setup + "xurl=https://x.com/home,xattach=https://studio.x.com/live/1PJqrNmYLjYxb,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=1,expect=streamState:connecting,stop,waitidle", fake_backend=True,
+          expect_log=("ended without X ever receiving the stream",), forbid_log=("opening https://studio.x.com/live",),
+          extra_env={"MOBS_FAKE_STREAM_NEVER_LIVE": "1"})
     check("when nothing is on air in Live Studio no chat is attached",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:,expect=chatWanted:0", fake_backend=True,
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
@@ -185,6 +202,12 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=7,expect=xCrop:signedout,expect=xFresh:none", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
     check("a livestream page with no chat card says so",
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/NOCHAT000001,expect=chatXId:NOCHAT000001,wait=7,expect=xCrop:missing,expect=xFresh:none", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
+    check("a chat card whose page has no chat card asks X's page again now and then, so a sign-in or the network coming back is noticed",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=19,expect=xCrop:signedout", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"},
+          expect_log=("asking X's page again",), limit=45)
+    check("with the usual patience the chat card first says to sign in, and only then asks X's page again (a reload resets the count, so one that came first would keep the verdict from ever being given)",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=25,expect=xCrop:signedout", fake_backend=True,
+          expect_log=("asking X's page again",), limit=55)
     check("a link that is not a Live Studio link attaches nothing", "pick=2,preview=1,wait=0.4,xattach=https://example.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("the chat of a livestream ends with the take", "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/broadcasts/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,start,expect=state:recording,stop,waitidle,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("a web address pasted as the stream key is refused", "setupstep=7,wait=0.4,clip=rtmp://va.pscp.tv:80/x,click=setupPasteKey,wait=0.2,expect=streamReady:0", fake_backend=True, extra_env=setup_env)
@@ -222,7 +245,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the hold ends by itself after a while", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.3,expect=mainHeld:1,wait=1.3,expect=mainHeld:0",
           fake_backend=True, extra_env={"MOBS_HOLD_MS": "700"}, expect_log=("hiding it now",))
     check("a copied X link that is not a livestream link gets a note, and a real one attaches the chat",
-          live_setup + "xurl=https://x.com/home,clip=https://x.com/NixFred/status/1234567890123456789,pick=1,arm=1,start,expect=state:recording,wait=3,expect=mainHeld:1,expect=goLiveNote:not a livestream link,checklayout,"
+          live_setup + "xurl=https://x.com/home,pick=1,arm=1,start,expect=state:recording,clip=https://x.com/NixFred/status/1234567890123456789,wait=3,expect=mainHeld:1,expect=goLiveNote:not a livestream link,checklayout,"   # copied DURING the broadcast: what is on the clipboard when it begins is old
           "clip=https://x.com/i/broadcasts/1PJqrNXnQywxb,wait=3,expect=chatXId:1PJqrNXnQywxb,expect=goLiveNote:Chat attached", fake_backend=True,
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
     check("stopping the stream ends the hold", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.5,expect=mainHeld:1,click=goLiveStop,waitidle,expect=mainHeld:0", fake_backend=True)

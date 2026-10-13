@@ -14,6 +14,7 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(bool demo READ demo NOTIFY statusChanged)                 // the messages are made up (MOBS_FAKE_CHAT): the panel says so
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(QString xId READ xId NOTIFY statusChanged)                // the X livestream whose chat page the card shows ("" = the message list)
+    Q_PROPERTY(QString finderNote READ finderNote NOTIFY statusChanged)   // what the livestream finder has to tell the person ("" = nothing): it gave up, or two livestreams are on air
 public:
     enum Role { NameRole = Qt::UserRole + 1, TextRole, HueRole, InitialRole };
     static constexpr int kMax = 200, kNameMax = 32, kTextMax = 400;
@@ -37,6 +38,18 @@ public:
     Q_INVOKABLE bool attachX(const QString &textOrLink);        // true when a Live Studio or broadcast link was found in the text and attached
     Q_INVOKABLE bool attachXFromClipboard();                    // the same, from what the person just copied
     Q_INVOKABLE QString xClipboardNote() const;                 // what to tell the person when they copied an X link that is not a livestream link; "" when there is nothing to say
+    // What the person typed or pasted themselves into the go-live window. They said which livestream it is, so even one that was on air before the broadcast began is taken
+    // (the list of those can be wrong: a snapshot taken after Go Live holds the new livestream). The finder and the clipboard keep refusing them.
+    Q_INVOKABLE bool attachXByHand(const QString &textOrLink);
+    Q_INVOKABLE QString xTypedNote(const QString &text) const;  // why typed text was not taken, in words; "" for nothing typed
+    // Livestreams that were attached in EARLIER broadcasts (main.cpp keeps the list across runs). The address of one of them that is still on the clipboard is an old one,
+    // wherever it was copied: it is never picked up from the clipboard again (the finder never meets them, and a typed link is always taken).
+    void setUsedIds(const QStringList &ids) { m_usedIds = ids; }
+    QString finderNote() const { return m_finderNote; }
+    Q_INVOKABLE void setFinderNote(const QString &note);        // the finder tells the person something (cleared when a livestream is attached or the take ends)
+    // What is on the clipboard when a broadcast begins. A link that was ALREADY there is an old one (an earlier livestream's address), never this broadcast's: the
+    // go-live window picks a copied link up by itself, and without this it could attach the chat of a livestream that ended days ago.
+    void rememberClipboard();
     Q_INVOKABLE void detachX();
     Q_INVOKABLE void setStaleIds(const QStringList &ids) { m_staleIds = ids; }   // livestreams that were already on air before this broadcast began: never attached
     bool isStale(const QString &id) const { return m_staleIds.contains(id); }
@@ -45,12 +58,14 @@ public:
 signals:
     void statusChanged();
     void countChanged();
+    void attached(const QString &id);   // a livestream's chat was attached (by the finder, a copied link or a typed one)
 private:
     struct Item { QString id, name, text; double hue; };
     QVector<Item> m_items;
     bool m_configured = false, m_connected = false, m_demo = false;
     QString m_status = QStringLiteral("chat is not connected");
     QString m_xId;
-    QStringList m_staleIds;
+    QStringList m_staleIds, m_usedIds;
+    QString m_finderNote, m_clipboardAtStart;
     bool m_xConfigured = false;       // the card exists only because an X chat is attached
 };

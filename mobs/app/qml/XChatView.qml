@@ -24,10 +24,11 @@ Item {
     property real regionH: 0
     property bool inputCut: false
     property int freshBeats: 0                // how many fresh frames the timer below has asked Chromium for since this livestream was attached (the tests read it)
+    property int moves: 0                     // readings in a row where the card was somewhere else than in the one before
     readonly property real pageW: 1400
     readonly property real pageH: 1200
     readonly property real fit: regionW > 0 && width > 0 ? Math.max(0.25, Math.min(5, width / regionW)) : 1
-    onLivestreamIdChanged: { cropState = "waiting"; tries = 0; misses = 0; regionW = 0; regionH = 0; freshBeats = 0 }
+    onLivestreamIdChanged: { cropState = "waiting"; tries = 0; misses = 0; moves = 0; blackTries = 0; regionW = 0; regionH = 0; freshBeats = 0 }
     // https only, a plain host name (no user name before it, no other port), and it is x.com or twitter.com or a subdomain of one of them.
     function onXHost(target) {
         const m = /^https:\/\/([A-Za-z0-9.-]+)(?::443)?(?:[\/?#]|$)/.exec(target)
@@ -103,13 +104,27 @@ Item {
                     const moved = Math.abs(info.x - root.regionX) > 1 || Math.abs(info.y - root.regionY) > 1 || Math.abs(info.w - root.regionW) > 1   // the height grows with every message and changes nothing about the zoom
                     root.regionX = info.x; root.regionY = info.y; root.regionW = info.w; root.regionH = info.h
                     root.inputCut = info.input === true
-                    if (!moved) root.cropState = "shown"
+                    // A page whose card never holds still (a banner or a counter that keeps moving it) would keep the cover up for ever: after a number of readings that
+                    // all moved, the card is shown where it is. A card a pixel off is better than no chat.
+                    if (!moved) { root.moves = 0; root.cropState = "shown" }
+                    else if (++root.moves >= 8) { root.moves = 0; root.cropState = "shown"; console.info("chat card: the card kept moving; shown where it is") }
                 } else {
                     root.misses++
                     if (root.misses >= (root.cropState === "shown" ? 8 : xChatTries)) root.cropState = info.login === true ? "signedout" : "missing"
+                    // A page that failed to load, or that was loaded before the person signed in somewhere else in MOBS, never changes by itself: once the card has SAID so
+                    // (sign in, or not there yet) the page is asked for again now and then, so the card recovers when the network is back or the sign-in is done. Never before it
+                    // has said so: a reload resets the count of misses, and one that came sooner than the verdict would keep the verdict from ever being given.
+                    if ((root.cropState === "signedout" || root.cropState === "missing") && root.misses === Math.max(10, xChatTries + 2)) {
+                        console.info("chat card: the page has no Live Chat card (" + root.cropState + "): asking X's page again")
+                        web.reload()
+                    }
                 }
             })
         }
+    }
+    Timer {   // a page that stays "loading" for ever (a stuck connection) never lets the look timer above run: after a while it is stopped and asked for again
+        interval: 45000; repeat: true; running: root.livestreamId !== "" && web.loading
+        onTriggered: { console.info("chat card: the page was still loading after 45 s: asking X's page again"); web.stop(); web.reload() }
     }
     // On some graphics stacks the dock window is handed a still page's LAST frame as black and keeps it until Chromium paints again (seen on a virtual GPU with
     // Qt's threaded render loop: a quiet chat page stayed black for good, a busy one drew). A real livestream page repaints on its own all the time, a quiet one
@@ -121,6 +136,23 @@ Item {
         interval: 500; repeat: true; triggeredOnStart: true; running: root.cropState === "shown"
         onTriggered: { odd = !odd; web.backgroundColor = odd ? "#010101" : "#000000"; root.freshBeats++ }
     }
+    // A self-check for the log: a moment after the card is shown, again after ten seconds, then every two minutes, the card's own pixels are looked at and the log says how
+    // much of it is lit. Black means the card is drawing nothing on this graphics stack, whatever else the log says. Only that one number is kept, never the picture.
+    // (Found with the colour change above switched off: the card drew at first and was black ten seconds later, so the first look is not enough.) A black card is not left
+    // black: the page is asked for again, which makes Chromium paint, and the card is looked at again six seconds later, three times at the most.
+    property int blackTries: 0
+    function lookAtTheCard() {
+        shown.grabToImage(function (result) {
+            if (Pip.chatCardLooks(result.image)) { root.blackTries = 0; return }
+            if (root.cropState !== "shown" || root.blackTries >= 3) return
+            root.blackTries++
+            console.info("chat card: the card is black: asking X's page again (" + root.blackTries + " of 3)")
+            web.reload()
+            recheck.restart()
+        })
+    }
+    Timer { id: recheck; interval: 6000; onTriggered: root.lookAtTheCard() }
+    onFreshBeatsChanged: if (freshBeats === 2 || freshBeats === 20 || (freshBeats > 0 && freshBeats % 240 === 0)) lookAtTheCard()
     Rectangle {
         objectName: "xChatNotice"
         anchors.fill: parent

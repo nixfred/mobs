@@ -24,6 +24,9 @@ public:
     static bool parse(const QByteArray &json, QVariantList *mics, QVariantList *desktops);
     Q_INVOKABLE QString name(const QString &id, bool desktop = false) const;
     QString problem(const AudioSpec &audio, bool mic) const;
+    // "System default microphone" is not a device: it follows whatever becomes the default later (a headset plugged in). A microphone the person LOCKS IN has to be a
+    // particular one, so locking resolves "default" to the source the system uses right now. Anything else, or a default that is not a listed microphone, comes back as it was.
+    Q_INVOKABLE QString resolveDefault(const QString &id) const;
     Q_INVOKABLE void refresh();
 signals:
     void changed();

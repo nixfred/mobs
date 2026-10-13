@@ -363,7 +363,8 @@ void Engine::setStreamArmed(bool armed) {
 
 void Engine::onStreamState(const QString &state, const QString &detail) {
     if (!m_takeStreams) return;   // a late word from a broadcast that is already over
-    const QString problem = (state == "failed" || state == "reconnecting") ? detail : QString();
+    // What libobs says about a failed connection is shown to the person and put in a notification, so the stream key is scrubbed from it here as well as in the log.
+    const QString problem = (state == "failed" || state == "reconnecting") ? MobsLog::scrub(detail) : QString();
     if (state == m_streamState && problem == m_streamProblem) return;
     MobsLog::write("stream", QString("state %1 -> %2 %3").arg(m_streamState, state, detail));
     m_streamState = state; m_streamProblem = problem;

@@ -1,6 +1,7 @@
 #pragma once
 #include <QCameraDevice>
 #include <QCameraFormat>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -9,6 +10,7 @@
 #include <QSettings>
 #include <QSize>
 #include <QTimer>
+#include <QVariant>
 
 class AppState;
 class ChatModel;
@@ -46,6 +48,9 @@ public:
     Q_INVOKABLE void windowShown();                     // the QML window became visible: float, pin and place it
     Q_INVOKABLE void windowHidden();                    // it is about to go: remember where it was left, if the person moved or resized it
     Q_INVOKABLE void cameraProblem(const QString &what); // the camera view's own messages, for the log
+    Q_INVOKABLE void cameraFailed(const QString &what);  // the camera view reports an ERROR: logged, and said out loud when a take is running (the face on the stream would freeze unseen)
+    Q_INVOKABLE bool chatCardLooks(const QVariant &image);   // the chat card's own pixels, grabbed by the card: the log gets the share that is lit, so a black card shows in a take's log; false when it is black
+    static double litShare(const QImage &image);          // 0..100: the share of the picture's pixels that are bright (sampled); pure, unit-tested
     void setCaptureSize(int width, int height);         // the captured screen's size once known: which monitor is in the picture
 
     // Pure helpers over `hyprctl ... -j` output (unit-tested).
@@ -64,6 +69,7 @@ public:
     // A webcam window closed in the middle of a take (a stray SUPER + Q) takes you off the stream while the take carries on. During a take MOBS puts it back,
     // at most three times a minute so it never fights a person who really means to close it. Before and after a take a closed window stays closed.
     static bool reopenAllowed(const QString &engineState, int reopensInTheLastMinute);
+    static QString luaString(const QString &text);   // a Lua string literal for text that came from outside (a workspace name is chosen in the person's config): quotes, backslashes and line breaks escaped
 signals:
     void changed();
     void heldChanged();
@@ -81,6 +87,7 @@ private:
     bool onHyprland() const;
     QJsonDocument hyprJson(const QStringList &args) const;
     bool hyprEval(const QString &lua) const;
+    QString workspaceNameOf(const QString &address) const;   // where the compositor says a window is right now ("" = not in its list)
     void rememberActive();
     void tryPlace();
     void resizeForChat();   // the chat card turned on or off while the window is on screen
@@ -100,5 +107,8 @@ private:
     int m_chatTries = 0;       // looks at the compositor so far for the current chat resize
     QSize m_captureSize;
     bool m_mainHidden = false;
+    int m_hideTries = 0;      // times the compositor refused to move MOBS's window out of the picture in this take (it is asked again, a few times)
+    int m_restoreTries = 0;   // the same for bringing it back when the take is over
+    qint64 m_cameraNotifiedAt = 0;   // when the person was last told the camera failed mid-take: at most once a minute
     QString m_hiddenAddress, m_homeWorkspace;
 };
