@@ -27,6 +27,11 @@ Item {
     readonly property real pageH: 1200
     readonly property real fit: regionW > 0 && width > 0 ? Math.max(0.25, Math.min(5, width / regionW)) : 1
     onLivestreamIdChanged: { cropState = "waiting"; tries = 0; misses = 0; regionW = 0; regionH = 0 }
+    // https only, a plain host name (no user name before it, no other port), and it is x.com or twitter.com or a subdomain of one of them.
+    function onXHost(target) {
+        const m = /^https:\/\/([A-Za-z0-9.-]+)(?::443)?(?:[\/?#]|$)/.exec(target)
+        return m !== null && ["x.com", "twitter.com"].some(function (d) { return m[1] === d || m[1].endsWith("." + d) })
+    }
     readonly property string findScript: [
         "(function () {",
         "  var rectOf = function (e) { var r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };",
@@ -41,18 +46,27 @@ Item {
         "  for (var k = 0; k < boxes.length; k++) { var row = boxes[k]; while (row.parentElement && row.parentElement !== card && rectOf(row.parentElement).h < 100) row = row.parentElement; var rr = rectOf(row); if (rr.y > cr.y + 60 && rr.y < bottom) bottom = rr.y; }",
         "  var last = cr.y, texts = document.createTreeWalker(card, NodeFilter.SHOW_TEXT), tn;",
         "  while ((tn = texts.nextNode())) { if (!tn.textContent.trim()) continue; var rg = document.createRange(); rg.selectNodeContents(tn); var tb = rg.getBoundingClientRect(); if (tb.height > 0 && tb.top >= cr.y && tb.bottom <= bottom + 1 && tb.bottom > last) last = tb.bottom; }",
+        "  var pics = card.querySelectorAll('img,svg,canvas,video'), pb;",
+        "  for (var q = 0; q < pics.length; q++) { pb = pics[q].getBoundingClientRect(); if (pb.height > 0 && pb.width > 0 && pb.top >= cr.y && pb.bottom <= bottom + 1 && pb.bottom > last) last = pb.bottom; }",
         "  var end = Math.min(bottom, Math.max(last + 16, cr.y + 140));",
         "  return JSON.stringify({ state: 'ok', x: cr.x, y: cr.y, w: cr.w, h: end - cr.y, input: bottom < cr.y + cr.h });",
         "})()"
     ].join("\n")
 
+    Rectangle { anchors.fill: parent; color: "#000000"; z: -1 }
+    Item {   // the part of the card that is shown: a short card is cut here (nothing of the page below it may show), a long one fills the dock
+        id: shown
+        width: root.width
+        height: root.regionW > 0 ? Math.min(root.height, root.regionH * root.fit) : root.height
+        clip: true
     WebEngineView {
         id: web
         enabled: false                          // for looking at, not for clicking: a click or a drag goes to the dock behind it
+        audioMuted: true                        // a livestream page plays sound: it must never reach the desktop sound that goes on air
         width: root.pageW * root.fit            // with the zoom below this keeps the page 1400 CSS pixels wide, whatever size the dock is
         height: root.pageH * root.fit
         x: -root.regionX * root.fit
-        y: root.regionH * root.fit >= root.height ? root.height - (root.regionY + root.regionH) * root.fit : -root.regionY * root.fit   // a short dock shows the NEWEST messages, at the bottom of the card
+        y: root.regionH * root.fit >= shown.height ? shown.height - (root.regionY + root.regionH) * root.fit : -root.regionY * root.fit   // a short dock shows the NEWEST messages, at the bottom of the card
         zoomFactor: root.fit
         profile: xProfile
         url: root.livestreamId !== "" ? xChatUrlTemplate.replace("%1", root.livestreamId) : "about:blank"
@@ -67,25 +81,25 @@ Item {
         onLoadingChanged: function (info) { if (info.status === WebEngineView.LoadSucceededStatus) { root.tries = 0; root.misses = 0; look.restart() } }
         onNavigationRequested: function (request) {   // the card is for reading: nothing in it takes the view to another site
             const target = request.url.toString()
-            const host = /^https:\/\/([^\/?#:]+)/.exec(target)
-            const onX = host && ["x.com", "twitter.com"].some(function (d) { return host[1] === d || host[1].endsWith("." + d) })
+            const onX = root.onXHost(target)
             const testPage = xChatUrlTemplate.indexOf("file://") === 0 && target.indexOf("file://") === 0   // a stand-in page, only when a test points the template at a file
             if (!(onX || testPage || target === "about:blank")) request.action = WebEngineNavigationRequest.IgnoreRequest
         }
+    }
     }
     Timer {   // X redraws its page now and then: the card is looked for again, and again
         id: look
         interval: 1500; repeat: true; running: root.livestreamId !== "" && !web.loading
         onTriggered: {
             root.tries++
-            web.runJavaScript(root.findScript, function (result) {
+            web.runJavaScript(root.findScript, WebEngineScript.ApplicationWorld, function (result) {
                 let info = {}
                 try { info = JSON.parse(result) } catch (e) { info = {} }
                 if (info.state === "ok") {
                     root.misses = 0
                     // The cover comes off only when two readings in a row agree: the first one moves and zooms the view, and the page needs a moment to be drawn at
                     // that zoom. Without the wait the whole page flashes on screen (and on air) before the card.
-                    const moved = Math.abs(info.x - root.regionX) > 1 || Math.abs(info.y - root.regionY) > 1 || Math.abs(info.w - root.regionW) > 1 || Math.abs(info.h - root.regionH) > 1
+                    const moved = Math.abs(info.x - root.regionX) > 1 || Math.abs(info.y - root.regionY) > 1 || Math.abs(info.w - root.regionW) > 1   // the height grows with every message and changes nothing about the zoom
                     root.regionX = info.x; root.regionY = info.y; root.regionW = info.w; root.regionH = info.h
                     root.inputCut = info.input === true
                     if (!moved) root.cropState = "shown"

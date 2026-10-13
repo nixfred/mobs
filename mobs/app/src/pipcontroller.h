@@ -97,6 +97,7 @@ private:
     QString m_prevActive;     // what had the keyboard when the window was about to appear
     QRect m_placed;           // where WE put the window: only a different place is worth remembering
     bool m_chatPlaced = false; // does the window's current size have room for the chat card?
+    int m_chatTries = 0;       // looks at the compositor so far for the current chat resize
     QSize m_captureSize;
     bool m_mainHidden = false;
     QString m_hiddenAddress, m_homeWorkspace;

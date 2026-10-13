@@ -93,6 +93,15 @@ private slots:
         ChatModel relay; relay.setConfigured(true);                                                          // a chat that is there for another reason keeps its card
         QVERIFY(relay.attachX("https://x.com/i/live-studio/1PJqrNXnQywxb")); relay.detachX(); QVERIFY(relay.configured());
     }
+    void livestreamsThatWereOnAirBeforeTheBroadcastAreNeverAttached() {
+        ChatModel m;
+        m.setStaleIds({"1OLDoldOLDold1"});
+        QVERIFY(!m.attachX("https://studio.x.com/live/1OLDoldOLDold1")); QVERIFY(m.xId().isEmpty());       // an old one: refused, a pasted link too
+        QVERIFY(m.attachX("https://studio.x.com/live/1NEWnewNEWnew1")); QCOMPARE(m.xId(), QString("1NEWnewNEWnew1"));
+        QVERIFY(m.attachX("https://x.com/i/broadcasts/1NEXTnextNEXT1")); QCOMPARE(m.xId(), QString("1NEXTnextNEXT1"));   // the right one may replace a wrong one
+        m.detachX();
+        QVERIFY(m.attachX("https://studio.x.com/live/1OLDoldOLDold1"));                                      // the next broadcast starts clean
+    }
     void aLinkOnTheClipboardIsAttachedOnlyOnTheOffscreenPlatform() {
         if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
         ChatModel m;
@@ -101,6 +110,8 @@ private slots:
         QGuiApplication::clipboard()->setText("https://x.com/NixFred/status/1234567890123456789"); QVERIFY(!m.attachXFromClipboard());
         QVERIFY(!m.xClipboardNote().isEmpty());                                                             // an X link that is no livestream link: say what to copy instead
         QGuiApplication::clipboard()->setText(""); QVERIFY(m.xClipboardNote().isEmpty());
+        m.setStaleIds({"1OLDoldOLDold1"});
+        QGuiApplication::clipboard()->setText("https://x.com/i/broadcasts/1OLDoldOLDold1"); QVERIFY(!m.attachXFromClipboard()); QVERIFY(!m.xClipboardNote().isEmpty());   // an old livestream's link: refused, and why
         QGuiApplication::clipboard()->setText("https://x.com/i/live-studio/1PJqrNXnQywxb"); QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1PJqrNXnQywxb"));
     }
 };

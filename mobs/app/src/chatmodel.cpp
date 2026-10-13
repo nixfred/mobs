@@ -83,10 +83,11 @@ bool ChatModel::attachX(const QString &textOrLink) {
     const QString id = xIdFrom(textOrLink);
     if (id.isEmpty()) return false;
     if (id == m_xId) return true;
+    if (m_staleIds.contains(id)) { MobsLog::write("chat", "that livestream was already on air before this broadcast began: not attached"); return false; }
     m_xId = id;
     if (!m_configured) { m_configured = true; m_xConfigured = true; }
     m_demo = false; m_connected = true; m_status.clear();
-    MobsLog::write("chat", "X chat attached: the card under the webcam shows the Live Chat of your livestream");   // never the link itself
+    MobsLog::write("chat", "X chat attached: the card under the webcam shows the Live Chat of your livestream");   // nothing the person copied is ever logged
     emit statusChanged();
     return true;
 }
@@ -100,13 +101,16 @@ QString ChatModel::xClipboardNote() const {
     if (!m_xId.isEmpty()) return QString();
     const QClipboard *clipboard = QGuiApplication::clipboard();
     const QString text = clipboard ? clipboard->text().trimmed() : QString();
-    if (text.isEmpty() || text.size() > 400 || !xIdFrom(text).isEmpty()) return QString();   // nothing copied, something huge, or a link that would have been taken
+    if (text.isEmpty() || text.size() > 400) return QString();
+    const QString id = xIdFrom(text);
+    if (!id.isEmpty()) return m_staleIds.contains(id) ? QStringLiteral("That livestream was already on air before this broadcast began. Use the one you just started.") : QString();   // otherwise a link that would have been taken
     static const QRegularExpression xLink(R"((?:^|[/.])(?:x|twitter)\.com/)");
     if (!xLink.match(text).hasMatch()) return QString();                                      // whatever else was copied is none of MOBS's business, and is never shown
     return QStringLiteral("That link is not a livestream link MOBS knows. In Live Studio open your livestream and copy the address from the browser's address bar instead.");
 }
 
 void ChatModel::detachX() {
+    m_staleIds.clear();   // the next broadcast starts clean
     if (m_xId.isEmpty()) return;
     m_xId.clear();
     if (m_xConfigured) { m_configured = false; m_xConfigured = false; m_connected = false; m_status = QStringLiteral("chat is not connected"); }

@@ -160,7 +160,17 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none", fake_backend=True)
     # The livestream that is on air is found by MOBS itself: no link to copy.
     check("the livestream that is Live Now in Live Studio is found by itself and its chat attached",
-          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:1PJqrNmYLjYxb,wait=4,expect=xCrop:shown,expect=xPixels:ff00ff=none", fake_backend=True, limit=30)
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=13,expect=chatXId:1PJqrNmYLjYxb,wait=4,expect=xCrop:shown,expect=xPixels:ff00ff=none", fake_backend=True, limit=40)
+    check("a livestream that was already on air when the broadcast began is never taken for this one",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=14,expect=chatXId:,expect=chatWanted:0", fake_backend=True, limit=40,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-stale.html").as_uri()})
+    check("a new livestream is found even when it only shows after the page is reloaded",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=19,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, limit=45,
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-reload.html").as_uri()})
+    check("stopping a broadcast whose livestream was never found opens the list of livestreams",
+          live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=1,stop,waitidle", fake_backend=True,
+          expect_log=("opening https://studio.x.com/live",), forbid_log=("opening https://studio.x.com/live/",),
+          extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})
     check("when nothing is on air in Live Studio no chat is attached",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:,expect=chatWanted:0", fake_backend=True,
           extra_env={"MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri()})

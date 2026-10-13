@@ -73,7 +73,7 @@ private slots:
         QCOMPARE(PipController::rectForChat(already, true, m), already);
         const QRect low(1500, 40 + 1080 - 40 - 270, 480, 270);                        // at the bottom of the monitor there is no room below: it is pulled up
         const QRect lifted = PipController::rectForChat(low, true, m);
-        QVERIFY(lifted.bottom() <= 40 + 1080 - 1); QVERIFY(lifted.height() > 270);
+        QVERIFY(lifted.bottom() <= 40 + (1080 - 40) - 1); QVERIFY(lifted.height() > 270); QVERIFY(lifted.top() >= 40);   // inside the usable area, below the bar
     }
     void theDefaultSizeScalesWithTheScreenSoTheWebcamIsVisibleOnceTheBroadcastIsScaledTo1080p() {
         const auto mon = [](int w, int h, double scale) { return QJsonObject{{"x", 0}, {"y", 0}, {"width", w}, {"height", h}, {"scale", scale}, {"reserved", QJsonArray{0, 43, 0, 0}}}; };

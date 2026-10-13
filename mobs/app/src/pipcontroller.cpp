@@ -171,7 +171,7 @@ void PipController::place(const QString &address, const QJsonArray &clients) {
     const auto dsp = [&](const QString &call) { return hyprEval("hl.dispatch(hl.dsp." + call + ")"); };
 
     const bool chatOn = chatWanted();   // the dock has a chat card under the video: its size and its remembered place differ from the video alone
-    m_placeKey = chatOn ? QStringLiteral("pipPlaceChat") : QStringLiteral("pipPlace");
+    m_placeKey = QStringLiteral("pipPlace");   // one place for the dock, stored as the video alone: the chat card is only ever added underneath (and the chat usually arrives later)
     // Where: where the person last left it (if that monitor is still there), else the top-right of MOBS's own monitor, sized for the broadcast.
     QRect saved; QString savedMonitor;
     QJsonObject monitor;
@@ -224,29 +224,37 @@ QRect PipController::rectForChat(const QRect &now, bool chatOn, const QJsonObjec
 void PipController::resizeForChat() {
     if (!m_shown || !onHyprland() || m_placed.isNull()) return;   // not placed yet: place() reads the chat state itself
     const bool chatOn = chatWanted();
-    if (chatOn == m_chatPlaced) return;                            // the size already suits this state
+    if (chatOn == m_chatPlaced) { m_chatTries = 0; return; }       // the size already suits this state
+    const auto again = [this](const char *why) {                    // the compositor was slow or did not answer: look again a few times, never give up quietly
+        if (++m_chatTries <= 6) QTimer::singleShot(500, this, &PipController::resizeForChat);
+        else MobsLog::write("pip", QString("the chat card turned on but the webcam window could not be made taller (%1)").arg(QLatin1String(why)));
+    };
     const QJsonArray clients = hyprJson({"clients", "-j"}).array();
     const QString address = addressOf(clients, kTitle, QCoreApplication::applicationPid());
     const QJsonObject c = clientAt(clients, address);
-    if (address.isEmpty() || c.isEmpty()) return;
+    if (address.isEmpty() || c.isEmpty()) { again("the window is not listed"); return; }
     const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
     const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
-    if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
+    if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) { again("no geometry"); return; }
     const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
     const QRect want = rectForChat(now, chatOn, monitor);
+    if (want != now) {
+        const QString win = QString("window=\"address:%1\"").arg(address);
+        const bool ok = hyprEval(QString("hl.dispatch(hl.dsp.window.resize({x=%1,y=%2,%3}))").arg(want.width()).arg(want.height()).arg(win))
+                     && hyprEval(QString("hl.dispatch(hl.dsp.window.move({x=%1,y=%2,%3}))").arg(want.x()).arg(want.y()).arg(win));
+        if (!ok) { again("hyprctl said no"); return; }
+        MobsLog::write("pip", QString("the chat card turned %1: webcam window resized to %2x%3 at %4,%5").arg(chatOn ? "on" : "off").arg(want.width()).arg(want.height()).arg(want.x()).arg(want.y()));
+    }
+    m_chatTries = 0;
     m_chatPlaced = chatOn;
-    m_placeKey = chatOn ? QStringLiteral("pipPlaceChat") : QStringLiteral("pipPlace");
-    if (want == now) { m_placed = now; return; }
-    const QString win = QString("window=\"address:%1\"").arg(address);
-    hyprEval(QString("hl.dispatch(hl.dsp.window.resize({x=%1,y=%2,%3}))").arg(want.width()).arg(want.height()).arg(win));
-    hyprEval(QString("hl.dispatch(hl.dsp.window.move({x=%1,y=%2,%3}))").arg(want.x()).arg(want.y()).arg(win));
-    m_placed = want;
-    MobsLog::write("pip", QString("the chat card turned %1: webcam window resized to %2x%3 at %4,%5").arg(chatOn ? "on" : "off").arg(want.width()).arg(want.height()).arg(want.x()).arg(want.y()));
+    // What WE put is only the size and, if it had to be lifted off the bottom of the screen, the corner: a corner the person chose earlier stays a choice worth remembering.
+    m_placed = QRect(want.topLeft() != now.topLeft() ? want.topLeft() : m_placed.topLeft(), want.size());
 }
 
 void PipController::windowHidden() {
     m_shown = false; m_placeTimer.stop();
     rememberWhereItWasLeft();
+    m_placed = QRect(); m_chatPlaced = false; m_chatTries = 0;   // the next showing is a fresh placement
     reopenIfClosedDuringATake();
 }
 
@@ -284,9 +292,12 @@ void PipController::rememberWhereItWasLeft() {
     const QJsonArray at = c.value("at").toArray(), size = c.value("size").toArray();
     const QJsonObject monitor = monitorById(hyprJson({"monitors", "-j"}).array(), c.value("monitor").toInt());
     if (at.size() < 2 || size.size() < 2 || monitor.isEmpty()) return;
-    const QRect now(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
+    const QRect actual(at[0].toInt(), at[1].toInt(), size[0].toInt(), size[1].toInt());
+    // With the chat card under it the window is taller; the remembered place is the video alone, so what is compared and kept is its corner and width.
+    const auto videoOnly = [&](const QRect &r) { return m_chatPlaced ? QRect(r.x(), r.y(), r.width(), r.width() * 9 / 16) : r; };
+    const QRect now = videoOnly(actual), placed = videoOnly(m_placed);
     // Only a place the person CHOSE is remembered (a move or a resize); where MOBS put it by itself is recomputed next time, for whatever screen is there then.
-    if (m_placed.isValid() && (std::abs(now.x() - m_placed.x()) > 4 || std::abs(now.y() - m_placed.y()) > 4 || std::abs(now.width() - m_placed.width()) > 4 || std::abs(now.height() - m_placed.height()) > 4)) {
+    if (m_placed.isValid() && (std::abs(now.x() - placed.x()) > 4 || std::abs(now.y() - placed.y()) > 4 || std::abs(now.width() - placed.width()) > 4 || std::abs(now.height() - placed.height()) > 4)) {
         m_store->setValue(m_placeKey, encodePlace(now, monitor.value("name").toString())); m_store->sync();
         MobsLog::write("pip", QString("webcam window left at %1,%2 %3x%4 on %5: remembered, you moved it").arg(now.x()).arg(now.y()).arg(now.width()).arg(now.height()).arg(monitor.value("name").toString()));
     } else MobsLog::write("pip", "webcam window closed where MOBS put it");

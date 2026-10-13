@@ -4,10 +4,16 @@
 <body style="background:#000;color:#eee;font-family:sans-serif">
 <h2>Live Studio</h2>
 <ul><li>Livestreams</li><li>Sources</li></ul>
+<div>Date Source Visibility Views</div>
 <h3>Live Now</h3>
-<div><a href="/live/1PJqrNmYLjYxb">Testing_MOBS</a></div>
+<div id="live"><a href="/live/1OLDoldOLDold1">A stream that was already on air</a></div>
 <h3>Past</h3>
-<div><a href="/live/1OLDoldOLDold1">An older stream</a></div>
+<div><a href="/live/1OLDoldOLDold2">An older stream</a></div>
+<script>
+  // The person presses Go Live in Live Studio a few seconds into the broadcast: the new livestream appears at the top of Live Now.
+  // (It must come after MOBS has read the list twice, which is how it learns what was on air before.)
+  setTimeout(function () { var a = document.createElement('a'); a.setAttribute('href', '/live/1PJqrNmYLjYxb'); a.textContent = 'Testing_MOBS'; var d = document.getElementById('live'); d.insertBefore(a, d.firstChild); }, 6500);
+</script>
 <p>Tests only: no network, no account.</p>
 </body>
 </html>

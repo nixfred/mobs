@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE bool attachXFromClipboard();                    // the same, from what the person just copied
     Q_INVOKABLE QString xClipboardNote() const;                 // what to tell the person when they copied an X link that is not a livestream link; "" when there is nothing to say
     Q_INVOKABLE void detachX();
+    Q_INVOKABLE void setStaleIds(const QStringList &ids) { m_staleIds = ids; }   // livestreams that were already on air before this broadcast began: never attached
+    bool isStale(const QString &id) const { return m_staleIds.contains(id); }
     static QString xIdFrom(const QString &text);                // "https://x.com/i/live-studio/1PJqrNXnQywxb" gives "1PJqrNXnQywxb"; "" when it is not such a link
     static double hueFor(const QString &name);   // the same name always gets the same colour: 0..1
 signals:
@@ -49,5 +51,6 @@ private:
     bool m_configured = false, m_connected = false, m_demo = false;
     QString m_status = QStringLiteral("chat is not connected");
     QString m_xId;
+    QStringList m_staleIds;
     bool m_xConfigured = false;       // the card exists only because an X chat is attached
 };

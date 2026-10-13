@@ -74,10 +74,9 @@ Rectangle {
                 text: Chat.xId !== "" ? "Chat attached: it shows under your webcam." : root.linkNote !== "" ? root.linkNote : "Chat: MOBS finds your livestream by itself once you have pressed Go Live. If it does not, press Copy URL in Live Studio and come back."
             }
             Rectangle {
-                visible: Chat.xId === ""
                 width: 240; height: 36; radius: 18; color: Omarchy.lighterBackground; border.color: Omarchy.selection
                 TextInput { id: pasted; objectName: "goLiveLinkInput"; anchors { fill: parent; leftMargin: 14; rightMargin: 14 } verticalAlignment: TextInput.AlignVCenter; clip: true; font.pixelSize: 12; color: Omarchy.foreground; onAccepted: { if (Chat.attachX(text)) text = "" } }
-                Txt { anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter } visible: pasted.text === ""; text: "or paste the link here"; font.pixelSize: 12; color: Omarchy.tertiaryText }
+                Txt { anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter } visible: pasted.text === ""; text: Chat.xId === "" ? "or paste the link here" : "wrong livestream? paste the right link"; font.pixelSize: 12; color: Omarchy.tertiaryText }
             }
         }
         Txt { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "After this window hides, press SUPER + SHIFT + V to stop the stream." }
