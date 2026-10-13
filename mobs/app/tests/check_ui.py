@@ -153,11 +153,11 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
-          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,checkpip",
           fake_backend=True, expect_log=("X chat attached",))
     live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"   # a saved address and key, for every scenario that goes live
     check("a livestream nobody has written in yet shows the heading, at the least height",
-          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none", fake_backend=True)
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,wait=1.2,expect=xFresh:3", fake_backend=True)   # a quiet chat page keeps being asked for fresh frames, so a stale black one cannot stay
     # The livestream that is on air is found by MOBS itself: no link to copy.
     check("the livestream that is Live Now in Live Studio is found by itself and its chat attached",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=13,expect=chatXId:1PJqrNmYLjYxb,wait=4,expect=xCrop:shown,expect=xPixels:ff00ff=none", fake_backend=True, limit=40)
@@ -182,9 +182,9 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a signed-out person's broadcast is not searched for a livestream",
           live_setup + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=9,expect=chatXId:", fake_backend=True)
     check("a chat card that X answers with a sign-in page says so",
-          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=7,expect=xCrop:signedout", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/SIGNEDOUT01,expect=chatXId:SIGNEDOUT01,wait=7,expect=xCrop:signedout,expect=xFresh:none", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
     check("a livestream page with no chat card says so",
-          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/NOCHAT000001,expect=chatXId:NOCHAT000001,wait=7,expect=xCrop:missing", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/NOCHAT000001,expect=chatXId:NOCHAT000001,wait=7,expect=xCrop:missing,expect=xFresh:none", fake_backend=True, extra_env={"MOBS_X_TRIES": "2"})
     check("a link that is not a Live Studio link attaches nothing", "pick=2,preview=1,wait=0.4,xattach=https://example.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("the chat of a livestream ends with the take", "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/broadcasts/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,start,expect=state:recording,stop,waitidle,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("a web address pasted as the stream key is refused", "setupstep=7,wait=0.4,clip=rtmp://va.pscp.tv:80/x,click=setupPasteKey,wait=0.2,expect=streamReady:0", fake_backend=True, extra_env=setup_env)

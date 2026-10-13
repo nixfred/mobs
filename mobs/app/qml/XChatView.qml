@@ -23,10 +23,11 @@ Item {
     property real regionW: 0
     property real regionH: 0
     property bool inputCut: false
+    property int freshBeats: 0                // how many fresh frames the timer below has asked Chromium for since this livestream was attached (the tests read it)
     readonly property real pageW: 1400
     readonly property real pageH: 1200
     readonly property real fit: regionW > 0 && width > 0 ? Math.max(0.25, Math.min(5, width / regionW)) : 1
-    onLivestreamIdChanged: { cropState = "waiting"; tries = 0; misses = 0; regionW = 0; regionH = 0 }
+    onLivestreamIdChanged: { cropState = "waiting"; tries = 0; misses = 0; regionW = 0; regionH = 0; freshBeats = 0 }
     // https only, a plain host name (no user name before it, no other port), and it is x.com or twitter.com or a subdomain of one of them.
     function onXHost(target) {
         const m = /^https:\/\/([A-Za-z0-9.-]+)(?::443)?(?:[\/?#]|$)/.exec(target)
@@ -109,6 +110,16 @@ Item {
                 }
             })
         }
+    }
+    // On some graphics stacks the dock window is handed a still page's LAST frame as black and keeps it until Chromium paints again (seen on a virtual GPU with
+    // Qt's threaded render loop: a quiet chat page stayed black for good, a busy one drew). A real livestream page repaints on its own all the time, a quiet one
+    // may not. So while the card is shown, the view's own background changes by one shade, now and then: that asks Chromium for a fresh frame, changes nothing on
+    // the page (it is never touched) and nothing the eye can see. Asking Qt to redraw the same frame (update()) did not help: the frame itself is the stale thing.
+    Timer {
+        objectName: "xChatFresh"
+        property bool odd: false
+        interval: 500; repeat: true; triggeredOnStart: true; running: root.cropState === "shown"
+        onTriggered: { odd = !odd; web.backgroundColor = odd ? "#010101" : "#000000"; root.freshBeats++ }
     }
     Rectangle {
         objectName: "xChatNotice"
