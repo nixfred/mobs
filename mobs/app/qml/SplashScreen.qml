@@ -290,7 +290,7 @@ Item {
                         required property int index
                         readonly property real p: splash.outCubic(splash.seg(1650 + index * 130, 1650 + index * 130 + 240))
                         spacing: 12; opacity: p; x: (1 - p) * -14
-                        Txt { width: 76; text: modelData.label.toUpperCase(); color: Omarchy.tertiaryText; font.pixelSize: 11; font.letterSpacing: 1.5; anchors.verticalCenter: parent.verticalCenter }
+                        Txt { width: 76; text: modelData.label.toUpperCase(); color: Omarchy.tertiaryText; font.pixelSize: 12; font.letterSpacing: 1.5; anchors.verticalCenter: parent.verticalCenter }
                         Txt {
                             width: readout.width - 16 - 76 - 24 - 24; text: modelData.value; elide: Text.ElideRight; font.pixelSize: 13
                             color: modelData.level === "warn" ? Omarchy.yellow : modelData.level === "none" ? Omarchy.secondaryText : Omarchy.foreground

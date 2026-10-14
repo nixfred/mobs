@@ -9,6 +9,17 @@ WebEngineView {
     id: web
     readonly property string helper: pilotHelperJs   // the page half of the helper: a file in the app's resources, read once at start (main.cpp)
     property bool busy: false                  // a question is out and its answer has not come back
+    // The interface is drawn scaled up (Main.qml, uiScale). A web page inside it would be a small picture stretched, so it is drawn at the real size of its box in screen pixels and
+    // shrunk back (scale 1 / k): sharp at any size. The page is then zoomed so that the form it shows (about 960 by 520) fills the box; a sign-in form (full) is used at the size of the
+    // rest of the interface instead.
+    property Item box: null                    // the box this fills (a Loader)
+    property bool full: false
+    readonly property real k: Window.window && Window.window.uiScale ? Window.window.uiScale : 1
+    width: box ? box.width * k : 100
+    height: box ? box.height * k : 100
+    scale: 1 / k
+    transformOrigin: Item.TopLeft
+    zoomFactor: full ? k : Math.max(0.5, Math.min(3, width / 960, height / 520))
     readonly property bool testPage: xStudioUrl.indexOf("file://") === 0   // a stand-in page, only when a test points the address at a file
     profile: xProfile
     backgroundColor: "#000000"

@@ -48,7 +48,7 @@ Rectangle {
         active: root.auto && Pip.mainHeld && Chat.xId === ""
         sourceComponent: LivePilot {
             running: Engine.broadcasting
-            view: studioLoader.item
+            view: studioLoader.item ? studioLoader.item.view : null
             onLive: function (id) { Chat.attachXByHand("https://studio.x.com/live/" + id) }
         }
     }
@@ -64,11 +64,9 @@ Rectangle {
             id: studioLoader
             anchors { fill: parent; margins: 2 }
             active: pilotLoader.active
-            sourceComponent: XStudioView {
-                objectName: "studioView"
+            sourceComponent: StudioFrame {
                 enabled: root.pilot ? root.pilot.needsPerson : false   // while MOBS works the box is only to look at: a stray click must not undo a step
                 url: root.pilot && root.pilot.running ? xStudioUrl : "about:blank"
-                zoomFactor: Math.max(0.5, Math.min(1, width / 960, height / 560))   // the Create Livestream form is about 930 by 530 pixels: it is shown whole
             }
         }
         Txt { anchors.centerIn: parent; visible: root.wentLive; text: "You're live"; font.pixelSize: 30; font.bold: true; color: Omarchy.green }

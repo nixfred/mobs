@@ -26,6 +26,7 @@
 #include <QTimer>
 #include <QDebug>
 #include <functional>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <memory>
@@ -572,6 +573,8 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "setupMicFirst") { auto *list = window->findChild<QObject *>("setupMicList"); ok = list && list->property("firstRow").toString().contains(condition[1]); }   // the first row says what the system default is
                 else if (ok && condition[0] == "setupCameraAllShown") { auto *list = window->findChild<QObject *>("setupCameraList"); ok = list && list->property("allShown").toBool() == (condition[1] == "1"); }
                 else if (ok && condition[0] == "studioTitle") { auto *view = window->findChild<QObject *>("studioView"); ok = view && view->property("title").toString().contains(condition[1]); }   // what the page in the helper's box calls itself (the stand-in sign-in page writes what it saw there)
+                else if (ok && condition[0] == "uiScale") ok = qAbs(window->property("uiScale").toDouble() - condition[1].toDouble()) < 0.01;   // how far the interface is scaled up for this window (1 to 3.5)
+                else if (ok && condition[0] == "uiCanvasOk") { auto *ui = window->findChild<QQuickItem *>("ui"); ok = ui && (ui->width() >= 859.9 && ui->height() >= 559.9) == (condition[1] == "1"); }   // the canvas the screens are laid out on is never smaller than 860 by 560
                 else if (ok && condition[0] == "sourcePhase") { auto *pilot = window->findChild<QObject *>("sourcePilot"); ok = pilot ? pilot->property("phase").toString() == condition[1] : condition[1] == "none"; }   // what the setup page's helper is doing: loading, signin, looking, creating, reading, done, failed
                 else if (ok && condition[0] == "streamUrlHas") ok = prefs.streamUrl().contains(condition[1]);   // the server address contains this (no colon: the expect syntax has only one)
                 else if (ok && condition[0] == "streamKeyIs") ok = prefs.streamSpec().key == condition[1];   // tests use a made-up key: this compares it, C++ only, and never prints a real one
@@ -602,6 +605,25 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "confirmStopQuit") ok = window->property("confirmStopQuit").toBool() == (condition[1] == "1");
                 else ok = false;
                 if (!ok) { std::fprintf(stderr, "script: assertion failed %s\n", qPrintable(st)); app.exit(4); return; }
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st.startsWith("checktext=")) {   // checktext=PIXELS: no text that is showing is smaller than this on the screen, after the interface scale (easy mode: nothing is hard to read)
+                const double minPx = st.mid(10).toDouble();
+                QStringList small;
+                std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                    if (!item->isVisible() || item->opacity() <= 0.01) return;
+                    const QString text = item->property("text").toString();
+                    const QVariant font = item->property("font");
+                    if (!text.isEmpty() && font.canConvert<QFont>()) {
+                        const QFont f = font.value<QFont>();
+                        const QPointF a = item->mapToScene(QPointF(0, 0)), b = item->mapToScene(QPointF(0, 1));
+                        const double effective = f.pixelSize() * std::hypot(b.x() - a.x(), b.y() - a.y());
+                        if (f.pixelSize() > 0 && effective < minPx - 0.01) small.append(QString("%1px: %2").arg(effective, 0, 'f', 1).arg(text.left(36)));
+                    }
+                    for (auto *child : item->childItems()) walk(child);
+                };
+                walk(window->contentItem());
+                if (!small.isEmpty()) { std::fprintf(stderr, "text too small (under %g px): %s\n", minPx, qPrintable(small.mid(0, 12).join(" | "))); app.exit(7); return; }
                 QTimer::singleShot(0, &app, *run);
             }
             else if (st == "checklayout") {

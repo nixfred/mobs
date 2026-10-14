@@ -13,7 +13,7 @@ Item {
     readonly property string skipText: "skip: I will not go live on X"
     property string problem: ""                       // why a key pasted by hand was not taken
 
-    SourcePilot { id: pilotItem; running: root.visible; view: studioLoader.item }
+    SourcePilot { id: pilotItem; running: root.visible; view: studioLoader.item ? studioLoader.item.view : null }
 
     Column {
         id: left
@@ -75,11 +75,10 @@ Item {
             id: studioLoader
             anchors { fill: parent; margins: 2 }
             active: root.visible
-            sourceComponent: XStudioView {
-                objectName: "studioView"
+            sourceComponent: StudioFrame {
                 enabled: pilotItem.needsPerson                  // while MOBS works the box is only to look at
                 url: pilotItem.running ? xSourcesUrl : "about:blank"
-                zoomFactor: pilotItem.phase === "signin" ? 1 : Math.max(0.5, Math.min(1, width / 960, height / 520))   // a sign-in form is used at full size; a list is shown whole
+                full: pilotItem.phase === "signin"              // a sign-in form is used at the size of the rest of the interface; a list is shown whole
             }
         }
     }

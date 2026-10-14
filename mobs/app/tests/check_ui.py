@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         print(f"PASS {name} ({size})", flush=True)
 
     failures = []
+    setup_env_early = {"MOBS_SETUP": "1"}
 
     def check(*args, **kwargs):
         # MOBS_UI_KEEP_GOING=1 reports every failing scenario in one run instead of stopping at the first (for the day a screen was redesigned).
@@ -70,22 +71,31 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
             failures.append(args[0])
             print(f"FAIL {args[0]}: {str(error)[:700]}", flush=True)
 
-    for size in ("860x560", "1024x768", "1180x720"):
+    # EASY MODE: the interface is scaled up to the window (Main.qml, uiScale): as far as the window allows without the canvas getting smaller than 860 by 560. A 5120 pixel wide screen
+    # used to get 13 pixel text (Fred, 2026-10-13: "the text in the app is about 4 sizes too small").
+    for size, scale in (("860x560", "1.00"), ("1180x720", "1.29"), ("1500x940", "1.68"), ("2560x1000", "1.79"), ("1720x1120", "2.00"), ("5000x2100", "3.00"), ("900x1600", "1.05")):
+        check(f"the interface is scaled up to the window: {scale} at {size}, and the canvas is never smaller than 860 by 560", f"wait=0.2,expect=uiScale:{scale},expect=uiCanvasOk:1,checklayout", size, True)
+    # Nothing is hard to read: after the scale no text is smaller than 15 pixels in a 1180 by 720 window, or 19 in a 1500 by 940 one, on any screen.
+    for size, px in (("1180x720", 15), ("1500x940", 19)):
+        check(f"no text under {px} pixels on the ready screen, EXPERT, or the guide ({size})",
+              "pick=1,wait=0.2,checktext=%d," % px + ",".join(f"pro=1,tab={n},wait=0.1,checktext={px}" for n in range(7)) + ",pro=0," + ",".join(f"setupstep={n},wait=0.4,checktext={px}" for n in range(8)),
+              size, True, extra_env=setup_env_early)
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("choose", "wait=0.1,checklayout", size, extra_env={"MOBS_SCREEN": "1"})
         check("ready mic off", "pick=1,mic=0,wait=0.1,checklayout", size)
         for tab in range(7):
             check(f"expert page {tab}", f"pro=1,tab={tab},wait=0.1,checklayout", size)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("audio gain page", "openaudio,audiodetails=1,micgain=-60,wait=0.1,checklayout", size)
         check("missing input explains blocked recording", "pick=1,micdevice=missing,start,expect=state:idle,expect=message:unavailable,wait=0.1,checklayout", size)
         check("audio input check error fits", "openaudio,micdevice=missing,miccheck=1,expect=audioProblem:unavailable,wait=0.1,checklayout", size)
         check("NVIDIA quality page", "pro=1,tab=1,hardware=1,wait=0.1,checklayout", size)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("ready with named mic and live meter", "pick=1,micdevice=test:usb,miccheck=1,desktop=1,wait=0.1,checklayout", size, True)
         check("ready preview and live meter", "pick=1,preview=1,miccheck=1,wait=0.1,expect=previewFrame:1,checklayout", size, True)
         check("recording both audio meters", "pick=1,desktop=1,start,expect=state:recording,wait=0.1,checklayout,pause,expect=state:paused,wait=0.1,checklayout,pro=1,wait=0.1,checklayout", size, True)
     # A take shows what it is recording (fake backend: a flat colour frame). Wide, small, and a tall narrow window like a tiled one.
-    for size in ("860x560", "1024x768", "1180x720", "900x1600", "1206x2000"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "900x1600", "1206x2000"):
         check("recording shows the live picture and fits",
               "pick=1,start,expect=state:recording,wait=0.4,expect=previewing:1,expect=previewFrame:1,checklayout,pause,expect=state:paused,wait=0.3,expect=previewing:1,checklayout", size, True)
         check("recording with both audio meters and the picture fits",
@@ -98,11 +108,11 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the keys on the pick screen: 3 picks just my camera, 4 picks nothing", "wait=0.1,expect=screen:1,key=4,wait=0.2,expect=screen:1,key=3,expect=screen:2,wait=0.1,checklayout", fake_backend=True, extra_env={"MOBS_SCREEN": "1"})
     # "All I want is screen and me": a new user lands on ready with the whole screen and the webcam, and the webcam can be dragged.
     check("a new user lands on ready with screen + me", "wait=0.3,expect=screen:2,expect=previewing:1,expect=previewFrame:1,checklayout", fake_backend=True, default_preview=True)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("dragging the webcam in the preview moves it and the layout still fits (webcam window off)", "pick=2,preview=1,wait=0.4,expect=camMoved:0,dragcam=-40:30,expect=camMoved:1,wait=0.2,checklayout", size, True, ini_extra="pip=false\n")
     check("the webcam can be dragged while recording (webcam window off)", "pick=2,start,expect=state:recording,wait=0.5,dragcam=-60:40,expect=camMoved:1,expect=state:recording,wait=0.2,checklayout", fake_backend=True, ini_extra="pip=false\n")
     # The webcam as a window ON the screen (the default for screen + me): SUPER + drag moves it, so there is no handle inside the picture.
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("screen + me shows the webcam as a window and the ready screen still fits", "pick=2,preview=1,wait=0.4,expect=pipWanted:1,expect=pipShown:1,checklayout", size, True)
     check("the webcam window follows the picture: on with the preview, off without it", "pick=2,preview=0,wait=0.2,expect=pipWanted:0,expect=pipShown:0,preview=1,wait=0.3,expect=pipShown:1,preview=0,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("a take always shows the webcam window, and it goes with the take", "pick=2,preview=0,expect=pipShown:0,start,expect=state:recording,wait=0.4,expect=pipWanted:1,expect=pipShown:1,stop,waitidle,wait=0.3,expect=pipShown:0", fake_backend=True)
@@ -142,7 +152,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
     # The microphone list showed three rows with no sign of more: the Maono, the fifth row, was "not an option" (Fred, 2026-10-13). Every microphone is in view when the page has room,
     # and a list that is still longer scrolls in place with a bar beside it.
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the microphone page lists every microphone: five rows, the system default and four microphones, are all in view",
               "setupstep=2,wait=0.4,expect=setupMicRows:5,expect=setupMicAllShown:1,checklayout", size, True, extra_env=setup_env | {"MOBS_FAKE_MORE_MICS": "1"})
         check("a microphone list longer than the page scrolls in place and the page still fits",
@@ -170,7 +180,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=setup_env | {"MOBS_X_SOURCES_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri(), "MOBS_PILOT_WAIT_MS": "2500", "MOBS_PILOT_TICK_MS": "250"}, limit=30)
     check("X's sign-in page is told passkeys do not exist, so it never waits for one",
           "setupstep=5,wait=2.5,expect=studioTitle:passkey=NotAllowedError/gone", fake_backend=True, extra_env=setup_env | {"MOBS_X_SOURCES_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri(), "MOBS_PILOT_TICK_MS": "250"})
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the X page fits while it works and when it gave up", "setupstep=5,wait=1.2,checklayout,wait=5,checklayout", size, True, extra_env=setup_env | sources_env("nokey=1"), limit=30)
     check("signing in to X is noticed from its home page only", "expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1",
           fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
@@ -235,18 +245,18 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           expect_log=("asking X's page again",), limit=55)
     check("a link that is not a Live Studio link attaches nothing", "pick=2,preview=1,wait=0.4,xattach=https://example.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("the chat of a livestream ends with the take", "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/broadcasts/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,start,expect=state:recording,stop,waitidle,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the setup guide fits on every page", "wait=0.4," + ",".join(f"setupstep={n},wait=0.35,checklayout" for n in range(8)), size, True, extra_env=setup_env)
     check("the webcam window is off when the setting is off, and the picture has no drag handle then either way", "pick=2,preview=1,wait=0.4,expect=pipWanted:0,expect=pipShown:0", fake_backend=True, ini_extra="pip=false\n")
     check("my screen and just my camera have no webcam window", "pick=1,preview=1,wait=0.3,expect=pipShown:0,pick=3,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")
     check("there is no webcam to drag in the other picks", "pick=1,wait=0.3,expect=camMoved:0,checklayout", fake_backend=True)
     # Going live (the fake backend pretends to connect, go live, drop and come back). The server address and key here are made up.
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("live setup page with a saved key fits", live_setup + "pro=1,tab=6,expect=streamReady:1,wait=0.1,checklayout", size)
         check("ready screen armed to go live fits", live_setup + "pick=1,arm=1,expect=armed:1,wait=0.1,checklayout", size, True)
         check("ready screen armed with the preview fits", live_setup + "pick=1,preview=1,arm=1,expect=previewFrame:1,wait=0.1,checklayout", size, True)
-    for size in ("860x560", "1024x768", "1180x720", "900x1600", "1206x2000"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "900x1600", "1206x2000"):
         check("a live take shows its state and fits",
               live_setup + "pick=1,arm=1,start,expect=state:recording,expect=armed:0,expect=broadcasting:1,wait=0.8,expect=streamState:live,expect=previewFrame:1,checklayout,"
               "streamretry,expect=streamState:reconnecting,wait=0.1,checklayout,streamback,expect=streamState:live,"
@@ -293,10 +303,15 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("an error from Live Studio after Go Live is shown and the helper hands over", pilot_start + "wait=7,expect=pilotPhase:failed,expect=pilotFailure:Error creating livestream", fake_backend=True, extra_env=studio("on=300&fail=1"), limit=30)
     check("a signed-out Live Studio is signed in to in the box, and the helper carries on by itself afterwards",
           pilot_start + "wait=1.5,expect=pilotPhase:signin,wait=9,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, extra_env=studio("login=3000&on=300"), limit=45)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size, px in (("1180x720", 15), ("1500x940", 19)):
+        check(f"no text under {px} pixels in the go-live window, working and given up ({size})",
+              pilot_start + f"wait=3,expect=pilotPhase:waiting,checktext={px},wait=5,expect=pilotPhase:failed,checktext={px}", size, True, extra_env=studio("never=1") | {"MOBS_PILOT_WAIT_MS": "2500"}, limit=40)
+        check(f"no text under {px} pixels on the recording screen and the ready screen with everything on ({size})",
+              live_setup + f"pick=1,preview=1,wait=0.3,arm=1,checktext={px},start,expect=state:recording,wait=0.6,checktext={px}", size, True, limit=30)
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the go-live window with the helper at work fits", pilot_start + "wait=3,expect=pilotPhase:waiting,checklayout", size, True, extra_env=studio("on=60000"), limit=30)
         check("the go-live window with the helper given up fits", pilot_start + "wait=5,expect=pilotPhase:failed,checklayout", size, True, extra_env=studio("never=1") | {"MOBS_PILOT_WAIT_MS": "2500"}, limit=30)
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the ready screen with the title box and who can watch fits", live_setup + "pick=1,wait=0.3,expect=readyTitle:A rather long title for my livestream about omarchy,checklayout,livepublic=0,wait=0.1,checklayout", size, True,
               ini_extra="liveTitle=A rather long title for my livestream about omarchy\n")
     check("a copied X link that is not a livestream link gets a note, and a real one attaches the chat",
@@ -309,7 +324,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("the hotkey chip arms and disarms once a key is saved",
           live_setup + "pick=1,click=liveChip,expect=armed:1,click=liveChip,expect=armed:0", fake_backend=True)
     # The picture is on by default, and the broadcast has its own button beside Record.
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("the ready screen shows the picture by default and fits with the GO LIVE button", "pick=2,wait=0.4,expect=preview:1,expect=previewing:1,expect=previewFrame:1,checklayout", size, True, default_preview=True)
         check("the ready screen with the picture, a saved key and the GO LIVE button fits", live_setup + "pick=2,wait=0.4,expect=previewFrame:1,checklayout", size, True, default_preview=True)
     check("the GO LIVE button arms and starts a broadcast in one click", live_setup + "pick=1,click=goLiveButton,expect=state:recording,expect=broadcasting:1,expect=armed:0,wait=0.8,expect=streamState:live", fake_backend=True)
@@ -319,7 +334,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a take that is not live shows no broadcast", "pick=1,start,expect=state:recording,wait=0.6,expect=broadcasting:0,expect=streamState:off,checklayout", fake_backend=True)
     # A screen share that delivers nothing but black (a dragged Region does this on gus) is named, and it never goes live.
     black = {"MOBS_BLACK_AFTER_MS": "300"}
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("a black screen picture is named on the ready screen and fits", "pick=1,preview=1,wait=0.2,blackpicture=1,wait=0.8,expect=pictureProblem:black,checklayout", size, True, extra_env=black)
     check("GO LIVE refuses a black picture and says why", live_setup + "pick=1,preview=1,wait=0.2,blackpicture=1,wait=0.8,click=goLiveButton,expect=state:idle,expect=notice:black,wait=0.1,checklayout", fake_backend=True, extra_env=black)
     check("a black picture that comes back lets GO LIVE through",
@@ -343,7 +358,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env={"MOBS_FAKE_STOP_HANG": "1"})
     # The opening screen (MOBS_SPLASH=1 brings it back for scripted runs; they skip it otherwise so they land on the real screens).
     splash_on = {"MOBS_SPLASH": "1"}
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("opening screen fits while it plays", "wait=0.9,checklayout", size, extra_env=splash_on)
     check("opening screen eats the first key, then the app answers",
           "pick=1,key=Space,expect=state:idle,wait=0.4,expect=splashDone:1,key=Space,expect=state:recording", fake_backend=True, extra_env=splash_on)
@@ -355,7 +370,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("folder focus returns to keyboard", "pick=1,pro=1,focusfolder,key=Esc,expect=pro:0,key=P,expect=pro:1")
     check("camera panel blocks recording keys", "pick=2,panel=1,key=Space,expect=state:idle,key=Esc,wait=0.1,checklayout")
     check("camera panel small layout", "pick=2,panel=1,wait=0.1,checklayout")
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("camera panel with six devices keeps selection accessible",
               "pick=2,panel=1,wait=0.1,checklayout," + "click=cameraPickerNext," * 5 + "click=cameraPickerDevice,expect=cameraName:Demo camera 6,wait=0.1,checklayout",
               size, True, extra_env={"MOBS_FAKE_CAMERAS": "many"})
@@ -383,7 +398,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("unsaved edits survive hotkey path and window close",
           f"pick=1,review={take},split=1,cut=0,start,expect=state:idle,expect=screen:4,closewindow,expect=confirmQuit:1,wait=0.1,checklayout,key=Esc,expect=confirmQuit:0")
     check("review confirmations and layout", f"pick=1,review={take},wait=0.1,checklayout")
-    for size in ("860x560", "1024x768", "1180x720"):
+    for size in ("860x560", "1024x768", "1180x720", "1500x940", "2560x1000"):
         check("review leave and trash confirmations fit", f"pick=1,review={take},split=1,cut=0,click=reviewDone,click=reviewDelete,wait=0.1,checklayout", size, True)
     black = root / "black.mp4"
     subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=15:d=3",

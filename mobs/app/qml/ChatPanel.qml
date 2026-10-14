@@ -28,7 +28,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: demoLabel.implicitWidth + 12; height: 15; radius: 7.5
             color: "transparent"; border.width: 1; border.color: Omarchy.yellow
-            Txt { id: demoLabel; anchors.centerIn: parent; text: "DEMO"; font.pixelSize: 10; font.bold: true; color: Omarchy.yellow }
+            Txt { id: demoLabel; anchors.centerIn: parent; text: "DEMO"; font.pixelSize: 12; font.bold: true; color: Omarchy.yellow }
         }
     }
     ListView {

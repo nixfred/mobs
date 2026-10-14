@@ -85,6 +85,12 @@ Fred, 2026-10-12: "everything should be made for EASY mode ... pick my camera/mi
 workspace and follow me ... click follow next, click follow instructions, next all the way to live streaming on X." So the app does the explaining, with real pictures, and the
 person only presses NEXT.
 
+- **The text is big, and it grows with the window** (Fred, 2026-10-13: "the text in the app is about 4 sizes too small... all things in the app should be EASY MODE"). The whole interface (every screen, the guide, the
+  go-live window, EXPERT, the editor and the opening screen) is drawn on a canvas that is never smaller than 860 by 560 and is **scaled up to fill the window** (`uiScale` in `qml/Main.qml`: 1 at 860 by 560,
+  1.29 at 1180 by 720, 1.68 at 1500 by 940, at most 3). Tiled on a 5120 pixel wide screen the 13 pixel text used to stay 13 pixels; now it is about 39. A window that floats opens at 1500 by 940 (never more
+  than 90% of the screen). Nothing is cut off and nothing scrolls, because the canvas keeps the shape of the window. The pages of the X boxes are drawn at real screen pixels and shrunk back
+  (`qml/StudioFrame.qml`), so X's own text stays sharp. The webcam window is a window of its own and is not scaled. Tests: the scale at seven window sizes, and `checktext=N` (no text showing is smaller than
+  N pixels after the scale: 15 at 1180 by 720, 19 at 1500 by 940) on the ready screen, EXPERT, every guide page, the recording screen and the go-live window.
 - **The setup guide** (`qml/SetupGuide.qml`, one page per file `qml/Setup*.qml`) opens by itself the first time MOBS runs. It has 8 pages: welcome, camera, microphone, your screen, your
   webcam, **your X account**, going live, all set. **NEXT** (or Enter or Space) is on every page and is greyed until the page's job is done or skipped; Back, Left and Esc
   go back; "skip the guide" leaves. MOBS remembers the page you stopped on (`setupStep`) and opens there next time; finishing sets `setupDone`, so it never opens by itself again.

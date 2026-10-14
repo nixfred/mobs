@@ -115,6 +115,6 @@ Item {
         spacing: 6
         visible: Preview.hasFrame
         Rectangle { width: 8; height: 8; radius: 4; color: root.dotColor; anchors.verticalCenter: parent.verticalCenter }
-        Txt { text: root.caption + (camHandle.visible ? "  ·  drag your webcam to move it" : (root.draggable && App.pick === 2 && Prefs.pip ? "  ·  your webcam is a window: SUPER + drag moves it" : "")); font.pixelSize: 11; color: Omarchy.secondaryText }
+        Txt { text: root.caption + (camHandle.visible ? "  ·  drag your webcam to move it" : (root.draggable && App.pick === 2 && Prefs.pip ? "  ·  your webcam is a window: SUPER + drag moves it" : "")); font.pixelSize: 12; color: Omarchy.secondaryText }
     }
 }
