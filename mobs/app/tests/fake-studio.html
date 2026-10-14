@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <title>Live Studio / X (a stand-in page for tests: the shape of the real page, none of its content)</title>
 <style>
-  /* Everything OUTSIDE the chat card is magenta, so a test can tell whether any of it shows. The card is teal, its typing row navy. */
+  /* Everything OUTSIDE the chat card is magenta, so a test can tell whether any of it shows. The card is teal, its typing row navy.
+     The real page (read 2026-10-13): a desktop layout from about 1280 px wide (the chat card is a column of 363 px at the side) and a stacked one below it (the card is as wide as the
+     page minus 298 px, below the video, 480 px tall). Its list of messages is anchored to the BOTTOM of the card, so a few messages sit under a gap. Each message: an avatar, the
+     name, a time, the words and a "More actions" button. The header has the heading and two buttons (pop out, who may chat). */
   html, body { margin: 0; background: #ff00ff; color: #fff; font-family: sans-serif }
   .page { position: relative; width: 100%; height: 2600px }
   .side, .details, .charts { position: absolute; background: #ff00ff }
@@ -12,32 +15,68 @@
   .details { left: 272px; top: 140px; width: 1100px; height: 290px }
   .charts { left: 660px; top: 445px; width: 712px; height: 500px }
   .chat { position: absolute; left: 272px; top: 445px; width: 363px; height: 500px; background: #0a6e5c; border-radius: 0 }
-  .chat h3 { margin: 0; padding: 12px 20px; font-size: 15px; display: flex; gap: 8px; align-items: center }
-  .chat .list { padding: 0 20px; line-height: 1.6 }
+  .chat h3 { margin: 0; padding: 12px 20px; font-size: 15px; display: flex; gap: 8px; align-items: center; height: 31px }
+  .chat h3 .icons { margin-left: auto; display: flex; gap: 6px }
+  .chat h3 button { width: 32px; height: 32px; padding: 0 }
+  .chat .list { position: absolute; left: 0; right: 0; top: 56px; bottom: 56px; padding: 0 20px; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; overflow: hidden }
+  .msg { display: flex; gap: 12px; line-height: 1.4; font-size: 15px }
+  .msg .name { font-weight: bold; display: flex; gap: 8px; align-items: center }
+  .msg .t { font-weight: normal; opacity: .7; font-size: 12px }
+  .msg button { margin-left: auto }
   .chat .typing { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: #123456 }
   .chat .typing input { margin: 12px 20px; width: 250px }
+  .end { position: absolute; right: 30px; top: 100px }
+  #dlg { position: fixed; left: 300px; top: 200px; width: 420px; background: #222; padding: 16px; border: 1px solid #888; display: none }
+  /* X's stacked layout */
+  @media (max-width: 1279px) { .chat { top: 721px; width: calc(100% - 298px); height: 480px } .charts { left: 272px; top: 1230px; width: calc(100% - 298px) } }
   /* X's phone layout: under 900 px wide the chat card falls far down the page, out of any small window */
-  @media (max-width: 900px) { .chat { left: 16px; top: 1700px; width: 438px } .side { display: none } }
+  @media (max-width: 899px) { .chat { left: 16px; top: 1700px; width: 438px } .side { display: none } }
 </style>
 <script>
+  var qid = new URLSearchParams(location.search).get('id') || '';
   // id=SIGNEDOUT01 stands for X asking for a sign-in instead of showing the livestream
-  if ((new URLSearchParams(location.search).get('id') || '').indexOf('SIGNEDOUT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>See what\'s happening</h1><p>Sign in to X</p>'; });
+  if (qid.indexOf('SIGNEDOUT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>See what\'s happening</h1><p>Sign in to X</p>'; });
   // id=QUIETCHAT01 stands for a livestream nobody has written in yet: the card has its heading and an empty list
-  if ((new URLSearchParams(location.search).get('id') || '').indexOf('QUIET') === 0) addEventListener('DOMContentLoaded', function () { document.querySelector('.list').innerHTML = ''; });
+  if (qid.indexOf('QUIET') === 0) addEventListener('DOMContentLoaded', function () { document.querySelector('.list').innerHTML = ''; });
   // id=NOCHAT00001 stands for a Live Studio page that has no chat card
-  else if ((new URLSearchParams(location.search).get('id') || '').indexOf('NOCHAT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>Details</h1><p>Visibility: Private</p>'; });
+  else if (qid.indexOf('NOCHAT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>Details</h1><p>Visibility: Private</p>'; });
+  // id=ONEMSG00001 stands for a livestream with a single message (the card keeps its gap under the header)
+  if (qid.indexOf('ONEMSG') === 0) addEventListener('DOMContentLoaded', function () { var l = document.querySelector('.list'); while (l.children.length > 1) l.removeChild(l.firstChild); });
+  addEventListener('DOMContentLoaded', function () {
+    // id=VIEWERS0007 says seven are watching ("7 viewers watching now"), as the real page does in words nobody sees
+    var m = /^VIEWERS(\d+)/.exec(qid), n = m ? parseInt(m[1], 10) : 3;
+    var w = document.getElementById('watching'); if (w) w.textContent = n + (n === 1 ? ' viewer' : ' viewers') + ' watching now';
+    var big = document.getElementById('big'); if (big) big.textContent = n;
+    // End livestream: a dialog asks, the confirm ends it (id=ENDFAIL... never does: the dialog stays)
+    var end = document.getElementById('end'), dlg = document.getElementById('dlg');
+    if (end) end.addEventListener('click', function () { dlg.style.display = 'block'; });
+    document.getElementById('cancel').addEventListener('click', function () { dlg.style.display = 'none'; });
+    document.getElementById('confirm').addEventListener('click', function () {
+      if (qid.indexOf('ENDFAIL') === 0) return;
+      dlg.style.display = 'none'; end.parentNode.removeChild(end);
+      var r = document.createElement('p'); r.textContent = 'Set replay start here'; document.querySelector('.details').appendChild(r);
+    });
+  });
 </script>
 </head>
 <body>
 <div class="page">
   <div class="side"><div>Livestreams</div><div>Sources</div></div>
-  <div class="details"><h2>Details</h2></div>
-  <div class="charts"><h3>Concurrent viewers</h3></div>
+  <div class="details"><h2>Details</h2><span>76 views</span><button id="end" class="end" aria-label="End livestream">End livestream</button></div>
+  <div class="charts"><h3>Concurrent viewers</h3><span id="big">3</span><span id="watching" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">3 viewers watching now</span></div>
   <div class="chat">
-    <h3><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="#fff"/></svg><span>Live Chat</span></h3>
-    <div class="list"><div>ana: hello there</div><div>bo: what theme is that?</div><div>cy: love the cursor</div><div>di: is that live?</div><div>ed: hi from Brazil</div><div>fay: nice setup</div></div>
+    <h3><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="#fff"/></svg><span>Live Chat</span><span class="icons"><button aria-label="Pop out chat">o</button><button aria-label="Chat audience: Everyone">a</button></span></h3>
+    <div class="list">
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">ana <span class="t">· 7m</span><button aria-label="More actions">...</button></div><div>hello there</div></div></div>
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">bo <span class="t">· 6m</span><button aria-label="More actions">...</button></div><div>what theme is that?</div></div></div>
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">cy <span class="t">· 5m</span><button aria-label="More actions">...</button></div><div>love the cursor</div></div></div>
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">di <span class="t">· 3m</span><button aria-label="More actions">...</button></div><div>is that live?</div></div></div>
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">ed <span class="t">· 2m</span><button aria-label="More actions">...</button></div><div>hi from Brazil</div></div></div>
+      <div class="msg"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23fff'/%3E%3C/svg%3E" width="32" height="32"><div><div class="name">fay <span class="t">· 1m</span><button aria-label="More actions">...</button></div><div>nice setup</div></div></div>
+    </div>
     <div class="typing"><input placeholder="Send a message..."></div>
   </div>
 </div>
+<div id="dlg" role="dialog"><p>End livestream? This will stop the livestream. Viewers will no longer be able to watch.</p><button id="cancel">Cancel</button> <button id="confirm">End livestream</button></div>
 </body>
 </html>

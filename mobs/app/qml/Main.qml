@@ -32,17 +32,26 @@ Window {
             close.accepted = false
             if (closeAfterRecording && Engine.state === "stopping") confirmStopQuit = true
             closeAfterRecording = true
-            Engine.stop()
+            Pip.kill()      // a stop of a broadcast ends the livestream on X too (the window then waits for X's answer before it closes)
         } else if (Review.saving || Review.unsaved) {
             close.accepted = false
             confirmQuit = true
         } else if (Review.loading) Review.close()
     }
+    Connections {   // the take is over and the window was asked to close, but the livestream on X was still being ended: now it is done
+        target: Chat
+        function onEndingChanged() {
+            if (!Chat.ending && win.closeAfterRecording && !Engine.active) {
+                win.closeAfterRecording = false
+                if (Engine.message.indexOf("saved ") === 0) win.close()
+            }
+        }
+    }
     Connections {
         target: Engine
         function onStateChanged() {
             if (!Engine.active) win.confirmStopQuit = false
-            if (win.closeAfterRecording && !Engine.active) {
+            if (win.closeAfterRecording && !Engine.active && !Chat.ending) {
                 win.closeAfterRecording = false
                 // Failed/cancelled recordings remain visible with their explanation.
                 if (Engine.message.indexOf("saved ") === 0) win.close()
@@ -172,7 +181,7 @@ Window {
                 else if (App.screen === 1 && e.key >= Qt.Key_1 && e.key <= Qt.Key_3) App.choose(e.key - Qt.Key_0)
                 else if (App.screen === 2 && e.key === Qt.Key_Space) Engine.start(App.pick)
                 else if (App.screen === 3 && e.key === Qt.Key_Space) Engine.togglePause()
-                else if (App.screen === 3 && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) Engine.stop()
+                else if (App.screen === 3 && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) Pip.kill()
                 else if (App.screen === 4) reviewScreen.handleKey(e)
                 else if (App.screen === 2 && e.key === Qt.Key_Escape) { if (App.cameraPanel) App.setCameraPanel(false) }   // easy mode has no "what are we making" page: screen + me, your whole screen
             }

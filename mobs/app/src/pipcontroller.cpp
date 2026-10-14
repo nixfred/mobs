@@ -48,7 +48,16 @@ PipController::PipController(AppState *state, Engine *engine, Settings *prefs, Q
 PipController::~PipController() { if (m_mainHidden) restoreMain(); }
 
 // Wanted whenever "screen + me" is showing its picture (ready with the preview on, armed, or a take in progress): Engine::previewing is exactly that.
-bool PipController::wanted() const { return m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera() && m_engine->previewing(); }
+bool PipController::wanted() const { return m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera() && (m_engine->previewing() || holdingForEnd()); }
+bool PipController::holdingForEnd() const { return m_chat && m_chat->ending() && m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera(); }
+
+void PipController::kill() {
+    const bool broadcast = m_engine->streamRequested() && m_engine->active();
+    MobsLog::write("kill", broadcast ? "kill switch: the video stops now and the livestream on X is ended" : "stop");
+    // The end is asked for first (it needs the webcam window and its page, and holds them), then the video stops: the stream is off within a second whatever X does.
+    if (broadcast && m_chat && !m_chat->xId().isEmpty() && m_prefs->pip() && m_state->pick() == 2 && m_state->hasCamera()) m_chat->endLivestream();
+    m_engine->stop();
+}
 
 // The chat card under the webcam: only where there is a chat feed to show (X's relay, or the demo) and the person has not turned it off.
 bool PipController::chatWanted() const { return wanted() && m_prefs->chat() && m_chat && m_chat->configured(); }
@@ -57,6 +66,7 @@ void PipController::setChat(ChatModel *chat) {
     m_chat = chat;
     if (m_chat) {
         connect(m_chat, &ChatModel::statusChanged, this, &PipController::changed);
+        connect(m_chat, &ChatModel::endingChanged, this, &PipController::changed);   // the window is held while the livestream is being ended, and goes when that is over
         connect(m_chat, &ChatModel::statusChanged, this, [this] { QTimer::singleShot(250, this, &PipController::resizeForChat); });   // after the interface has had its say
     }
 }
@@ -359,7 +369,7 @@ void PipController::holdMain() {
     m_holdTimer.start();
     MobsLog::write("pip", "going live: MOBS's window stays up while it goes live in X (until the livestream exists, or a few minutes pass)");
     // With the go-live helper (the default) MOBS does the steps in Live Studio itself, in the box of its own window; without it they are the person's.
-    if (qEnvironmentVariable("MOBS_NO_PILOT") != "1") Notifier::send("MOBS: going live for you", "MOBS types the title in X's Live Studio, waits until X sees your video and presses Go Live. Nothing for you to press. This window leaves the picture by itself.");
+    if (qEnvironmentVariable("MOBS_NO_PILOT") != "1") Notifier::send("MOBS: going live for you", "MOBS types the title in X's Live Studio, waits until X sees your video and presses Go Live. Nothing for you to press. To end it: press END on your webcam, or SUPER + SHIFT + V.");
     else Notifier::send("MOBS: now finish in X", "Open Live Studio, press New Livestream, type a title, pick your source, choose Public and press Go Live. Then press I'M LIVE in MOBS.");
 }
 

@@ -19,7 +19,7 @@ Rectangle {
             Txt { text: "EXPERT"; font.pixelSize: 20; font.bold: true; color: Omarchy.accent }
             Txt { text: Engine.active ? Engine.state + " " + Engine.elapsedText + " · next take settings" : "your choices are remembered"; color: Omarchy.secondaryText; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
             Button { visible: Engine.state === "recording" || Engine.state === "paused"; enabled: !Engine.broadcasting; text: Engine.state === "paused" ? "resume" : "pause"; onClicked: Engine.togglePause() }
-            Button { visible: Engine.active; text: "stop & save"; primary: true; onClicked: Engine.stop() }
+            Button { visible: Engine.active; text: "stop & save"; primary: true; onClicked: Pip.kill() }
         }
         Row {
             spacing: 10

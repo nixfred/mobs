@@ -36,7 +36,7 @@ target_link_libraries(mobs PRIVATE mobs-core Qt6::WebEngineQuick)
 qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/XLiveFinder.qml qml/XStudioView.qml qml/StudioFrame.qml qml/LivePilot.qml qml/SourcePilot.qml qml/SetupX.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupHow.qml qml/SetupDone.qml
     RESOURCES assets/guide/x-create-livestream.png assets/pilot/xstudio-pilot.js)
 
-foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay)
+foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay viewertrend)
   add_executable(tst_${t} tests/tst_${t}.cpp)
   target_link_libraries(tst_${t} PRIVATE mobs-core Qt6::Test)
   # QTest pulls all of QtCore, which trips GCC 16 over Qt's own QBitArray (same flag Monologue uses).

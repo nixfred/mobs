@@ -14,15 +14,16 @@ Item {
         color: Qt.alpha(Omarchy.darkBackground, 0.82)
         border.width: 1; border.color: Qt.alpha(Omarchy.foreground, 0.12)
     }
+    readonly property real hs: Math.max(12, Math.min(26, root.width * 0.02))   // the header grows with the dock, like the text of the chat under it
     Row {
         id: head
-        x: 14; y: 9; height: 16; spacing: 8
+        x: 14; y: 8; height: root.hs + 4; spacing: 8
         Rectangle {   // alive while the chat is connected
-            width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter
+            width: root.hs * 0.62; height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter
             color: Chat.connected ? Omarchy.green : Omarchy.tertiaryText
             SequentialAnimation on opacity { running: Chat.connected; loops: Animation.Infinite; NumberAnimation { to: 0.35; duration: 900 } NumberAnimation { to: 1; duration: 900 } }
         }
-        Txt { text: "chat"; font.pixelSize: 12; font.bold: true; color: Omarchy.secondaryText; anchors.verticalCenter: parent.verticalCenter }
+        Txt { text: "chat"; font.pixelSize: Math.round(root.hs); font.bold: true; color: Omarchy.secondaryText; anchors.verticalCenter: parent.verticalCenter }
         Rectangle {   // made-up messages say so: never let a demo pass for the real thing
             visible: Chat.demo
             anchors.verticalCenter: parent.verticalCenter

@@ -52,7 +52,14 @@ void Control::Toggle() {
         return;
     }
     if (!m_engine->active() && m_state->pick() == 0) m_state->choose(1);   // hotkey on a fresh install: my screen
+    // Stopping a broadcast with the hotkey ends the livestream on X as well: it is the same as the kill switch.
+    if (m_engine->active() && m_engine->streamRequested() && m_kill) { m_kill(); return; }
     m_engine->toggle(m_state->pick());
+}
+
+void Control::Kill() {
+    MobsLog::write("control", "kill switch");
+    if (m_kill) m_kill(); else m_engine->stop();
 }
 
 void Control::Pause() { MobsLog::write("control", "hotkey: pause"); m_engine->togglePause(); }

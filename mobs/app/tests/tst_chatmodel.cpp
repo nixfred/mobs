@@ -163,6 +163,56 @@ private slots:
         QGuiApplication::clipboard()->setText("https://x.com/i/broadcasts/1OLDoldOLDold1"); QVERIFY(!m.attachXFromClipboard()); QVERIFY(!m.xClipboardNote().isEmpty());   // an old livestream's link: refused, and why
         QGuiApplication::clipboard()->setText("https://x.com/i/live-studio/1PJqrNXnQywxb"); QVERIFY(m.attachXFromClipboard()); QCOMPARE(m.xId(), QString("1PJqrNXnQywxb"));
     }
+    // ---- how many are watching, and the kill switch's request to end the livestream on X
+    void readingsOfTheViewersAreOfTheAttachedLivestreamOnly() {
+        ChatModel m; QSignalSpy changed(&m, &ChatModel::viewersChanged);
+        m.noteViewers(5, 70); QCOMPARE(m.viewers(), -1);                         // nothing attached: nothing to read from
+        QVERIFY(m.attachX("https://studio.x.com/live/1PJqrNXnQywxb"));
+        m.noteViewers(5, 70); QCOMPARE(m.viewers(), 5); QCOMPARE(m.totalViews(), 70);
+        m.noteViewers(-1, 71); QCOMPARE(m.viewers(), 5); QCOMPARE(m.totalViews(), 71);   // a page that showed only one of the numbers
+        m.noteViewers(-1, -1); QCOMPARE(m.viewers(), 5);
+        QVERIFY(changed.count() >= 2);
+        m.detachX(); QCOMPARE(m.viewers(), -1); QCOMPARE(m.totalViews(), -1);    // the readings go with the livestream
+    }
+    void aNewLivestreamStartsWithNoReadings() {
+        ChatModel m; m.attachX("https://studio.x.com/live/1PJqrNXnQywxb"); m.noteViewers(9, -1);
+        m.detachX(); m.attachX("https://studio.x.com/live/2QKsrOYoRzxc");
+        QCOMPARE(m.viewers(), -1);
+    }
+    void theTrendNeedsAMinuteOfReadingsAndThenSaysWhichWay() {
+        ChatModel m; m.attachX("https://studio.x.com/live/1PJqrNXnQywxb");
+        const qint64 t0 = 5000000;
+        m.noteViewersAt(2, -1, t0); m.noteViewersAt(2, -1, t0 + 30000);
+        QCOMPARE(m.viewerTrend(), 0); QVERIFY(!m.viewerTrendKnown());
+        m.noteViewersAt(3, -1, t0 + 60000); m.noteViewersAt(4, -1, t0 + 90000); m.noteViewersAt(6, -1, t0 + 120000);
+        QVERIFY(m.viewerTrendKnown()); QCOMPARE(m.viewerTrend(), 1); QCOMPARE(m.viewerDelta(), 2);
+        QCOMPARE(m.viewers(), 6);
+    }
+    void endingTheLivestreamNeedsOneAndIsAskedForOnce() {
+        ChatModel m; QSignalSpy asked(&m, &ChatModel::endRequested), changed(&m, &ChatModel::endingChanged);
+        QVERIFY(!m.endLivestream());                                             // nothing attached
+        m.attachX("https://studio.x.com/live/1PJqrNXnQywxb");
+        QVERIFY(m.endLivestream()); QVERIFY(m.ending()); QCOMPARE(asked.count(), 1);
+        QVERIFY(!m.endLivestream()); QCOMPARE(asked.count(), 1);                 // already asked
+        m.endFinished(true); QVERIFY(!m.ending()); QVERIFY(m.endedOk()); QCOMPARE(changed.count(), 2);
+        m.endFinished(false); QVERIFY(m.endedOk());                              // an answer nobody asked for changes nothing
+    }
+    void aLivestreamThatCannotBeEndedIsNotSaidToBeEnded() {
+        ChatModel m; m.attachX("https://studio.x.com/live/1PJqrNXnQywxb");
+        m.endLivestream(); m.endFinished(false); QVERIFY(!m.ending()); QVERIFY(!m.endedOk());
+    }
+    void theEndingGivesUpWhenThePageNeverAnswers() {
+        qputenv("MOBS_END_MS", "200");
+        ChatModel m; m.attachX("https://studio.x.com/live/1PJqrNXnQywxb");
+        QVERIFY(m.endLivestream());
+        QTRY_VERIFY_WITH_TIMEOUT(!m.ending(), 3000); QVERIFY(!m.endedOk());
+        qunsetenv("MOBS_END_MS");
+    }
+    void whatAnEndSaidIsKeptUntilTheNextBroadcastBegins() {
+        ChatModel m; m.attachX("https://studio.x.com/live/1PJqrNXnQywxb"); m.endLivestream(); m.endFinished(true);
+        m.detachX(); QVERIFY(m.endedOk());                                       // the notice at the end of the take still needs it
+        m.rememberClipboard(); QVERIFY(!m.endedOk());                            // and the next broadcast starts clean
+    }
 };
 
 QTEST_MAIN(ChatModelTests)

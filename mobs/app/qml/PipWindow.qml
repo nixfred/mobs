@@ -20,7 +20,7 @@ Window {
     readonly property real unit: Math.max(54, Math.min(cardH, availH))
     readonly property real meH: chatOn ? unit : height   // without chat, you take the whole window
     readonly property real chatY: meH + gap
-    width: 480; height: 270 + (chatOn ? gap + 240 : 0)
+    width: pipDefaultWidth; height: Math.round(pipDefaultWidth * 9 / 16) + (chatOn ? gap + Math.round(pipDefaultWidth / 2) : 0)   // 480 wide when it first opens (MOBS_PIP_WIDTH changes it, for tests)
     minimumWidth: 160; minimumHeight: chatOn ? 54 + gap + chatMin : 90
     color: chatOn ? "transparent" : "black"     // see-through between the cards, so the desktop shows faintly through the seams
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -63,9 +63,9 @@ Window {
             objectName: "pipBadge"
             z: 10                       // above the picture, whatever is declared after it (the stand-in used to paint over it)
             readonly property bool broadcast: Engine.streamRequested
-            readonly property string word: broadcast ? (Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" || Engine.streamState === "ended" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING")
+            readonly property string word: Chat.ending ? "ENDING" : broadcast ? (Engine.streamState === "live" ? "LIVE" : Engine.streamState === "failed" || Engine.streamState === "ended" ? "NOT LIVE" : Engine.streamState === "reconnecting" ? "RECONNECTING" : "CONNECTING")
                                                      : (Engine.state === "paused" ? "PAUSED" : "REC")
-            visible: broadcast || Engine.state === "recording" || Engine.state === "paused"
+            visible: broadcast || Engine.state === "recording" || Engine.state === "paused" || Chat.ending
             x: 8; y: 8
             height: Math.max(20, videoCard.height * 0.1); width: badgeRow.implicitWidth + 16; radius: height / 2
             color: Qt.alpha("black", 0.6)
@@ -79,6 +79,56 @@ Window {
                 }
                 Txt { text: badge.word; font.pixelSize: Math.max(11, videoCard.height * 0.055); font.bold: true; color: "white"; anchors.verticalCenter: parent.verticalCenter }
             }
+        }
+    }
+    // Top right of the picture: how many people are watching and which way that is going, and the KILL SWITCH. The viewers see this too, like the LIVE badge: a viewer count is
+    // ordinary on a stream, and the button is a small red pill. One press stops the video this instant and ends the livestream on X (PipController::kill).
+    Row {
+        id: topRight
+        objectName: "pipTopRight"
+        z: 60                                          // above the dock's drag zone, so a press lands on the button
+        spacing: 8
+        visible: Engine.streamRequested && (Engine.active || Chat.ending)
+        anchors { top: parent.top; right: parent.right; topMargin: 8; rightMargin: 8 }
+        readonly property real h: Math.max(22, videoCard.height * 0.1)
+        Rectangle {   // how many are watching
+            id: viewersChip
+            objectName: "pipViewers"
+            visible: Chat.viewers >= 0 && !Chat.ending && pip.width >= 300   // a very narrow window keeps the badge and the kill switch, and drops the count
+            height: topRight.h; width: viewersRow.implicitWidth + 20; radius: height / 2
+            color: Qt.alpha("black", 0.6)
+            readonly property string trendText: Chat.viewerTrend > 0 ? "\u25b2 +" + Chat.viewerDelta : Chat.viewerTrend < 0 ? "\u25bc " + Chat.viewerDelta : Chat.viewerTrendKnown ? "\u25ac" : ""
+            readonly property string text: Chat.viewers + " watching " + trendText   // for the checks
+            Row {
+                id: viewersRow
+                anchors.centerIn: parent; spacing: 7
+                Txt { text: "\uf06e"; font.pixelSize: Math.round(topRight.h * 0.45); color: "white"; anchors.verticalCenter: parent.verticalCenter }   // an eye
+                Txt { objectName: "pipViewersCount"; text: Chat.viewers; font.pixelSize: Math.round(topRight.h * 0.52); font.bold: true; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+                Txt {
+                    objectName: "pipTrend"
+                    visible: viewersChip.trendText !== ""
+                    text: viewersChip.trendText
+                    font.pixelSize: Math.round(topRight.h * 0.46); font.bold: true; anchors.verticalCenter: parent.verticalCenter
+                    color: Chat.viewerTrend > 0 ? "#5be37d" : Chat.viewerTrend < 0 ? "#ff7a7a" : "#c8c8c8"
+                }
+            }
+        }
+        Rectangle {   // the kill switch
+            id: killButton
+            objectName: "pipKill"
+            visible: Engine.active
+            height: topRight.h; width: killRow.implicitWidth + 24; radius: height / 2
+            color: killHover.hovered ? "#ff2a2a" : "#d92020"
+            border.width: 2; border.color: Qt.alpha("white", killHover.hovered ? 1 : 0.8)
+            readonly property string text: "END"
+            Row {
+                id: killRow
+                anchors.centerIn: parent; spacing: 7
+                Rectangle { width: Math.round(topRight.h * 0.3); height: width; radius: 2; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+                Txt { text: "END"; font.pixelSize: Math.round(topRight.h * 0.5); font.bold: true; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+            }
+            HoverHandler { id: killHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: Pip.kill() }
         }
     }
     ChatPanel {   // the conversation, under you

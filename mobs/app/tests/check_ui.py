@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         print(f"PASS {name} ({size})", flush=True)
 
     failures = []
+    live_setup0 = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"
     setup_env_early = {"MOBS_SETUP": "1"}
 
     def check(*args, **kwargs):
@@ -191,15 +192,40 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           "streamurl=rtmp://live.example/x,streamkey=test-key-123,pick=1,arm=1,start,expect=state:recording,wait=0.6,expect=mainHeld:1,expect=goLiveSteps:Pick your source. A green dot,checklayout", fake_backend=True)
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
-          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,wait=1.2,checkpip",
+          "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xMessages:6,expect=xRegionTall:300-420,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,wait=1.2,checkpip",
           fake_backend=True, expect_log=("X chat attached", "the chat card as drawn", "it is drawing"), forbid_log=("BLACK, the card is drawing nothing",))   # the card looks at its own pixels and says so
     check("a chat card that looks black is not left black: the page is asked for again, and the card is looked at again until it draws",
           "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,wait=6.5,expect=xCrop:shown,wait=12,expect=xPixels:0a6e5c=some", fake_backend=True,
           extra_env={"MOBS_TEST_BLACK_CARD": "1"}, limit=45,
           expect_log=("the card is black: asking X's page again (1 of 3)", "BLACK, the card is drawing nothing", "it is drawing"))   # the first look is made to report black
-    live_setup = "streamurl=rtmp://live.example/x,streamkey=test-key-123,"   # a saved address and key, for every scenario that goes live
-    check("a livestream nobody has written in yet shows the heading, at the least height",
-          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xRegion:363x140,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,wait=1.2,expect=xFresh:3", fake_backend=True)   # a quiet chat page keeps being asked for fresh frames, so a stale black one cannot stay
+    live_setup = live_setup0   # a saved address and key, for every scenario that goes live
+    check("a livestream nobody has written in yet shows a quiet card with no page in it",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xMessages:0,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=none,wait=1.2,expect=xFresh:3", fake_backend=True)   # a quiet chat page keeps being asked for fresh frames, so a stale black one cannot stay
+    check("a chat with one message shows just that message, with no header and no gap above it",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/ONEMSG00001,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xMessages:1,expect=xRegionTall:40-110,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some", fake_backend=True)
+    # How many are watching, read from the page's own words, and which way it is going; shown beside the webcam, with the kill switch.
+    check("the dock shows how many are watching, read from the livestream's page",
+          live_setup0 + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/VIEWERS0007,wait=9,expect=chatViewers:7,expect=chatTotal:76,expect=pipText:pipViewersCount=7,expect=pipHas:pipKill,checkpip",
+          fake_backend=True)
+    check("the readings of two minutes say which way it is going, and the dock and the recording screen show it",
+          live_setup0 + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/VIEWERS0006,viewerhistory=2/2/3/4/6,wait=8,expect=chatTrend:1,expect=pipText:pipTrend=\u25b2 +,expect=pipHas:pipViewersCount,checkpip", fake_backend=True)
+    check("the recording screen says how many are watching and which way it is going",
+          live_setup0 + "pick=1,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/VIEWERS0006,viewerhistory=2/2/3/4/6,expect=chatTrend:1,expect=goLiveSteps:Type the title,checklayout", fake_backend=True, extra_env={"MOBS_NO_PILOT": "1"})
+    # THE KILL SWITCH: one press stops the video and ends the livestream on X, so nobody is left on a dead stream.
+    kill_start = live_setup0 + "xurl=https://x.com/home,pick=2,wait=0.4,arm=1,start,expect=state:recording,wait=1,expect=streamState:live,xattach=https://studio.x.com/live/%s,wait=6,"
+    check("the kill switch stops the video and ends the livestream on X, and the webcam window waits until X has answered",
+          kill_start % "ENDOK0000001" + "kill,expect=chatEnding:1,wait=0.8,expect=state:idle,expect=pipShown:1,wait=6,expect=chatEnded:1,expect=chatEnding:0,expect=pipShown:0,expect=chatXId:",
+          fake_backend=True, extra_env={"MOBS_NO_PILOT": "1"}, limit=45,
+          expect_log=("kill switch: the video stops now and the livestream on X is ended", "ending the livestream on X", "[chat] end: confirmed", "the livestream on X is ended", "your livestream is ended"), forbid_log=("is still open on X",))
+    check("the END button of the webcam window is the kill switch",
+          kill_start % "ENDOK0000001" + "pipclick=pipKill,expect=chatEnding:1,wait=7,expect=chatEnded:1,expect=state:idle", fake_backend=True, extra_env={"MOBS_NO_PILOT": "1"}, limit=45,
+          expect_log=("kill switch: the video stops now",))
+    check("when X will not end the livestream the video still stops, and the person is told it stays open and where",
+          kill_start % "ENDFAIL00001" + "kill,expect=state:idle,wait=6,expect=chatEnding:0,expect=chatEnded:0,expect=chatXId:", fake_backend=True, extra_env={"MOBS_NO_PILOT": "1", "MOBS_END_MS": "4000"}, limit=45,
+          expect_log=("could not be ended from here", "your livestream is still open on X"), forbid_log=("your livestream is ended",))
+    check("with no chat page to end it on, the kill switch stops the video and says the livestream stays open", live_setup0 + "xurl=https://x.com/home,pick=1,arm=1,start,expect=state:recording,wait=1,expect=streamState:live,kill,expect=state:idle,wait=0.5,expect=chatEnding:0", fake_backend=True,
+          extra_env={"MOBS_NO_PILOT": "1"}, expect_log=("kill switch: the video stops now", "your livestream is still open on X"))
+    check("a plain recording's stop is just a stop: nothing is ended on X", "pick=2,start,expect=state:recording,wait=0.6,kill,expect=state:idle,expect=chatEnding:0", fake_backend=True, forbid_log=("ending the livestream on X",))
     # The livestream that is on air is found by MOBS itself: no link to copy.
     check("the livestream that is Live Now in Live Studio is found by itself and its chat attached",
           live_setup + "xurl=https://x.com/home,pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=13,expect=chatXId:1PJqrNmYLjYxb,wait=4,expect=xCrop:shown,expect=xPixels:ff00ff=none", fake_backend=True, limit=40)

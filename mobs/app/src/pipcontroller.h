@@ -43,6 +43,11 @@ public:
     void setChat(ChatModel *chat);                      // the live chat shown under the webcam, when there is a feed for it
     QString title() const { return kTitle; }
     bool mainHeld() const { return m_held; }
+    // THE KILL SWITCH. One press stops the video this instant and ends the livestream on X (the dock's page presses End livestream), so nobody is left watching a dead stream. It is also
+    // how every stop of a broadcast goes (the stop button, Enter, the hotkey, closing the window): stopping the video and leaving the livestream open on X was a bug, not a choice.
+    // With no broadcast it is a plain stop. The webcam window stays up, saying ENDING, until X has answered (14 seconds at the most), because the page that does it lives in that window.
+    Q_INVOKABLE void kill();
+    bool holdingForEnd() const;                         // the livestream is being ended: the webcam window and its chat page must stay until that is done
     // The person pressed "I'm live" (or the minutes ran out): now MOBS's window steps out of the picture, as it always did for a plain recording.
     Q_INVOKABLE void hideMainNow();
     Q_INVOKABLE void windowShown();                     // the QML window became visible: float, pin and place it

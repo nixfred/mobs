@@ -98,6 +98,14 @@ Item {
                     : Engine.streamState === "reconnecting" ? Engine.streamProblem
                     : Engine.streamState === "connecting" ? "connecting to the server..." : ""
             }
+            Txt {   // how many are watching, and which way it is going (read from X's page for the livestream)
+                objectName: "liveViewers"
+                visible: Engine.streamRequested && Engine.state !== "stopping" && Chat.viewers >= 0
+                width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                font.pixelSize: 15; font.bold: true
+                color: Chat.viewerTrend > 0 ? Omarchy.green : Chat.viewerTrend < 0 ? Omarchy.red : Omarchy.secondaryText
+                text: Chat.viewers + (Chat.viewers === 1 ? " person is" : " people are") + " watching" + (Chat.viewerTrend > 0 ? "   \u25b2 +" + Chat.viewerDelta + " in 2 minutes" : Chat.viewerTrend < 0 ? "   \u25bc " + Chat.viewerDelta + " in 2 minutes" : "")
+            }
             Txt {   // the one step MOBS cannot do for you: X only shows a stream to viewers after Go live is pressed in Live Studio
                 objectName: "liveStudioLink"
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap   // wraps in the narrow column instead of running off it
@@ -149,7 +157,7 @@ Item {
                     width: root.btn; height: root.btn; radius: root.btn / 2; color: Omarchy.accent
                     Glyph { anchors.centerIn: parent; text: ""; font.pixelSize: 30; color: Omarchy.accentForeground }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Engine.stop() }
+                    TapHandler { onTapped: Pip.kill() }   // a stop of a broadcast ends the livestream on X too
                 }
             }
             Row {

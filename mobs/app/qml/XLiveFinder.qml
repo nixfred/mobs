@@ -4,7 +4,7 @@ import MobsCore
 
 // While a broadcast is on air and the person is signed in to X, MOBS finds their livestream BY ITSELF, so nobody has to copy a link. Live Studio's list page
 // shows the livestream that is on air under "Live Now", with a plain link to it (/live/<id>). The page is loaded in a browser view of 1400 by 900 pixels whose
-// parent is only 2 pixels wide and sits behind the picture of the webcam: it is showing, so X draws it, but nobody can see it. Nothing on the page is changed;
+// parent is only 2 pixels wide and sits behind the picture of the webcam: it is showing, so X draws it, but nobody can see it. Nothing on the page is changed (this view only reads);
 // MOBS reads links from it, and the chat card then opens that livestream's chat.
 // Which livestream is THIS broadcast's? Whatever was already under "Live Now" when the broadcast began is not (a livestream that was never ended, or one X still
 // lists just after it ended), so those ids are remembered first and only a NEW one is taken. The list is only trusted once it has been drawn (its column

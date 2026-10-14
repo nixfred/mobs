@@ -61,6 +61,14 @@ private slots:
         QCOMPARE(b.ended, 1);
         QCOMPARE(e.state(), QString("stopping"));
     }
+    void killRunsTheKillHandlerOrElseJustStops() {
+        QSettings s(dir.path() + "/k.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);
+        FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);
+        c.Toggle(); QCOMPARE(e.state(), QString("starting"));
+        c.Kill(); QCOMPARE(b.ended, 1);                                          // no handler: a plain stop
+        int killed = 0; c.setKillHandler([&killed] { ++killed; });
+        c.Kill(); QCOMPARE(killed, 1);
+    }
     void pauseTogglesPauseAndResume() {
         QSettings s(dir.path() + "/d.ini", QSettings::IniFormat); AppState st(&s); st.choose(1);
         FakeBackend b; Engine e(&b, dir.path()); Control c(&e, &st);

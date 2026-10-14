@@ -193,6 +193,7 @@ int main(int argc, char *argv[]) {
     ChatModel chat;   // the live chat beside the webcam, read-only: a feed fills it (X's relay later; the labelled demo only on request)
     PipController pip(&state, &recorder, &prefs, &settings);
     pip.setChat(&chat);
+    control.setKillHandler([&pip] { pip.kill(); });   // the D-Bus door has a kill switch too (and the hotkey that stops a broadcast ends the livestream on X as well)
     // The livestreams whose chat was attached in earlier broadcasts are remembered (the last 20), so an old address that is still on the clipboard is never taken for a new one.
     chat.setUsedIds(settings.value("xUsedIds").toStringList());
     QObject::connect(&chat, &ChatModel::attached, &chat, [&settings, &chat](const QString &id) {
@@ -202,7 +203,9 @@ int main(int argc, char *argv[]) {
         settings.setValue("xUsedIds", ids); settings.sync();
         chat.setUsedIds(ids);
     });
-    QObject::connect(&recorder, &Engine::stateChanged, &chat, [&] { if (recorder.state() == "idle") chat.detachX(); });   // a livestream's chat belongs to that livestream
+    // A livestream's chat belongs to that livestream. While the livestream is being ended the chat page is the one that does it, so it stays until X has answered.
+    QObject::connect(&recorder, &Engine::stateChanged, &chat, [&] { if (recorder.state() == "idle" && !chat.ending()) chat.detachX(); });
+    QObject::connect(&chat, &ChatModel::endingChanged, &chat, [&] { if (!chat.ending() && recorder.state() == "idle") chat.detachX(); });
     // Stopping the video does not end the livestream on X: it stays open, public, with viewers watching a dead stream, until it is ended in Live Studio (found by Fred's first
     // real go-live: 62 viewers on a stream that had stopped). So when a take that was broadcasting ends, however it ends (stopped, or failed and went straight to idle), say so
     // and open the livestream in Live Studio: the livestream itself if MOBS found it, else the list of livestreams. The chat is detached when the take ends, so the id is kept here.
@@ -213,7 +216,28 @@ int main(int argc, char *argv[]) {
     auto liveId = std::make_shared<QString>();
     QObject::connect(&chat, &ChatModel::statusChanged, &state, [&, liveId] { if (!chat.xId().isEmpty()) *liveId = chat.xId(); });
     QObject::connect(&recorder, &Engine::streamChanged, &state, [&, wentLive] { if (recorder.streamState() == "live") *wentLive = true; });
-    QObject::connect(&recorder, &Engine::stateChanged, &state, [&, broadcastTake, wentLive, liveId] {
+    // What to say when a broadcast is over. If the livestream on X was ended (the kill switch, or a stop of the broadcast), say so. If it could not be (no chat page to do it, or X did
+    // not answer), say that it stays open and open it, as before.
+    auto finishBroadcast = [&state, &chat, liveId](bool ended) {
+        if (ended) {
+            Notifier::send("MOBS: your livestream is ended", "The video has stopped and the livestream on X is ended. Viewers can see the replay.", true);
+            MobsLog::write("app", "the broadcast is over and its livestream on X is ended");
+        } else {
+            Notifier::send("MOBS: your livestream is still open on X",
+                           liveId->isEmpty() ? "The video has stopped. If you pressed Go Live in X, that livestream stays open until you press End livestream in Live Studio, and until then viewers see a dead stream."
+                                             : "The video has stopped, but the livestream stays open on X until you press End livestream in Live Studio. Until then viewers see a dead stream.", true);
+            state.openUrl(liveId->isEmpty() ? QStringLiteral("https://studio.x.com/live") : "https://studio.x.com/live/" + *liveId);
+        }
+        liveId->clear();
+        Q_UNUSED(chat);
+    };
+    auto endNotice = std::make_shared<bool>(false);   // a broadcast is over and the notice waits for X's answer about ending the livestream
+    QObject::connect(&chat, &ChatModel::endingChanged, &state, [&chat, endNotice, finishBroadcast] {
+        if (chat.ending() || !*endNotice) return;
+        *endNotice = false;
+        finishBroadcast(chat.endedOk());
+    });
+    QObject::connect(&recorder, &Engine::stateChanged, &state, [&, broadcastTake, wentLive, liveId, endNotice, finishBroadcast] {
         const QString now = recorder.state();
         const bool taking = now == "starting" || now == "recording" || now == "paused";
         if (taking && recorder.streamRequested()) {
@@ -227,11 +251,8 @@ int main(int argc, char *argv[]) {
         if (!*broadcastTake) return;
         *broadcastTake = false;
         if (!reached) { liveId->clear(); MobsLog::write("app", "the broadcast ended without X ever receiving the stream: nothing is open on X, so no notice"); return; }
-        Notifier::send("MOBS: your livestream is still open on X",
-                       liveId->isEmpty() ? "The video has stopped. If you pressed Go Live in X, that livestream stays open until you press End livestream in Live Studio, and until then viewers see a dead stream."
-                                         : "The video has stopped, but the livestream stays open on X until you press End livestream in Live Studio. Until then viewers see a dead stream.", true);
-        state.openUrl(liveId->isEmpty() ? QStringLiteral("https://studio.x.com/live") : "https://studio.x.com/live/" + *liveId);
-        liveId->clear();
+        if (chat.ending()) { *endNotice = true; return; }   // the livestream is being ended: the notice comes when X has answered
+        finishBroadcast(chat.endedOk());
     });
     // The real chat, when asked for (INI chatRelay=true, or MOBS_CHAT_RELAY_PORT in a test): a script in the person's own browser on another computer
     // POSTs what his viewers say, over the tailnet, and the card under the webcam shows it. Off by default: a program that listens is a decision.
@@ -334,6 +355,7 @@ int main(int argc, char *argv[]) {
         QFile helper(QStringLiteral(":/qt/qml/Mobs/assets/pilot/xstudio-pilot.js"));
         engine.rootContext()->setContextProperty("pilotHelperJs", helper.open(QIODevice::ReadOnly) ? QString::fromUtf8(helper.readAll()) : QString());
     }
+    engine.rootContext()->setContextProperty("pipDefaultWidth", qBound(160, qEnvironmentVariableIntValue("MOBS_PIP_WIDTH") ?: 480, 3000));
     engine.rootContext()->setContextProperty("pilotAllowed", qEnvironmentVariable("MOBS_NO_PILOT") != "1");
     engine.rootContext()->setContextProperty("pilotTickMs", qEnvironmentVariableIntValue("MOBS_PILOT_TICK_MS") > 0 ? qEnvironmentVariableIntValue("MOBS_PILOT_TICK_MS") : 1000);
     engine.rootContext()->setContextProperty("pilotPatienceMs", qEnvironmentVariableIntValue("MOBS_PILOT_WAIT_MS") > 0 ? qEnvironmentVariableIntValue("MOBS_PILOT_WAIT_MS") : 100000);
@@ -573,6 +595,14 @@ int main(int argc, char *argv[]) {
                 else if (ok && condition[0] == "setupMicFirst") { auto *list = window->findChild<QObject *>("setupMicList"); ok = list && list->property("firstRow").toString().contains(condition[1]); }   // the first row says what the system default is
                 else if (ok && condition[0] == "setupCameraAllShown") { auto *list = window->findChild<QObject *>("setupCameraList"); ok = list && list->property("allShown").toBool() == (condition[1] == "1"); }
                 else if (ok && condition[0] == "studioTitle") { auto *view = window->findChild<QObject *>("studioView"); ok = view && view->property("title").toString().contains(condition[1]); }   // what the page in the helper's box calls itself (the stand-in sign-in page writes what it saw there)
+                else if (ok && condition[0] == "xMessages") { QQuickItem *view = pipItem("xChatView"); ok = view && view->property("messages").toInt() == condition[1].toInt(); }   // how many messages the chat card shows (0: nobody has written yet)
+                else if (ok && condition[0] == "chatViewers") ok = chat.viewers() == condition[1].toInt();                 // people watching, as the page of the livestream says (-1 until it has)
+                else if (ok && condition[0] == "chatTrend") ok = chat.viewerTrend() == condition[1].toInt();               // +1 up, -1 down, 0 steady or too early
+                else if (ok && condition[0] == "chatDelta") ok = chat.viewerDelta() == condition[1].toInt();
+                else if (ok && condition[0] == "chatTotal") ok = chat.totalViews() == condition[1].toInt();
+                else if (ok && condition[0] == "chatEnding") ok = chat.ending() == (condition[1] == "1");                    // the livestream is being ended on X
+                else if (ok && condition[0] == "chatEnded") ok = chat.endedOk() == (condition[1] == "1");                   // and the last end worked
+                else if (ok && condition[0] == "pipText") { QQuickItem *item = pipItem(condition[1].section('=', 0, 0)); ok = item && item->property("text").toString().contains(condition[1].section('=', 1)); }   // pipText:NAME=TEXT: an item of the webcam window says this
                 else if (ok && condition[0] == "uiScale") ok = qAbs(window->property("uiScale").toDouble() - condition[1].toDouble()) < 0.01;   // how far the interface is scaled up for this window (1 to 3.5)
                 else if (ok && condition[0] == "uiCanvasOk") { auto *ui = window->findChild<QQuickItem *>("ui"); ok = ui && (ui->width() >= 859.9 && ui->height() >= 559.9) == (condition[1] == "1"); }   // the canvas the screens are laid out on is never smaller than 860 by 560
                 else if (ok && condition[0] == "sourcePhase") { auto *pilot = window->findChild<QObject *>("sourcePilot"); ok = pilot ? pilot->property("phase").toString() == condition[1] : condition[1] == "none"; }   // what the setup page's helper is doing: loading, signin, looking, creating, reading, done, failed
@@ -686,6 +716,14 @@ int main(int argc, char *argv[]) {
             }
             else if (st.startsWith("sourcename=")) { prefs.setSourceName(st.mid(11)); QTimer::singleShot(0, &app, *run); }   // the name of the source on X, as typed on the key page
             else if (st.startsWith("xurl=")) { prefs.noteXUrl(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // the sign-in browser showed this page
+            else if (st.startsWith("viewers=")) { chat.noteViewers(st.mid(8).toInt(), -1); QTimer::singleShot(0, &app, *run); }   // a reading of how many are watching, as the page would give it
+            else if (st.startsWith("viewerhistory=")) {   // viewerhistory=2,2,3,4: readings 30 seconds apart, the last one now (the trend needs a minute of them, and a test cannot wait)
+                const QStringList counts = st.mid(14).split('/');
+                qint64 at = QDateTime::currentMSecsSinceEpoch() - 30000 * (counts.size() - 1);
+                for (const QString &n : counts) { chat.noteViewersAt(n.toInt(), -1, at); at += 30000; }
+                QTimer::singleShot(0, &app, *run);
+            }
+            else if (st == "kill") { pip.kill(); QTimer::singleShot(0, &app, *run); }   // the kill switch, as the button in the webcam window does it
             else if (st.startsWith("xattach=")) { std::printf("script: xattach %d\n", int(chat.attachX(st.mid(8)))); QTimer::singleShot(0, &app, *run); }   // a Live Studio link was copied
             else if (st.startsWith("livetitle=")) { prefs.setLiveTitle(st.mid(10)); QTimer::singleShot(0, &app, *run); }   // what the person typed as the title of their livestream
             else if (st.startsWith("livepublic=")) { prefs.setLivePublic(st.mid(11) == "1"); QTimer::singleShot(0, &app, *run); }

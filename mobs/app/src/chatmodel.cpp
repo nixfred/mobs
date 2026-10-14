@@ -2,10 +2,15 @@
 #include "mobslog.h"
 #include <QChar>
 #include <QClipboard>
+#include <QDateTime>
 #include <QGuiApplication>
 #include <QRegularExpression>
 
-ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
+ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {
+    m_endTimer.setSingleShot(true);
+    m_endTimer.setInterval(qEnvironmentVariableIntValue("MOBS_END_MS") ?: 14000);   // tests shorten it
+    connect(&m_endTimer, &QTimer::timeout, this, [this] { MobsLog::write("chat", "ending the livestream on X took too long: giving up"); endFinished(false); });
+}
 
 int ChatModel::rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : int(m_items.size()); }
 
@@ -85,6 +90,8 @@ bool ChatModel::attachX(const QString &textOrLink) {
     if (id == m_xId) return true;
     if (m_staleIds.contains(id)) { MobsLog::write("chat", "that livestream was already on air before this broadcast began: not attached"); return false; }
     m_xId = id;
+    m_endedOk = false;
+    m_trend.clear(); m_totalViews = -1; emit viewersChanged();   // the readings are of THIS livestream
     m_finderNote.clear();
     if (!m_configured) { m_configured = true; m_xConfigured = true; }
     m_demo = false; m_connected = true; m_status.clear();
@@ -108,6 +115,7 @@ QString ChatModel::xTypedNote(const QString &text) const {
 }
 
 void ChatModel::rememberClipboard() {
+    m_endedOk = false;   // a new broadcast begins: what the last one's end said is over
     const QClipboard *clipboard = QGuiApplication::clipboard();
     m_clipboardAtStart = clipboard ? clipboard->text() : QString();
 }
@@ -148,6 +156,36 @@ void ChatModel::detachX() {
     if (!m_finderNote.isEmpty()) { m_finderNote.clear(); if (m_xId.isEmpty()) emit statusChanged(); }
     if (m_xId.isEmpty()) return;
     m_xId.clear();
+    m_trend.clear(); m_totalViews = -1; emit viewersChanged();
     if (m_xConfigured) { m_configured = false; m_xConfigured = false; m_connected = false; m_status = QStringLiteral("chat is not connected"); }
     emit statusChanged();
+}
+
+void ChatModel::noteViewers(int watching, int totalViews) { noteViewersAt(watching, totalViews, QDateTime::currentMSecsSinceEpoch()); }
+
+void ChatModel::noteViewersAt(int watching, int totalViews, qint64 atMs) {
+    if (m_xId.isEmpty() || (watching < 0 && totalViews < 0)) return;
+    const int before = m_trend.current(), beforeTrend = m_trend.trend(), beforeDelta = m_trend.delta(), beforeTotal = m_totalViews;
+    const bool beforeReady = m_trend.ready();
+    if (watching >= 0) m_trend.add(watching, atMs);
+    if (totalViews >= 0) m_totalViews = totalViews;
+    if (before != m_trend.current() || beforeTrend != m_trend.trend() || beforeDelta != m_trend.delta() || beforeTotal != m_totalViews || beforeReady != m_trend.ready()) emit viewersChanged();
+}
+
+bool ChatModel::endLivestream() {
+    if (m_xId.isEmpty() || m_ending) return false;
+    m_ending = true; m_endedOk = false;
+    MobsLog::write("chat", "ending the livestream on X");
+    m_endTimer.start();
+    emit endingChanged();
+    emit endRequested();
+    return true;
+}
+
+void ChatModel::endFinished(bool ok) {
+    if (!m_ending) return;
+    m_endTimer.stop();
+    m_ending = false; m_endedOk = ok;
+    MobsLog::write("chat", ok ? "the livestream on X is ended" : "the livestream on X could not be ended from here");
+    emit endingChanged();
 }

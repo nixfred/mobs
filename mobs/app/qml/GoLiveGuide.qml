@@ -136,7 +136,7 @@ Rectangle {
             width: parent.width; spacing: 10
             BigButton { objectName: "goLiveOpenStudio"; visible: !root.auto; primary: false; text: "OPEN LIVE STUDIO"; implicitHeight: 44; onClicked: App.openUrl("https://studio.x.com/live") }
             BigButton { objectName: "goLiveHide"; visible: root.byHand; text: root.auto ? "I'M LIVE" : "I'M LIVE: HIDE THIS WINDOW"; implicitWidth: root.auto ? 170 : 350; implicitHeight: 44; onClicked: Pip.hideMainNow() }
-            BigButton { objectName: "goLiveStop"; primary: false; text: "STOP"; implicitWidth: 100; implicitHeight: 44; onClicked: Engine.stop() }
+            BigButton { objectName: "goLiveStop"; primary: false; text: "STOP"; implicitWidth: 100; implicitHeight: 44; onClicked: Pip.kill() }
         }
         Flow {   // the chat under the webcam: the text, and the place to paste a link (below it when the window is narrow). With the helper at work it is only here when the finder has something to say.
             visible: Prefs.xSignedIn && root.byHand && (!root.auto || Chat.finderNote !== "" || root.linkNote !== "" || root.typedNote !== "")

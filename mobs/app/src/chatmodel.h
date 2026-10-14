@@ -1,5 +1,7 @@
 #pragma once
+#include "viewertrend.h"
 #include <QAbstractListModel>
+#include <QTimer>
 #include <QString>
 #include <QVector>
 
@@ -15,6 +17,13 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(QString xId READ xId NOTIFY statusChanged)                // the X livestream whose chat page the card shows ("" = the message list)
     Q_PROPERTY(QString finderNote READ finderNote NOTIFY statusChanged)   // what the livestream finder has to tell the person ("" = nothing): it gave up, or two livestreams are on air
+    Q_PROPERTY(int viewers READ viewers NOTIFY viewersChanged)           // people watching right now, read from the livestream's page (-1 until the page has said)
+    Q_PROPERTY(int viewerTrend READ viewerTrend NOTIFY viewersChanged)   // +1 more than two minutes ago, -1 fewer, 0 about the same or too early to say
+    Q_PROPERTY(int viewerDelta READ viewerDelta NOTIFY viewersChanged)   // how many more (or fewer) than about two minutes ago
+    Q_PROPERTY(bool viewerTrendKnown READ viewerTrendKnown NOTIFY viewersChanged)   // the readings reach back far enough to say (a steady arrow means something only then)
+    Q_PROPERTY(int totalViews READ totalViews NOTIFY viewersChanged)     // everyone who has watched any of it so far (-1 unknown)
+    Q_PROPERTY(bool ending READ ending NOTIFY endingChanged)              // the livestream is being ended on X (the kill switch, or a stop of a broadcast)
+    Q_PROPERTY(bool endedOk READ endedOk NOTIFY endingChanged)            // the last end worked: X says the livestream is over
 public:
     enum Role { NameRole = Qt::UserRole + 1, TextRole, HueRole, InitialRole };
     static constexpr int kMax = 200, kNameMax = 32, kTextMax = 400;
@@ -50,6 +59,20 @@ public:
     // What is on the clipboard when a broadcast begins. A link that was ALREADY there is an old one (an earlier livestream's address), never this broadcast's: the
     // go-live window picks a copied link up by itself, and without this it could attach the chat of a livestream that ended days ago.
     void rememberClipboard();
+    // How many people are watching, as the page of the livestream says ("3 viewers watching now"), and which way that is going. The dock window shows it beside the webcam.
+    int viewers() const { return m_trend.current(); }
+    int viewerTrend() const { return m_trend.trend(); }
+    int viewerDelta() const { return m_trend.delta(); }
+    bool viewerTrendKnown() const { return m_trend.ready(); }
+    int totalViews() const { return m_totalViews; }
+    Q_INVOKABLE void noteViewers(int watching, int totalViews);      // a reading from the page (-1 for a number it did not show)
+    void noteViewersAt(int watching, int totalViews, qint64 atMs);   // the same, at a given time: for the tests
+    // End the livestream on X: the chat view of its page presses End livestream and confirms (it is the page of THAT livestream, signed in as the person). False when no livestream
+    // is attached or one is being ended already. The answer comes back through endFinished (and after 14 seconds at the latest, whatever the page does).
+    Q_INVOKABLE bool endLivestream();
+    Q_INVOKABLE void endFinished(bool ok);
+    bool ending() const { return m_ending; }
+    bool endedOk() const { return m_endedOk; }
     Q_INVOKABLE void detachX();
     Q_INVOKABLE void setStaleIds(const QStringList &ids) { m_staleIds = ids; }   // livestreams that were already on air before this broadcast began: never attached
     bool isStale(const QString &id) const { return m_staleIds.contains(id); }
@@ -59,6 +82,9 @@ signals:
     void statusChanged();
     void countChanged();
     void attached(const QString &id);   // a livestream's chat was attached (by the finder, a copied link or a typed one)
+    void viewersChanged();
+    void endingChanged();
+    void endRequested();                // the chat view should end the livestream on X now
 private:
     struct Item { QString id, name, text; double hue; };
     QVector<Item> m_items;
@@ -67,5 +93,9 @@ private:
     QString m_xId;
     QStringList m_staleIds, m_usedIds;
     QString m_finderNote, m_clipboardAtStart;
+    ViewerTrend m_trend;
+    int m_totalViews = -1;
+    bool m_ending = false, m_endedOk = false;
+    QTimer m_endTimer;
     bool m_xConfigured = false;       // the card exists only because an X chat is attached
 };

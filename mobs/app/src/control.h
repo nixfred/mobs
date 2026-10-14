@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <functional>
 
 class Engine;
 class AppState;
@@ -22,13 +23,17 @@ public:
     // (X drops one of the two) and the hotkey would reach only the first. "" when no copy is running; otherwise what the
     // running copy says it is doing ("idle", "recording 00:12:34"), or "not answering" when it owns the name but is hung.
     static QString runningCopy();
+    // What the kill switch does (the webcam window's controller owns it: it ends the livestream on X through the chat view, then stops the video).
+    void setKillHandler(std::function<void()> kill) { m_kill = std::move(kill); }
     // What to tell the person who launched a second copy, from what runningCopy() returned.
     static QString secondCopyNotice(const QString &status);
 public slots:
     void Toggle();          // idle: start recording what was picked (screen if nothing was); recording: stop and save
     void Pause();           // recording: pause; paused: resume
     QString Status();       // "idle", or "recording 00:00:12", "paused 00:00:12", ...
+    void Kill();            // the kill switch: the video stops now and the livestream on X is ended (a plain stop when nothing is on air)
 private:
     Engine *m_engine;
     AppState *m_state;
+    std::function<void()> m_kill;
 };
