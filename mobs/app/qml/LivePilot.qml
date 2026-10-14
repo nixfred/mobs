@@ -36,6 +36,7 @@ Item {
     property int titleTries: 0
     property int visibilityTries: 0
     property int sourceTries: 0
+    property int detailsTries: 0
     property int reloads: 0
     property bool visibilityDone: false
     property string lastLine: ""
@@ -64,17 +65,24 @@ Item {
     function reset() {
         phase = "idle"; note = ""; reason = ""; failure = ""; livestream = ""; progress = 0
         phaseSince = 0; waitingSince = 0; pressedAt = 0; reloadedAt = 0; lastLine = ""
-        pressTries = openTries = titleTries = visibilityTries = sourceTries = reloads = 0
+        pressTries = openTries = titleTries = visibilityTries = sourceTries = detailsTries = reloads = 0
         visibilityDone = false
     }
     function onStudio(st) { return view.testPage || st.host === "studio.x.com" }
+
+    // Who can watch could not be read or set. X starts a livestream as Public, so a person who wants Public can go on; a person who asked for PRIVATE must not be published to everyone.
+    function giveUpOnVisibility() {
+        if (wantedVisibility === "private") { fail("MOBS could not set the livestream to private, so it did not press Go Live. Set it to private in the box, then press Go Live."); return false }
+        visibilityDone = true; note_("who can watch could not be checked: left as X had it")
+        return true
+    }
 
     // One look at the page, and at most one job given to it.
     function advance(st) {
         const now = Date.now()
         if (st.missing || st.error) { view.inject(); if (st.error) note_("the page helper reported a problem: " + st.error.slice(0, 120)); return }   // the page is still loading, or it is not Live Studio
         if (st.dialog) { seenTitle = st.title === null || st.title === undefined ? "" : st.title; if (st.visibility !== "") seenVisibility = st.visibility; seenSource = st.source || "" }
-        if (st.live !== "" && (pressedAt > 0 || phase === "failed")) { succeed(st.live); return }   // the livestream exists: X moved to its page
+        if (typeof st.live === "string" && st.live !== "" && (pressedAt > 0 || phase === "failed")) { succeed(st.live); return }   // the livestream exists: X moved to its page
         if (phase === "failed") return                                                              // from here on only watching for the person to finish by hand
         if (Engine.streamState === "failed" || Engine.streamState === "ended") { fail("Your video is not reaching X any more, so there is nothing to go live with."); return }
         if (st.signedOut) { reason = ""; enter("signin", "Sign in to X in the box. MOBS carries on by itself afterwards."); return }
@@ -108,7 +116,10 @@ Item {
             return
         }
         const onVisibilityStep = st.tab === "audience"
-        if (!visibilityDone && st.tab !== "details" && !onVisibilityStep) { view.ask("tab", "Details", function () {}); return }
+        if (!visibilityDone && st.tab !== "details" && !onVisibilityStep) {
+            if (++detailsTries > 8) { fail("MOBS could not find the Details part of the form."); return }
+            view.ask("tab", "Details", function () {}); return
+        }
         if (!onVisibilityStep && st.title !== null && st.title !== root.wantedTitle) {   // the title X needs before it lets anyone go live
             if (++titleTries > 6) { fail("MOBS could not type the title into the form."); return }
             enter("filling", "Filling in your livestream: the title and who can watch.")
@@ -119,13 +130,17 @@ Item {
         if (!visibilityDone) {   // X's own default is Public, but it is checked rather than assumed: a Private livestream is what showed "0 views" on 2026-10-12
             enter("filling", "Filling in your livestream: the title and who can watch.")
             if (!onVisibilityStep) {
-                if (++visibilityTries > 5) { visibilityDone = true; note_("who can watch could not be checked: left as X had it"); return }
+                if (++visibilityTries > 5) { if (!giveUpOnVisibility()) return; return }
                 view.ask("tab", "Audience", function () {})
                 return
             }
             if (st.visibility === root.wantedVisibility) { visibilityDone = true; note_("who can watch: " + st.visibility); view.ask("tab", "Details", function () {}); return }
-            if (++visibilityTries > 5) { visibilityDone = true; note_("who can watch could not be set: left as X had it"); view.ask("tab", "Details", function () {}); return }
+            if (++visibilityTries > 5) { if (giveUpOnVisibility()) view.ask("tab", "Details", function () {}); return }
             view.ask("setVisibility", root.wantedVisibility, function () {})
+            return
+        }
+        if (root.wantedSource !== "" && st.source !== "" && st.source.toLowerCase() !== root.wantedSource.toLowerCase() && sourceTries >= 6) {   // never go live on another source than the one MOBS sends to
+            fail("The form is on the source " + st.source + ", not " + root.wantedSource + ", so MOBS did not press Go Live. Choose " + root.wantedSource + " in the box, then press Go Live.")
             return
         }
         if (root.wantedSource !== "" && st.source.toLowerCase() !== root.wantedSource.toLowerCase() && sourceTries < 6) {   // the person named the source they use: the form is made to say it
@@ -168,6 +183,9 @@ Item {
         asking = true
         if (!view.ask("look", undefined, function (st) { asking = false; if (root.running) root.advance(st) })) asking = false
     }
-    onRunningChanged: { reset(); if (running) enter("loading", "Opening Live Studio...") }
+    onRunningChanged: {
+        if (running) { reset(); enter("loading", "Opening Live Studio...") }
+        else if (phase !== "idle" && phase !== "done" && phase !== "failed") fail("Your video is not reaching X any more, so there is nothing to go live with.")   // the hand steps show, the box is the person's
+    }
     Timer { interval: pilotTickMs; repeat: true; running: root.running && root.phase !== "done"; onTriggered: root.step() }
 }

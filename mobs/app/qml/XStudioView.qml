@@ -8,6 +8,14 @@ import MobsCore
 WebEngineView {
     id: web
     readonly property string helper: pilotHelperJs   // the page half of the helper: a file in the app's resources, read once at start (main.cpp)
+    property int seq: 0
+    // A question whose answer never comes (the page's process died) must not hold the helpers for ever: after 15 s it is given up with an error answer, so their own clocks run and say so.
+    Timer {
+        id: askWatchdog
+        interval: 15000
+        property var giveUp: null
+        onTriggered: { if (web.busy) { web.seq++; web.busy = false; const f = giveUp; giveUp = null; if (f) f({ error: "the page did not answer" }) } }
+    }
     property bool busy: false                  // a question is out and its answer has not come back
     // The interface is drawn scaled up (Main.qml, uiScale). A web page inside it would be a small picture stretched, so it is drawn at the real size of its box in screen pixels and
     // shrunk back (scale 1 / k): sharp at any size. The page is then zoomed so that the form it shows (about 960 by 520) fills the box; a sign-in form (full) is used at the size of the
@@ -56,8 +64,13 @@ WebEngineView {
     function ask(job, argument, done) {
         if (busy) return false
         busy = true
+        const mine = ++seq
+        askWatchdog.giveUp = done
+        askWatchdog.restart()
         const call = "(function () { try { return window.__mobsPilot ? window.__mobsPilot." + job + "(" + (argument === undefined ? "" : JSON.stringify(argument)) + ") : '{\"missing\":true}' } catch (e) { return JSON.stringify({ error: String(e) }) } })()"
         web.runJavaScript(call, WebEngineScript.MainWorld, function (result) {
+            if (mine !== seq) return                // the watchdog already gave this question up and told the caller
+            askWatchdog.stop()
             busy = false
             let answer = {}
             try { answer = JSON.parse(result) } catch (e) { answer = {} }

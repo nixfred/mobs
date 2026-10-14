@@ -11,7 +11,7 @@ Item {
     function skipNow() { Prefs.setMicOn(false) }
     // The first row is "whatever the system uses": it says which microphone that is right now, so the default is not mistaken for a microphone that is not listed
     // (the list changing is what asks again). On 2026-10-13 the system default WAS the Maono, and the page never said so.
-    readonly property string defaultName: Audio.microphones.length >= 0 ? Audio.defaultMicName() : ""
+    readonly property string defaultName: Audio.microphones.length > 0 ? Audio.defaultMicName() : ""
     readonly property var mics: [{ id: "default", name: defaultName !== "" ? "System default: " + defaultName : "System default microphone" }].concat(Audio.microphones.map(m => ({ id: m.id, name: m.name })))
     Component.onCompleted: { Audio.refresh(); if (!Prefs.micOn) Prefs.setMicOn(true); if (!Engine.active) Engine.checkMic(true) }
     Component.onDestruction: Engine.checkMic(false)

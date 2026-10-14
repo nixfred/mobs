@@ -717,7 +717,7 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("sourcename=")) { prefs.setSourceName(st.mid(11)); QTimer::singleShot(0, &app, *run); }   // the name of the source on X, as typed on the key page
             else if (st.startsWith("xurl=")) { prefs.noteXUrl(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // the sign-in browser showed this page
             else if (st.startsWith("viewers=")) { chat.noteViewers(st.mid(8).toInt(), -1); QTimer::singleShot(0, &app, *run); }   // a reading of how many are watching, as the page would give it
-            else if (st.startsWith("viewerhistory=")) {   // viewerhistory=2,2,3,4: readings 30 seconds apart, the last one now (the trend needs a minute of them, and a test cannot wait)
+            else if (st.startsWith("viewerhistory=")) {   // viewerhistory=2/2/3/4: readings 30 seconds apart, the last one now (the trend needs a minute of them, and a test cannot wait)
                 const QStringList counts = st.mid(14).split('/');
                 qint64 at = QDateTime::currentMSecsSinceEpoch() - 30000 * (counts.size() - 1);
                 for (const QString &n : counts) { chat.noteViewersAt(n.toInt(), -1, at); at += 30000; }

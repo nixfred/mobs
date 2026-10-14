@@ -1,5 +1,6 @@
 #pragma once
 #include <QList>
+#include <algorithm>
 #include <QPair>
 #include <QtGlobal>
 #include <cmath>

@@ -171,7 +171,7 @@ Item {
                     // A page that failed to load, or that was loaded before the person signed in somewhere else in MOBS, never changes by itself: once the card has SAID so
                     // (sign in, or not there yet) the page is asked for again now and then, so the card recovers when the network is back or the sign-in is done. Never before it
                     // has said so: a reload resets the count of misses, and one that came sooner than the verdict would keep the verdict from ever being given.
-                    if ((root.cropState === "signedout" || root.cropState === "missing") && root.misses === Math.max(10, xChatTries + 2)) {
+                    if ((root.cropState === "signedout" || root.cropState === "missing") && root.misses === Math.max(10, xChatTries + 2) && !Chat.ending) {   // never while End is being pressed: a reload would wipe the click and the card would report an end that never happened
                         console.info("chat card: the page has no Live Chat card (" + root.cropState + "): asking X's page again")
                         web.reload()
                     }
@@ -230,7 +230,7 @@ Item {
     function lookAtTheCard() {
         shown.grabToImage(function (result) {
             if (Pip.chatCardLooks(result.image)) { root.blackTries = 0; return }
-            if (root.cropState !== "shown" || root.blackTries >= 3) return
+            if (root.cropState !== "shown" || root.blackTries >= 3 || Chat.ending) return
             root.blackTries++
             console.info("chat card: the card is black: asking X's page again (" + root.blackTries + " of 3)")
             web.reload()
@@ -258,7 +258,7 @@ Item {
             anchors.centerIn: parent
             width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
             font.pixelSize: Math.max(12, Math.round(root.width * 0.034)); color: Omarchy.tertiaryText
-            text: root.cropState === "signedout" ? "Sign in to X to see the chat here. The setup guide has a chat page for it."
+            text: root.cropState === "signedout" ? "Sign in to X to see the chat here. Open the setup guide at \"your X account\" and sign in in that box."
                 : root.cropState === "missing" ? "The chat is not on X's page yet. It appears once you are live."
                 : root.cropState === "shown" ? "waiting for the first message..."
                 : "loading your chat..."

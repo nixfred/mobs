@@ -327,6 +327,8 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a form that starts on Private is changed to Public when everyone should watch", pilot_start + "wait=5,expect=pilotVisibility:public,expect=pilotPhase:waiting", fake_backend=True, extra_env=studio("on=60000&private=1"), limit=30)
     check("with two sources the one the person named is picked, and the livestream goes live",
           pilot_start + "sourcename=MOBS,wait=9,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, extra_env=studio("two=1&on=300"), limit=45)
+    check("a source the form will not switch to is NOT gone live on: the helper says so and hands over without pressing Go Live",
+          pilot_start + "sourcename=NoSuchSource,wait=8,expect=pilotPhase:failed,expect=pilotFailure:did not press Go Live,expect=chatXId:", fake_backend=True, extra_env=studio("two=1&on=300"), limit=40)
     check("a source that is never seen on makes the helper say so in X's words and hand over", 
           pilot_start + "wait=6,expect=pilotPhase:failed,expect=pilotFailure:still does not see your video,click=goLiveHide,expect=mainHeld:0",
           fake_backend=True, extra_env=studio("never=1") | {"MOBS_PILOT_WAIT_MS": "2500"}, limit=30)

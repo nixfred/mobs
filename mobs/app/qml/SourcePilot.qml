@@ -26,6 +26,8 @@ Item {
     property int createTries: 0
     property int openTries: 0
     property int readTries: 0
+    property int pendings: 0
+    property double createdAt: 0
     property double reloadedAt: 0              // when the page was last loaded again (the give-up clock is the phase's, and keeps running)
     property int misses: 0                    // answers in a row that said the key panel was not there
     property int reloads: 0
@@ -41,7 +43,7 @@ Item {
     function fail(why) { failure = why; enter("failed", why) }
     function reset() {
         phase = "idle"; note = ""; failure = ""; sourceName = ""; signedIn = false; found = false; keySaved = false
-        phaseSince = 0; reloadedAt = 0; emptyLooks = createTries = openTries = readTries = misses = reloads = 0; opened = false; lastLine = ""
+        phaseSince = 0; reloadedAt = 0; emptyLooks = createTries = openTries = readTries = pendings = misses = reloads = 0; createdAt = 0; opened = false; lastLine = ""
     }
     function onStudio(st) { return view.testPage || st.host === "studio.x.com" }
 
@@ -63,6 +65,9 @@ Item {
         if (st.sources === 0) {                                        // a drawn page with no source on it: made once, here, with a name of MOBS's own
             if (++emptyLooks < 5) { enter("looking", "Looking for your source..."); return }   // the list may still be loading
             if (createTries >= 8) { fail("MOBS could not make a source on X."); return }
+            if (now - createdAt < pilotTickMs * 6) return                        // one Create at a time: X needs a moment to draw the new row
+            createdAt = now
+            emptyLooks = 0                                              // a fresh grace for the new row to appear
             createTries++
             enter("creating", "You have no source on X yet: making one called MOBS...")
             view.ask("createSource", "MOBS", function () {})
@@ -80,7 +85,8 @@ Item {
         if (readTries >= 12) { fail("X would not show the key of your source."); return }
         readTries++
         view.ask("readKey", undefined, function (a) {   // the answer carries the key: it is handed on and forgotten, never logged
-            if (a.pending) return                                                       // the key is behind its dots: the panel was asked to show it
+            if (!root.running || root.phase !== "reading") return                    // a late answer for a pass that has been reset or handed over
+            if (a.pending) { if (++pendings < 6) readTries--; return }                                                       // the key is behind its dots: the panel was asked to show it
             if (!a.ok) { if (++misses >= 3) { misses = 0; opened = false } return }      // the panel is not there (it closed): it is opened again
             const problem = a.key ? Prefs.setStreamKey(a.key) : "no key"
             const where = a.url ? Prefs.setStreamUrl(a.url) : ""
@@ -89,7 +95,7 @@ Item {
             if (sourceName !== "") Prefs.setSourceName(sourceName)
             keySaved = true
             view.ask("closePanel", undefined, function () {})
-            enter("done", "Your source" + (sourceName !== "" ? ", " + sourceName + "," : "") + " and its key are saved.")
+            enter("done", "Your source" + (sourceName !== "" ? ", " + sourceName + "," : "") + " and its key are saved." + (where !== "" ? " The address X showed could not be used, so MOBS keeps its own." : ""))
         })
     }
 
