@@ -71,10 +71,10 @@ Item {
         anchors { left: left.right; leftMargin: 18; right: parent.right; rightMargin: 28; top: parent.top; bottom: parent.bottom }
         color: "black"; radius: 10; clip: true
         border.width: 2; border.color: pilotItem.phase === "failed" ? Omarchy.red : pilotItem.phase === "done" ? Omarchy.green : Omarchy.selection
-        Loader {
+        LingerLoader {
             id: studioLoader
             anchors { fill: parent; margins: 2 }
-            active: root.visible
+            wanted: root.visible
             sourceComponent: StudioFrame {
                 enabled: pilotItem.needsPerson                  // while MOBS works the box is only to look at
                 url: pilotItem.running ? xSourcesUrl : "about:blank"

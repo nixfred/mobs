@@ -12,7 +12,7 @@ Rectangle {
     property int step: Math.max(0, Math.min(Prefs.setupStep, titles.length - 1))   // a step saved by an older build can never point past the last page
     readonly property var titles: ["welcome", "camera", "microphone", "your screen", "your webcam", "your X account", "going live", "all set"]
     readonly property int last: titles.length - 1
-    readonly property var page: pageLoader.item
+    readonly property var page: step === titles.indexOf("your X account") ? xPageLoader.item : pageLoader.item
     readonly property bool pageCanNext: page ? page.canNext : false
     function go(n) {
         const to = Math.max(0, Math.min(last, n))
@@ -76,7 +76,14 @@ Rectangle {
     Loader {
         id: pageLoader
         anchors { top: progress.bottom; bottom: buttons.top; left: parent.left; right: parent.right; topMargin: 6; bottomMargin: 6 }
-        sourceComponent: [welcome, camera, mic, screen, webcam, xAccount, how, done][root.step]
+        sourceComponent: [welcome, camera, mic, screen, webcam, null, how, done][root.step]   // (the X page has a loader of its own, below)
+    }
+    LingerLoader {   // the X page holds a web browser: it is let go of a moment after the page is left, so no answer from X's page is still on its way when it goes
+        id: xPageLoader
+        anchors { top: progress.bottom; bottom: buttons.top; left: parent.left; right: parent.right; topMargin: 6; bottomMargin: 6 }
+        wanted: root.step === root.titles.indexOf("your X account") && App.setupOpen
+        visible: wanted
+        sourceComponent: xAccount
     }
     Component { id: welcome; SetupWelcome {} }
     Component { id: camera; SetupCamera {} }

@@ -356,4 +356,4 @@ Audio test switches: `MOBS_FAKE_AUDIO=1` lists demo inputs; `MOBS_TEST_AUDIO=fil
 
 Webcam window pointer: script steps `piphover=NAME` and `pipclick=NAME` (a pointer move, or move and click, on the last showing item of that name in the webcam window), `pipprobe=NAME`; conditions `expect=pipHas|pipGone`.
 Layout: `src/palette.*` (theme reader), `src/appstate.*` (screens and pick), `qml/` (components and screens), `tests/`.
-Screens are checked in the Test Drive practice VM, never on a live desktop; see `docs/app/`.
+Screens are checked offscreen on the build machine, in an isolated environment (a test never opens a real camera, key, browser profile or log, and never touches the desktop clipboard); see `docs/app/`.

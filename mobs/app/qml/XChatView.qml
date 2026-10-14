@@ -50,20 +50,28 @@ Item {
         "  if (cr.y < 0 || cr.y + cr.h > window.innerHeight) { card.scrollIntoView({ block: 'start' }); cr = rectOf(card); }",
         "  var bottom = cr.y + cr.h, boxes = card.querySelectorAll('input,textarea,[contenteditable=\"true\"],[role=\"textbox\"]');",
         "  for (var k = 0; k < boxes.length; k++) { var row = boxes[k]; while (row.parentElement && row.parentElement !== card && rectOf(row.parentElement).h < 100) row = row.parentElement; var rr = rectOf(row); if (rr.y > cr.y + 60 && rr.y < bottom) bottom = rr.y; }",
-        "  // the header is the heading and its buttons (pop out, audience): the messages start below it, and only they are shown",
-        "  var hr = rectOf(heading), headBottom = hr.y + hr.h, hb = card.querySelectorAll('button'), j, bb;",
-        "  for (j = 0; j < hb.length; j++) { bb = rectOf(hb[j]); if (bb.h > 0 && bb.y < cr.y + 80 && bb.y + bb.h > headBottom && bb.y + bb.h < cr.y + 120) headBottom = bb.y + bb.h; }",
-        "  // a message the list has scrolled half out of sight is not shown: only what lies fully inside the list's own clipping box counts",
-        "  var clipTop = function (node) { var e = node.nodeType === 3 ? node.parentElement : node; while (e && e !== card) { if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(e).overflowY) && e.getBoundingClientRect().height < cr.h) return e.getBoundingClientRect().top; e = e.parentElement; } return -1000000; };",
-        "  var first = -1, last = headBottom, rows = 0, texts = document.createTreeWalker(card, NodeFilter.SHOW_TEXT), tn;",
-        "  while ((tn = texts.nextNode())) { if (!tn.textContent.trim()) continue; var rg = document.createRange(); rg.selectNodeContents(tn); var tb = rg.getBoundingClientRect(); if (tb.height > 0 && tb.top >= Math.max(headBottom - 2, clipTop(tn) - 1) && tb.bottom <= bottom + 1) { if (first < 0 || tb.top < first) first = tb.top; if (tb.bottom > last) last = tb.bottom; } }",
+        "  // the header is the heading and its two buttons (pop out, who may chat), found by their LABELS: any other button near the top is a message's (the first message of a short chat sits right under the header)",
+        "  var hr = rectOf(heading), headBottom = hr.y + hr.h, hb = card.querySelectorAll('button[aria-label=\"Pop out chat\"],button[aria-label^=\"Chat audience\"]'), j, bb;",
+        "  for (j = 0; j < hb.length; j++) { bb = rectOf(hb[j]); if (bb.h > 0 && bb.y + bb.h > headBottom && bb.y + bb.h < cr.y + 120) headBottom = bb.y + bb.h; }",
+        "  // the list is the box that scrolls the messages: what lies fully inside it is shown, a message the list has scrolled half out of sight is not",
+        "  var listTop = headBottom + 4, listBottom = bottom, tw0 = document.createTreeWalker(card, NodeFilter.SHOW_TEXT), t0, e0, sr, foundList = false;",
+        "  while ((t0 = tw0.nextNode())) {",
+        "    if (!t0.textContent.trim() || heading.contains(t0)) continue;",
+        "    for (e0 = t0.parentElement; e0 && e0 !== card; e0 = e0.parentElement) { if (/(auto|scroll)/.test(getComputedStyle(e0).overflowY)) { sr = rectOf(e0); if (sr.h >= 80) {",
+        "      // the dock is for the NEWEST messages: a list that is not at its end is taken there (X does it on its own page while a person is looking; nobody scrolls this one)",
+        "      if (e0.scrollTop + e0.clientHeight < e0.scrollHeight - 2) { e0.scrollTop = e0.scrollHeight; sr = rectOf(e0); }",
+        "      listTop = Math.max(listTop, sr.y); listBottom = Math.min(listBottom, sr.y + sr.h); foundList = true; break; } } }",
+        "    if (foundList) break;",
+        "  }",
+        "  var first = -1, last = listTop, rows = 0, texts = document.createTreeWalker(card, NodeFilter.SHOW_TEXT), tn;",
+        "  while ((tn = texts.nextNode())) { if (!tn.textContent.trim() || heading.contains(tn)) continue; var rg = document.createRange(); rg.selectNodeContents(tn); var tb = rg.getBoundingClientRect(); if (tb.height > 0 && tb.top >= listTop - 1 && tb.bottom <= listBottom + 1) { if (first < 0 || tb.top < first) first = tb.top; if (tb.bottom > last) last = tb.bottom; } }",
         "  var pics = card.querySelectorAll('img,canvas,video'), pb, qq;",
-        "  for (qq = 0; qq < pics.length; qq++) { pb = pics[qq].getBoundingClientRect(); if (pb.height > 0 && pb.width > 0 && pb.top >= Math.max(headBottom - 2, clipTop(pics[qq]) - 1) && pb.bottom <= bottom + 1) { rows++; if (first < 0 || pb.top < first) first = pb.top; if (pb.bottom > last) last = pb.bottom; } }",
+        "  for (qq = 0; qq < pics.length; qq++) { pb = pics[qq].getBoundingClientRect(); if (pb.height > 0 && pb.width > 0 && pb.top >= listTop - 1 && pb.bottom <= listBottom + 1) { rows++; if (first < 0 || pb.top < first) first = pb.top; if (pb.bottom > last) last = pb.bottom; } }",
         "  var mores = card.querySelectorAll('button[aria-label=\"More actions\"]'), mm, mc = 0;",
-        "  for (qq = 0; qq < mores.length; qq++) { mm = rectOf(mores[qq]); if (mm.h > 0 && mm.y >= headBottom - 2 && mm.y + mm.h <= bottom + 1) mc++; }",
+        "  for (qq = 0; qq < mores.length; qq++) { mm = rectOf(mores[qq]); if (mm.h > 0 && mm.y >= listTop - 1 && mm.y + mm.h <= listBottom + 1) mc++; }",
         "  var input = bottom < cr.y + cr.h;",
         "  if (first < 0) return JSON.stringify({ state: 'ok', x: cr.x, y: cr.y, w: cr.w, h: Math.max(40, hr.y + hr.h + 14 - cr.y), input: input, rows: 0 });",
-        "  var top = Math.max(headBottom + 6, first - 8), end = Math.min(bottom - 1, last + 12);   // a pixel inside the card, so its edge never bleeds into what is behind it",
+        "  var top = Math.max(listTop, first - 8), end = Math.min(listBottom - 1, last + 12);   // a pixel inside the card, so its edge never bleeds into what is behind it",
         "  return JSON.stringify({ state: 'ok', x: cr.x, y: top, w: cr.w, h: Math.max(30, end - top), input: input, rows: Math.max(rows, mc) });",
         "})()",
     ].join("\n")
@@ -77,7 +85,7 @@ Item {
         "  if (card) t = card.innerText || all;",
         "  var w = /([0-9][0-9,]*)\\s+viewers?\\s+watching\\s+now/i.exec(t), v = /([0-9][0-9.,]*)\\s?([KkMm]?)\\s+views?\\b/.exec(all);",
         "  var views = -1; if (v) { views = parseFloat(v[1].replace(/,/g, '')); if (/k/i.test(v[2])) views *= 1000; else if (/m/i.test(v[2])) views *= 1000000; views = Math.round(views); }",
-        "  return JSON.stringify({ w: w ? parseInt(w[1].replace(/,/g, ''), 10) : -1, v: views });",
+        "  return JSON.stringify({ w: w ? parseInt(w[1].replace(/,/g, ''), 10) : /no viewer data/i.test(t) ? 0 : -1, v: views });",
         "})()",
     ].join("\n")
     readonly property string cleanScript: [
@@ -106,7 +114,7 @@ Item {
         id: shown
         x: 1                                    // a pixel is cut off each side of the card (its edge lands between two pixels, and the page behind it would bleed in)
         width: root.width - 2
-        height: root.cropState === "shown" && root.messages === 0 ? 0 : root.regionW > 0 ? Math.min(root.height, root.regionH * root.fit) : root.height   // nobody has written yet: nothing of the page shows
+        height: root.regionW > 0 ? Math.min(root.height, root.regionH * root.fit) : root.height
         clip: true
     WebEngineView {
         id: web
@@ -245,7 +253,7 @@ Item {
         objectName: "xChatNotice"
         anchors.fill: parent
         visible: root.cropState !== "shown" || root.messages === 0
-        color: root.cropState === "shown" ? "transparent" : "#000000"   // while the page is not ready it is covered (it must never flash on air); an empty chat is the dock's own glass
+        color: root.cropState === "shown" ? Omarchy.darkBackground : "#000000"   // while the page is not ready, or nobody has written yet, it is covered (the page itself keeps drawing underneath: a page nobody draws can stop updating)
         Txt {
             anchors.centerIn: parent
             width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap

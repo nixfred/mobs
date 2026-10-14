@@ -51,8 +51,8 @@ Item {
         "  return JSON.stringify({ ready: /visibility/i.test(text) || /no livestreams yet/i.test(text), ids: ids });",
         "})()"
     ].join("\n")
-    Loader {
-        active: root.wanted && !root.gaveUp
+    LingerLoader {   // the hidden browser goes a moment after the finder stops (see LingerLoader)
+        wanted: root.wanted && !root.gaveUp
         sourceComponent: Component {
             WebEngineView {
                 id: web
@@ -78,7 +78,7 @@ Item {
                 }
                 Timer {
                     id: look
-                    interval: 2500; repeat: true; running: !web.loading
+                    interval: 2500; repeat: true; running: !web.loading && root.wanted && !root.gaveUp
                     onTriggered: {
                         root.tries++
                         if (root.tired()) return   // about a quarter of an hour: the person is not going to press Go Live
@@ -109,7 +109,7 @@ Item {
                     }
                 }
                 Timer {   // a page that stays "loading" for ever (a stuck connection) never lets the look timer run: every 45 s of it counts as 18 looks, and the page is stopped and asked for again
-                    interval: 45000; repeat: true; running: web.loading
+                    interval: 45000; repeat: true; running: web.loading && root.wanted && !root.gaveUp
                     onTriggered: { root.tries += 18; if (root.tired()) return; web.stop(); web.reload() }
                 }
             }

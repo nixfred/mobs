@@ -6,7 +6,7 @@
 <style>
   /* Everything OUTSIDE the chat card is magenta, so a test can tell whether any of it shows. The card is teal, its typing row navy.
      The real page (read 2026-10-13): a desktop layout from about 1280 px wide (the chat card is a column of 363 px at the side) and a stacked one below it (the card is as wide as the
-     page minus 298 px, below the video, 480 px tall). Its list of messages is anchored to the BOTTOM of the card, so a few messages sit under a gap. Each message: an avatar, the
+     page minus 298 px, below the video, 480 px tall). Its list of messages is a scroller that starts right under the header (seen live 2026-10-13: the first message's three dots are within 80 px of the card's top). Each message: an avatar, the
      name, a time, the words and a "More actions" button. The header has the heading and two buttons (pop out, who may chat). */
   html, body { margin: 0; background: #ff00ff; color: #fff; font-family: sans-serif }
   .page { position: relative; width: 100%; height: 2600px }
@@ -18,7 +18,7 @@
   .chat h3 { margin: 0; padding: 12px 20px; font-size: 15px; display: flex; gap: 8px; align-items: center; height: 31px }
   .chat h3 .icons { margin-left: auto; display: flex; gap: 6px }
   .chat h3 button { width: 32px; height: 32px; padding: 0 }
-  .chat .list { position: absolute; left: 0; right: 0; top: 56px; bottom: 56px; padding: 0 20px; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; overflow: hidden }
+  .chat .list { position: absolute; left: 0; right: 0; top: 56px; bottom: 56px; padding: 0 20px; display: flex; flex-direction: column; justify-content: flex-start; gap: 14px; overflow-y: auto }
   .msg { display: flex; gap: 12px; line-height: 1.4; font-size: 15px }
   .msg .name { font-weight: bold; display: flex; gap: 8px; align-items: center }
   .msg .t { font-weight: normal; opacity: .7; font-size: 12px }
@@ -42,11 +42,20 @@
   else if (qid.indexOf('NOCHAT') === 0) addEventListener('DOMContentLoaded', function () { document.body.innerHTML = '<h1>Details</h1><p>Visibility: Private</p>'; });
   // id=ONEMSG00001 stands for a livestream with a single message (the card keeps its gap under the header)
   if (qid.indexOf('ONEMSG') === 0) addEventListener('DOMContentLoaded', function () { var l = document.querySelector('.list'); while (l.children.length > 1) l.removeChild(l.firstChild); });
+  // id=MANYMSGS001 stands for a long chat whose list has not been scrolled to its end: the OLDEST message row is cyan, the NEWEST gold, and the card must show the newest
+  if (qid.indexOf('MANYMSGS') === 0) addEventListener('DOMContentLoaded', function () {
+    var l = document.querySelector('.list'), t = l.children[0], i, c;
+    for (i = 0; i < 12; i++) { c = t.cloneNode(true); l.insertBefore(c, l.firstChild); }
+    l.children[0].style.background = '#00ffff'; l.children[l.children.length - 1].style.background = '#ffd700';   // whole rows, so a test can see them by colour
+    l.scrollTop = 0;
+  });
   addEventListener('DOMContentLoaded', function () {
     // id=VIEWERS0007 says seven are watching ("7 viewers watching now"), as the real page does in words nobody sees
     var m = /^VIEWERS(\d+)/.exec(qid), n = m ? parseInt(m[1], 10) : 3;
     var w = document.getElementById('watching'); if (w) w.textContent = n + (n === 1 ? ' viewer' : ' viewers') + ' watching now';
     var big = document.getElementById('big'); if (big) big.textContent = n;
+    // id=NOVIEWERS0001: a young livestream, where the card says "No viewer data." instead of a number (seen live 2026-10-13)
+    if (qid.indexOf('NOVIEWERS') === 0) { w.parentNode.removeChild(w); big.textContent = 'No viewer data.'; }
     // End livestream: a dialog asks, the confirm ends it (id=ENDFAIL... never does: the dialog stays)
     var end = document.getElementById('end'), dlg = document.getElementById('dlg');
     if (end) end.addEventListener('click', function () { dlg.style.display = 'block'; });

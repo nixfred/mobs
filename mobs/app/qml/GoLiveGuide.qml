@@ -43,11 +43,11 @@ Rectangle {
     Timer { interval: 2000; repeat: true; running: root.visible && Prefs.xSignedIn && Chat.xId === "" && root.byHand; onTriggered: root.pickUpLink() }
 
     // ---- the helper and its box (only while this window is up, and only until the livestream exists: a browser costs memory)
-    Loader {
+    LingerLoader {   // (the web views of X go a moment after they are no longer wanted: see LingerLoader)
         id: pilotLoader
-        active: root.auto && Pip.mainHeld && Chat.xId === ""
+        wanted: root.auto && Pip.mainHeld && Chat.xId === ""
         sourceComponent: LivePilot {
-            running: Engine.broadcasting
+            running: Engine.broadcasting && pilotLoader.wanted   // it stops asking the moment it is not wanted, and the page is let go of later
             view: studioLoader.item ? studioLoader.item.view : null
             onLive: function (id) { Chat.attachXByHand("https://studio.x.com/live/" + id) }
         }
@@ -60,10 +60,10 @@ Rectangle {
         width: root.width - left.width - 60
         color: "black"; radius: 10; clip: true
         border.width: 2; border.color: root.phase === "failed" ? Omarchy.red : root.wentLive ? Omarchy.green : Omarchy.selection
-        Loader {
+        LingerLoader {
             id: studioLoader
             anchors { fill: parent; margins: 2 }
-            active: pilotLoader.active
+            wanted: pilotLoader.wanted
             sourceComponent: StudioFrame {
                 enabled: root.pilot ? root.pilot.needsPerson : false   // while MOBS works the box is only to look at: a stray click must not undo a step
                 url: root.pilot && root.pilot.running ? xStudioUrl : "about:blank"

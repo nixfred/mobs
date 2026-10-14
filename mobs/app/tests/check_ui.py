@@ -201,12 +201,16 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     live_setup = live_setup0   # a saved address and key, for every scenario that goes live
     check("a livestream nobody has written in yet shows a quiet card with no page in it",
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/QUIETCHAT01,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xMessages:0,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=none,wait=1.2,expect=xFresh:3", fake_backend=True)   # a quiet chat page keeps being asked for fresh frames, so a stale black one cannot stay
-    check("a chat with one message shows just that message, with no header and no gap above it",
+    check("a chat with one message shows that message even though it sits right under the header (its three dots were taken for a header button, and the first message of a chat never showed), with no header and no gap above it",
           "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/ONEMSG00001,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xMessages:1,expect=xRegionTall:40-110,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some", fake_backend=True)
+    check("a long chat whose list is not at its end is taken to its end: the newest message shows and the oldest does not",
+          "pick=2,preview=1,wait=0.4,xattach=https://studio.x.com/live/MANYMSGS0001,wait=7,expect=xCrop:shown,wait=1,expect=xPixels:ffd700=some,expect=xPixels:00ffff=none,expect=xPixels:ff00ff=none,expect=xPixels:123456=none", fake_backend=True)
     # How many are watching, read from the page's own words, and which way it is going; shown beside the webcam, with the kill switch.
     check("the dock shows how many are watching, read from the livestream's page",
           live_setup0 + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/VIEWERS0007,wait=9,expect=chatViewers:7,expect=chatTotal:76,expect=pipText:pipViewersCount=7,expect=pipHas:pipKill,checkpip",
           fake_backend=True)
+    check("a card that says there is no viewer data counts as nobody watching, not as an unknown number",
+          live_setup0 + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/NOVIEWERS0001,wait=9,expect=chatViewers:0,expect=pipText:pipViewersCount=0", fake_backend=True)
     check("the readings of two minutes say which way it is going, and the dock and the recording screen show it",
           live_setup0 + "pick=2,preview=1,wait=0.4,arm=1,start,expect=state:recording,wait=0.5,xattach=https://studio.x.com/live/VIEWERS0006,viewerhistory=2/2/3/4/6,wait=8,expect=chatTrend:1,expect=pipText:pipTrend=\u25b2 +,expect=pipHas:pipViewersCount,checkpip", fake_backend=True)
     check("the recording screen says how many are watching and which way it is going",
