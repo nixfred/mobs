@@ -9,7 +9,10 @@ Item {
     readonly property bool canSkip: true
     readonly property string skipText: "go without a microphone"
     function skipNow() { Prefs.setMicOn(false) }
-    readonly property var mics: [{ id: "default", name: "System default microphone" }].concat(Audio.microphones.map(m => ({ id: m.id, name: m.name })))
+    // The first row is "whatever the system uses": it says which microphone that is right now, so the default is not mistaken for a microphone that is not listed
+    // (the list changing is what asks again). On 2026-10-13 the system default WAS the Maono, and the page never said so.
+    readonly property string defaultName: Audio.microphones.length >= 0 ? Audio.defaultMicName() : ""
+    readonly property var mics: [{ id: "default", name: defaultName !== "" ? "System default: " + defaultName : "System default microphone" }].concat(Audio.microphones.map(m => ({ id: m.id, name: m.name })))
     Component.onCompleted: { Audio.refresh(); if (!Prefs.micOn) Prefs.setMicOn(true); if (!Engine.active) Engine.checkMic(true) }
     Component.onDestruction: Engine.checkMic(false)
 
@@ -23,20 +26,26 @@ Item {
                 width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; color: Omarchy.secondaryText
                 text: "Click your microphone and say something. The bar on the right should move. Then press the button."
             }
-            ListView {
-                id: list
-                objectName: "setupMicList"
-                width: parent.width; height: Math.min(Math.max(1, count) * 38, 114); clip: true
-                model: root.mics; spacing: 4
-                delegate: Rectangle {
-                    required property var modelData
-                    width: list.width; height: 34; radius: 17
-                    color: Prefs.micDevice === modelData.id ? Omarchy.accent : "transparent"
-                    border.color: Prefs.micDevice === modelData.id ? Omarchy.accent : Omarchy.selection
-                    Txt { anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 } elide: Text.ElideRight; font.pixelSize: 13; text: modelData.name; color: Prefs.micDevice === modelData.id ? Omarchy.accentForeground : Omarchy.foreground }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Prefs.setMicDevice(modelData.id) }
+            Item {   // the list and its scroll bar: a list cut off after a few rows must say there are more
+                width: parent.width; height: list.height
+                ListView {
+                    id: list
+                    objectName: "setupMicList"
+                    width: parent.width; height: Math.min(Math.max(1, count) * 38 - 4, Math.max(114, root.height - 140)); clip: true
+                    model: root.mics; spacing: 4
+                    readonly property bool allShown: contentHeight <= height + 1   // every row is in view (else the bar beside the list says there are more)
+                    readonly property string firstRow: root.mics.length > 0 ? root.mics[0].name : ""   // for the checks: the "system default" row names the microphone it is
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: list.width - (bar.needed ? 10 : 0); height: 34; radius: 17
+                        color: Prefs.micDevice === modelData.id ? Omarchy.accent : "transparent"
+                        border.color: Prefs.micDevice === modelData.id ? Omarchy.accent : Omarchy.selection
+                        Txt { anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 } elide: Text.ElideRight; font.pixelSize: 13; text: modelData.name; color: Prefs.micDevice === modelData.id ? Omarchy.accentForeground : Omarchy.foreground }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Prefs.setMicDevice(modelData.id) }
+                    }
                 }
+                ListBar { id: bar; view: list }
             }
         }
         Column {

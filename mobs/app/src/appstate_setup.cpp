@@ -44,6 +44,11 @@ void AppState::unlockCamera() {
     emit cameraChanged();
 }
 
+void AppState::note(const QString &area, const QString &text) {
+    const QByteArray category = area.left(12).toUtf8();   // [setup], [pilot], [chat]: a short word, as every other line has
+    MobsLog::write(category.constData(), text.left(300));
+}
+
 // Only X's own pages are ever opened from here: the guides send the person to Live Studio, and nowhere else.
 bool AppState::openUrl(const QString &url) {
     const QUrl u(url);

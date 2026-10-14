@@ -32,6 +32,32 @@ void Settings::setSourceName(const QString &name) {
     emit changed();
 }
 
+// The title of the livestream. X's form refuses Go Live until it has one ("Add a title to go live."), which is what stopped Fred's first go-live on 2026-10-13, so MOBS types it
+// itself: the person edits it on the ready screen, and it is kept until they change it. Plain text on one line, no markup, at most 100 characters.
+QString Settings::cleanLiveTitle(const QString &title) {
+    QString out;
+    for (const QChar c : title) {
+        if (c.isSpace()) out += QLatin1Char(' ');                  // a tab or a line break between two words is a space, not nothing ("Hello\nworld" must not become "Helloworld")
+        else if (c.category() != QChar::Other_Control && c != QLatin1Char('<') && c != QLatin1Char('>')) out += c;
+    }
+    return out.simplified().left(100);
+}
+
+void Settings::setLiveTitle(const QString &title) {
+    const QString clean = cleanLiveTitle(title);
+    if (clean == m_liveTitle) return;
+    m_liveTitle = clean;
+    m_settings->setValue("liveTitle", clean); m_settings->sync();
+    emit changed();
+}
+
+void Settings::setLivePublic(bool everyone) {
+    if (everyone == m_livePublic) return;
+    m_livePublic = everyone;
+    m_settings->setValue("livePublic", everyone); m_settings->sync();
+    emit changed();
+}
+
 void Settings::setSetupStep(int step) {
     step = qBound(0, step, 20);
     if (step == m_setupStep) return;

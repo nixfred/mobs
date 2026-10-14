@@ -76,6 +76,7 @@ public:
     Q_INVOKABLE void lockCamera(const QString &path);   // "this is my camera": kept until the person changes it, never swapped for another one silently
     Q_INVOKABLE void unlockCamera();
     Q_INVOKABLE bool openUrl(const QString &url);       // a page of X's own, in the person's browser (nothing else). MOBS_NO_OPEN=1 only logs it
+    Q_INVOKABLE void note(const QString &area, const QString &text);   // a line in MOBS's own log from QML: what a helper did and why (never a secret: the log scrubs the stream key anyway)
 signals:
     void setupChanged();
     void screenChanged();

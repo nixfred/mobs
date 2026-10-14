@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Manage Sources | X Studio (a stand-in page for tests)</title>
+<style>
+  body { background:#000; color:#eee; font-family:sans-serif; margin:12px }
+  button { background:#222; color:#eee; border:1px solid #555; border-radius:16px; padding:6px 12px; margin:2px }
+  [role=dialog] { position:fixed; left:60px; top:60px; width:520px; background:#151515; border:1px solid #444; border-radius:14px; padding:14px }
+  .row { border:1px solid #333; border-radius:8px; margin:8px 0; padding:8px }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0) }
+  [role=button] { display:inline-block; width:16px; height:16px; background:#666; border-radius:4px; margin-left:8px }
+  input { background:#111; color:#eee; border:1px solid #555; border-radius:6px; padding:8px; width:300px }
+</style></head>
+<body>
+<!-- A stand-in for the Sources page of X Live Studio with the structure of the real one (read on 2026-10-13): a row per source with a key button, the Encoder setup panel with the key behind
+     dots and an eye to show it, and the Create Source dialog whose region starts on US West (Oregon). Tests only: no network, no account.
+     By address: ?empty=1 no source yet, ?two=1 two sources (Gus and Studio), ?nokey=1 the key stays behind its dots, ?login=MS a sign-in page for MS ms first, ?slow=MS drawn after MS ms. -->
+<div id="login" style="display:none"><h2>Sign in to X</h2><input name="password" type="password" autocomplete="current-password" placeholder="Password"><button type="button">Log in</button></div>
+<div id="app" style="display:none">
+  <nav><a href="#/live">Livestreams</a> <a href="#/sources">Sources</a></nav>
+  <h2>Manage Sources</h2>
+  <button type="button" aria-label="Back to Live Studio">Back</button>
+  <button type="button" aria-label="Create Source">Create Source</button>
+  <div id="rows"></div>
+</div>
+<div id="enc" role="dialog" style="display:none">
+  <b>Encoder setup</b>
+  <p>Stream key <button type="button" aria-label="Copy Stream key" id="keybtn">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</button><span role="button" aria-label="Show stream key" id="eye"></span></p>
+  <p>RTMP <button type="button" aria-label="Copy RTMP" id="rtmp"></button></p>
+  <p>RTMPS <button type="button" aria-label="Copy RTMPS" id="rtmps"></button></p>
+  <p>Encoder is offline. Connect your encoder to compare against the recommended config.</p>
+</div>
+<div id="mk" role="dialog" style="display:none">
+  <b>Create source</b>
+  <p>Create an RTMP source to get a stream key for your encoder.</p>
+  <p>Name<br><input id="name" placeholder="My Source" value="Source 1"></p>
+  <p>Region<br><small>Pick the ingest region closest to your encoder.</small><br><button type="button">US West (Oregon)</button></p>
+  <p><button type="button" id="cancel">Cancel</button><button type="button" id="create">Create source</button></p>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var sources = q.get('empty') ? [] : q.get('two') ? [{ name: 'Gus', key: 'FAKEKEY00GUS', url: 'rtmp://va.fake.example:80/x', region: 'US East (N. Virginia)' }, { name: 'Studio', key: 'FAKEKEY0STUD', url: 'rtmp://va.fake.example:80/x', region: 'US East (N. Virginia)' }]
+                                         : [{ name: 'Gus', key: 'FAKEKEY00GUS', url: 'rtmp://va.fake.example:80/x', region: 'US East (N. Virginia)' }];
+  var shown = null;
+  function $(id) { return document.getElementById(id) }
+  function draw() {
+    var rows = $('rows'); rows.innerHTML = '';
+    sources.forEach(function (s, i) {
+      var r = document.createElement('div'); r.className = 'row';
+      r.innerHTML = '<span class="sr-only">Not connected</span><h3 style="margin:0">' + s.name + '</h3><p style="margin:0">' + s.region + ' &middot; Today</p>';
+      var key = document.createElement('button'); key.type = 'button'; key.setAttribute('aria-label', 'Show stream key and encoder settings'); key.textContent = 'key';
+      key.addEventListener('click', function () { shown = s; $('keybtn').innerHTML = '&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;'; $('eye').setAttribute('aria-label', 'Show stream key');
+        $('rtmp').textContent = s.url; $('rtmps').textContent = s.url.replace('rtmp://', 'rtmps://').replace(':80', ':443'); $('enc').style.display = 'block' });
+      var more = document.createElement('button'); more.type = 'button'; more.setAttribute('aria-label', 'More actions'); more.textContent = '...';
+      r.appendChild(key); r.appendChild(more); rows.appendChild(r);
+    });
+  }
+  $('eye').addEventListener('click', function () { if (q.get('nokey') || !shown) return; $('keybtn').textContent = shown.key; $('eye').setAttribute('aria-label', 'Hide stream key') });
+  document.querySelector('[aria-label="Create Source"]').addEventListener('click', function () { $('mk').style.display = 'block' });
+  $('cancel').addEventListener('click', function () { $('mk').style.display = 'none' });
+  $('create').addEventListener('click', function () {
+    // the region X offers first is not Virginia: the address of the new source is the one of ITS region, and that is the one MOBS must use
+    sources.push({ name: $('name').value, key: 'FAKEKEY0MOBS', url: 'rtmp://or.fake.example:80/x', region: 'US West (Oregon)' });
+    $('mk').style.display = 'none'; draw();
+  });
+  draw();
+  var slow = parseInt(q.get('slow') || '0', 10), login = parseInt(q.get('login') || '0', 10);
+  setTimeout(function () { if (login) { $('login').style.display = 'block'; setTimeout(function () { $('login').style.display = 'none'; $('app').style.display = 'block' }, login) } else $('app').style.display = 'block' }, slow);
+</script>
+</body>
+</html>

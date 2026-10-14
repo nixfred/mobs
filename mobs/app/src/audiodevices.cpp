@@ -60,6 +60,14 @@ QString AudioDevices::resolveDefault(const QString &id) const {
     for (const auto &item : m_mics) if (item.toMap()["id"].toString() == name) return name;
     return id;
 }
+// Which microphone "the system default" is right now, by the name the list shows ("" when it is not a listed microphone or the audio service does not answer): the
+// first row of the microphone list says it, so nobody has to guess that the default is the very microphone they are looking for.
+QString AudioDevices::defaultMicName() const {
+    const QString id = resolveDefault("default");
+    if (id == "default") return {};
+    for (const auto &item : m_mics) if (item.toMap()["id"].toString() == id) return item.toMap()["name"].toString();
+    return {};
+}
 QString AudioDevices::problem(const AudioSpec &audio, bool mic) const {
     if (!mic && !audio.desktop) return {};
     if (!m_ready) return m_error.isEmpty() ? "checking audio inputs; try again in a moment" : m_error;
@@ -76,7 +84,14 @@ void AudioDevices::refresh() {
     if (scanning()) return;
     m_error.clear();
     if (qEnvironmentVariable("MOBS_FAKE_AUDIO") == "1") {
-        parse(R"([{"name":"test:mic","description":"Demo microphone"},{"name":"test:usb","description":"USB microphone"},{"name":"test:third","description":"Headset microphone"},{"name":"test:speakers.monitor","description":"Desktop speakers"},{"name":"test:headphones.monitor","description":"Headphones"}])", &m_mics, &m_desktops);
+        QByteArray json = R"([{"name":"test:mic","description":"Demo microphone"},{"name":"test:usb","description":"USB microphone"},{"name":"test:third","description":"Headset microphone"},{"name":"test:speakers.monitor","description":"Desktop speakers"},{"name":"test:headphones.monitor","description":"Headphones"}])";
+        // MOBS_FAKE_MORE_MICS=N adds N more microphones, for the day a real machine lists five (the Maono was the fifth row on 2026-10-13, below the fold of a list that showed three).
+        if (const int more = qBound(0, qEnvironmentVariableIntValue("MOBS_FAKE_MORE_MICS"), 40); more > 0) {
+            json.chop(1);
+            for (int i = 1; i <= more; ++i) json += QByteArray(R"(,{"name":"test:extra%1","description":"Extra microphone %1"})").replace("%1", QByteArray::number(i));
+            json += ']';
+        }
+        parse(json, &m_mics, &m_desktops);
         m_ready = true; emit changed(); return;
     }
     m_process.start(m_program, {"--format=json", "list", "sources"}); m_timeout.start(); emit changed();

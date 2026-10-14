@@ -259,11 +259,23 @@ void ObsBackend::tickGraph() {
         m_loggedScreen = true;
         emit captureSized(int(obs_source_get_width(m_video)), int(obs_source_get_height(m_video)));
         MobsLog::write("capture", QString("screen source is %1x%2 (%3)").arg(obs_source_get_width(m_video)).arg(obs_source_get_height(m_video)).arg(m_testScreen ? "test colour" : "whole screen"));
+        saveScreenChoice();   // the choice is remembered as soon as it is made, by the guide's preview as much as by a take: the person is asked once, not once per source
     }
     if (m_camera && !m_loggedCamera && obs_source_get_width(m_camera) > 0) {
         m_loggedCamera = true;
         MobsLog::write("capture", QString("camera source is %1x%2").arg(obs_source_get_width(m_camera)).arg(obs_source_get_height(m_camera)));
     }
+}
+
+// Save the restore token of the screen share, once the picker has been answered (the first picture is in). On 2026-10-13 the picker opened twice before a person could go live: the
+// guide's preview made its choice, the guide ended and the preview was rebuilt, and nothing had kept the first choice, because only a take saved it.
+void ObsBackend::saveScreenChoice() {
+    if (!m_needScreen || m_testScreen || !m_video) return;
+    obs_source_save(m_video);
+    obs_data_t *st = obs_source_get_settings(m_video);
+    const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
+    obs_data_release(st);
+    if (!tok.isEmpty() && tok != readToken(screenTokenFile())) writeToken(screenTokenFile(), tok);
 }
 
 // The whole-screen choice is remembered in its own file, apart from the plain token file that an older MOBS kept for a window choice:
@@ -660,13 +672,7 @@ void ObsBackend::poll() {
         if (screenUp && !m_screenReady.isValid()) m_screenReady.start();
         if (sourcesReady()) {
             // Save the restore token now, not at the end: a crash later must not cost the user another picker.
-            if (m_needScreen && !m_testScreen) {
-                obs_source_save(m_video);
-                obs_data_t *st = obs_source_get_settings(m_video);
-                const QString tok = QString::fromUtf8(obs_data_get_string(st, "RestoreToken"));
-                obs_data_release(st);
-                if (!tok.isEmpty()) writeToken(screenTokenFile(), tok);
-            }
+            saveScreenChoice();
             QString error;
             if (!startOutput(m_spec, &error)) { fail(error); return; }
             m_phase = Running;

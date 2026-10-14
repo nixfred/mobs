@@ -19,6 +19,8 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
         "MOBS_X_CHAT_URL": (Path(__file__).resolve().parent / "fake-studio.html").as_uri() + "?id=%1",
         "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-studio-live.html").as_uri(),
         "MOBS_TEST_SOURCE": "colour", "MOBS_TEST_CAMERA": "colour",
+        "MOBS_NO_PILOT": "1",   # the go-live helper is off unless a scenario turns it on (MOBS_NO_PILOT=0): the older scenarios are about the steps the person follows
+
         "MOBS_TOKEN_FILE": str(root / "token"), "MOBS_THEME_DIR": str(root / "theme"),
     }
     for key in ("MOBS_FAKE_BACKEND", "MOBS_FAKE_STOP_HANG", "MOBS_FAKE_STREAM_NEVER_LIVE", "MOBS_TEST_BLACK_CARD", "MOBS_TEST_AUDIO", "MOBS_TEST_DESKTOP_AUDIO", "MOBS_SCRIPT", "MOBS_SETTINGS", "MOBS_GRAB", "MOBS_SPLASH", "MOBS_SPLASH_AT", "MOBS_PICK", "MOBS_SCREEN", "MOBS_WINDOW_SIZE"):
@@ -124,36 +126,59 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           fake_backend=True, extra_env=relay_env)
     # The guided setup ("easy mode"): the first run walks the person through every step with a big NEXT, and keeps what they chose.
     setup_env = {"MOBS_SETUP": "1"}
+    def sources_env(query=""):   # the guide's X page reads the Sources page of a stand-in Live Studio, with the helper switched on and quick
+        return {"MOBS_NO_PILOT": "0", "MOBS_PILOT_TICK_MS": "250", "MOBS_X_SOURCES_URL": (Path(__file__).resolve().parent / "fake-livestudio-sources.html").as_uri() + ("?" + query if query else "")}
     check("the setup guide walks from welcome to FINISH and keeps what was chosen",
           "wait=0.5,expect=setupOpen:1,expect=setupStep:0,click=setupNext,expect=setupStep:1,expect=cameraLocked:0,click=setupLockCamera,expect=cameraLocked:1,click=setupNext,expect=setupStep:2,"
           "click=setupLockMic,expect=micLocked:1,click=setupNext,expect=setupStep:3,click=setupShowScreen,wait=0.8,expect=previewFrame:1,click=setupNext,expect=setupStep:4,wait=0.5,expect=pipShown:1,click=setupNext,"
-          "expect=setupStep:5,click=setupOpenStudio,click=setupNext,expect=setupStep:6,expect=setupSourceMode:,click=setupMakeSource,expect=setupSourceMode:make,click=setupNext,expect=setupStep:7,expect=streamReady:0,clip=abc123TESTKEY,click=setupPasteKey,expect=streamReady:1,click=setupNext,"
-          "expect=setupStep:8,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,click=setupNext,expect=setupStep:9,click=setupNext,expect=setupStep:10,click=setupNext,expect=setupOpen:0,expect=setupDone:1,expect=setupStep:0",
-          fake_backend=True, extra_env=setup_env,
-          expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "opening https://studio.x.com/live", "guided setup finished"))
+          "expect=setupStep:5,expect=streamReady:0,wait=6,expect=sourcePhase:done,expect=xSignedIn:1,expect=streamReady:1,expect=sourceName:Gus,click=setupNext,expect=setupStep:6,click=setupNext,expect=setupStep:7,click=setupNext,"
+          "expect=setupOpen:0,expect=setupDone:1,expect=setupStep:0",
+          fake_backend=True, extra_env=setup_env | sources_env(), limit=40,
+          expect_log=("camera locked in: Logitech BRIO", "microphone locked in", "[source] done:", "signed in to X inside MOBS", "guided setup finished"))
     check("the setup guide opens again where the person stopped", "wait=0.5,expect=setupOpen:1,expect=setupStep:3,click=setupBack,expect=setupStep:2", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=3\n")
     check("going back from the webcam page keeps the shared picture for the screen page, and lets go of the camera only at the camera page, which opens it again",
           "wait=0.5,expect=setupOpen:1,expect=setupStep:4,wait=0.6,expect=pipShown:1,click=setupBack,expect=setupStep:3,wait=0.6,expect=pipShown:1,"
           "click=setupBack,expect=setupStep:2,wait=0.4,expect=pipShown:1,click=setupBack,expect=setupStep:1,wait=0.6,expect=pipShown:0", fake_backend=True, extra_env=setup_env, ini_extra="setupStep=4\n")
     check("a mark on the ready screen opens the guide at the page that fixes it", "wait=0.4,expect=setupOpen:0,click=checkMic,expect=setupOpen:1,expect=setupStep:2", fake_backend=True)
-    check("the source page asks whether a source exists, holds the person until they answer, and shows the steps that fit the answer",
-          "setupstep=6,wait=0.4,expect=setupSourceMode:,checklayout,key=Space,wait=0.2,expect=setupStep:6,click=setupHaveSource,expect=setupSourceMode:have,checklayout,"
-          "click=setupMakeSource,expect=setupSourceMode:make,checklayout,key=Space,wait=0.2,expect=setupStep:7", fake_backend=True, extra_env=setup_env)
-    check("the name of the source is kept, and the key page and the done page fit with it",
-          "setupstep=7,wait=0.3,sourcename=Gus,expect=sourceName:Gus,checklayout,setupstep=10,wait=0.3,checklayout", fake_backend=True, extra_env=setup_env)
+    # The microphone list showed three rows with no sign of more: the Maono, the fifth row, was "not an option" (Fred, 2026-10-13). Every microphone is in view when the page has room,
+    # and a list that is still longer scrolls in place with a bar beside it.
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the microphone page lists every microphone: five rows, the system default and four microphones, are all in view",
+              "setupstep=2,wait=0.4,expect=setupMicRows:5,expect=setupMicAllShown:1,checklayout", size, True, extra_env=setup_env | {"MOBS_FAKE_MORE_MICS": "1"})
+        check("a microphone list longer than the page scrolls in place and the page still fits",
+              "setupstep=2,wait=0.4,expect=setupMicRows:25,expect=setupMicAllShown:0,checklayout", size, True, extra_env=setup_env | {"MOBS_FAKE_MORE_MICS": "21"})
+    check("the first row of the microphone list says which microphone the system default is",
+          "setupstep=2,wait=0.4,expect=setupMicFirst:USB microphone", fake_backend=True, extra_env=setup_env | {"MOBS_FAKE_DEFAULT_SOURCE": "test:usb"})
+    check("the camera page shows every camera it found", "setupstep=1,wait=0.4,expect=setupCameraAllShown:1,checklayout", fake_backend=True, extra_env=setup_env)
+    # Your X account, one page: MOBS signs in with the person (in the box), finds their source on X (or makes one) and takes the stream key AND the server address from X. The stand-in page
+    # (fake-livestudio-sources.html) has the structure of the real Sources page.
+    check("the X page finds the source on X and takes its key and address from X, with nothing copied by hand",
+          "setupstep=5,wait=6,expect=sourcePhase:done,expect=sourceName:Gus,expect=streamKeyIs:FAKEKEY00GUS,expect=streamUrlHas:va.fake.example,expect=xSignedIn:1,expect=streamReady:1,checklayout",
+          fake_backend=True, extra_env=setup_env | sources_env(), limit=30,
+          expect_log=("[source] reading: Reading your stream key from X", "[source] done: Your source, Gus, and its key are saved"), forbid_log=("FAKEKEY",))   # the key is never in the log
+    check("with no source on X the page makes one called MOBS and uses the address X shows for it, not a built-in one",
+          "setupstep=5,wait=9,expect=sourcePhase:done,expect=sourceName:MOBS,expect=streamKeyIs:FAKEKEY0MOBS,expect=streamUrlHas:or.fake.example,expect=streamReady:1",
+          fake_backend=True, extra_env=setup_env | sources_env("empty=1"), limit=35, expect_log=("[source] creating: You have no source on X yet",))
+    check("with two sources the one the person named is the one whose key is taken",
+          "sourcename=Studio,setupstep=5,wait=6,expect=sourcePhase:done,expect=streamKeyIs:FAKEKEY0STUD,expect=sourceName:Studio", fake_backend=True, extra_env=setup_env | sources_env("two=1"), limit=30)
+    check("a signed-out Live Studio waits for the person to sign in in the box, then carries on by itself",
+          "setupstep=5,wait=1.5,expect=sourcePhase:signin,expect=xSignedIn:0,expect=streamReady:0,wait=7,expect=sourcePhase:done,expect=xSignedIn:1,expect=streamReady:1", fake_backend=True, extra_env=setup_env | sources_env("login=3000"), limit=35)
+    check("when the key stays behind its dots the page says so and offers to paste it, and a web address is refused as a key",
+          "setupstep=5,wait=6,expect=sourcePhase:failed,expect=streamReady:0,wait=0.2,clip=rtmp://va.pscp.tv:80/x,click=setupPasteKey,wait=0.2,expect=streamReady:0,clip=abc123TESTKEY,click=setupPasteKey,expect=streamReady:1,click=setupNext,expect=setupStep:6",
+          fake_backend=True, extra_env=setup_env | sources_env("nokey=1"), limit=35)
+    check("when Live Studio never opens the page says so and the person can leave it", "setupstep=5,wait=5,expect=sourcePhase:failed,expect=streamReady:0,checklayout,click=setupSkip,expect=setupStep:6",
+          fake_backend=True, extra_env=setup_env | {"MOBS_X_SOURCES_URL": (Path(__file__).resolve().parent / "fake-studio-quiet.html").as_uri(), "MOBS_PILOT_WAIT_MS": "2500", "MOBS_PILOT_TICK_MS": "250"}, limit=30)
+    check("X's sign-in page is told passkeys do not exist, so it never waits for one",
+          "setupstep=5,wait=2.5,expect=studioTitle:passkey=NotAllowedError/gone", fake_backend=True, extra_env=setup_env | {"MOBS_X_SOURCES_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri(), "MOBS_PILOT_TICK_MS": "250"})
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the X page fits while it works and when it gave up", "setupstep=5,wait=1.2,checklayout,wait=5,checklayout", size, True, extra_env=setup_env | sources_env("nokey=1"), limit=30)
+    check("signing in to X is noticed from its home page only", "expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1",
+          fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
+    check("the done page fits with the name of the source", "setupstep=7,wait=0.3,sourcename=Gus,expect=sourceName:Gus,checklayout", fake_backend=True, extra_env=setup_env)
     check("the go-live window names the source to pick",
           "streamurl=rtmp://live.example/x,streamkey=test-key-123,sourcename=Gus,pick=1,arm=1,start,expect=state:recording,wait=0.6,expect=mainHeld:1,expect=goLiveSteps:Gus. A green dot,checklayout", fake_backend=True)
     check("the go-live window still reads well when no source name was given",
           "streamurl=rtmp://live.example/x,streamkey=test-key-123,pick=1,arm=1,start,expect=state:recording,wait=0.6,expect=mainHeld:1,expect=goLiveSteps:Pick your source. A green dot,checklayout", fake_backend=True)
-    check("after the sign-in the guide checks that Live Studio opens, and says so",
-          "setupstep=8,wait=0.5,expect=setupChatStudio:idle,xurl=https://x.com/home,wait=4,expect=setupChatStudio:ok", fake_backend=True, extra_env=setup_env)
-    check("when Live Studio does not open the guide says so and still lets the person go on",
-          "setupstep=8,wait=0.5,xurl=https://x.com/home,wait=9,expect=setupChatStudio:failed,expect=xSignedIn:1,click=setupNext,expect=setupStep:9", fake_backend=True,
-          extra_env=setup_env | {"MOBS_X_TRIES": "1", "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-login.html").as_uri()})
-    check("X's sign-in page is told passkeys do not exist, so it never waits for one",
-          "setupstep=8,wait=2.5,expect=setupChatTitle:passkey=NotAllowedError/gone", fake_backend=True, extra_env=setup_env)
-    check("signing in to X is noticed from its home page only", "setupstep=8,wait=0.5,expect=xSignedIn:0,xurl=https://x.com/i/flow/login,expect=xSignedIn:0,xurl=https://evil.example/home,expect=xSignedIn:0,xurl=https://x.com/home,expect=xSignedIn:1,wait=0.2,click=setupNext,expect=setupStep:9",
-          fake_backend=True, extra_env=setup_env, expect_log=("signed in to X inside MOBS",))
     # The chat of the person's own livestream, as X shows it: a Live Studio link (Copy URL) attaches it under the webcam, and the card shows only the Live Chat part.
     check("a Live Studio link attaches the chat under the webcam, and the card shows only its Live Chat",
           "pick=2,preview=1,wait=0.4,expect=chatWanted:0,xattach=https://x.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,expect=chatWanted:1,wait=6.5,expect=xCrop:shown,wait=0.8,expect=xFresh:1,expect=xRegionTall:180-300,expect=xPixels:ff00ff=none,expect=xPixels:123456=none,expect=xPixels:0a6e5c=some,wait=1.2,checkpip",
@@ -210,9 +235,8 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
           expect_log=("asking X's page again",), limit=55)
     check("a link that is not a Live Studio link attaches nothing", "pick=2,preview=1,wait=0.4,xattach=https://example.com/i/live-studio/1PJqrNXnQywxb,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
     check("the chat of a livestream ends with the take", "pick=2,preview=1,wait=0.4,xattach=https://x.com/i/broadcasts/1PJqrNXnQywxb,expect=chatXId:1PJqrNXnQywxb,start,expect=state:recording,stop,waitidle,expect=chatXId:,expect=chatWanted:0", fake_backend=True)
-    check("a web address pasted as the stream key is refused", "setupstep=7,wait=0.4,clip=rtmp://va.pscp.tv:80/x,click=setupPasteKey,wait=0.2,expect=streamReady:0", fake_backend=True, extra_env=setup_env)
     for size in ("860x560", "1024x768", "1180x720"):
-        check("the setup guide fits on every page", "wait=0.4," + ",".join(f"setupstep={n},wait=0.35,checklayout" for n in range(11)), size, True, extra_env=setup_env)
+        check("the setup guide fits on every page", "wait=0.4," + ",".join(f"setupstep={n},wait=0.35,checklayout" for n in range(8)), size, True, extra_env=setup_env)
     check("the webcam window is off when the setting is off, and the picture has no drag handle then either way", "pick=2,preview=1,wait=0.4,expect=pipWanted:0,expect=pipShown:0", fake_backend=True, ini_extra="pip=false\n")
     check("my screen and just my camera have no webcam window", "pick=1,preview=1,wait=0.3,expect=pipShown:0,pick=3,wait=0.3,expect=pipShown:0", fake_backend=True)
     check("the webcam window toggle in EXPERT", "pro=1,tab=0,wait=0.1,checklayout", "860x560")
@@ -244,6 +268,37 @@ with tempfile.TemporaryDirectory(prefix="mobs-ui-") as tmp:
     check("a plain recording hides MOBS's window at once, with nothing to hold", "pick=1,start,expect=state:recording,wait=0.3,expect=mainHeld:0", fake_backend=True)
     check("the hold ends by itself after a while", live_setup + "pick=1,arm=1,start,expect=state:recording,wait=0.3,expect=mainHeld:1,wait=1.3,expect=mainHeld:0",
           fake_backend=True, extra_env={"MOBS_HOLD_MS": "700"}, expect_log=("hiding it now",))
+    # The go-live helper (LivePilot) does the steps in Live Studio for the person, in MOBS's own browser. A stand-in page with the structure of the real one (fake-livestudio.html,
+    # read from the real page on 2026-10-13) stands in for X: the Create Livestream form, its Title, Source and Audience steps, Go Live grey until there is a title and the source is on.
+    def studio(query=""):
+        return {"MOBS_NO_PILOT": "0", "MOBS_PILOT_TICK_MS": "250", "MOBS_X_STUDIO_URL": (Path(__file__).resolve().parent / "fake-livestudio.html").as_uri() + ("?" + query if query else "")}
+    pilot_start = live_setup + "xurl=https://x.com/home,pick=1,arm=1,start,expect=state:recording,"
+    check("the helper types the title, waits until X sees the video, presses Go Live, attaches the chat and the window leaves by itself",
+          pilot_start + "livetitle=My first show,wait=0.5,expect=mainHeld:1,expect=chatXId:,wait=8,expect=pilotPhase:none,expect=chatXId:1PJqrNmYLjYxb,wait=2.2,expect=mainHeld:0",
+          fake_backend=True, extra_env=studio("on=2500"), limit=45,
+          expect_log=("[pilot] filling:", "typing the title (13 characters)", "who can watch: public", "[pilot] waiting: Waiting for X to see your video", "[pilot] pressing: X sees your video", "[pilot] done: You're live", "X chat attached"),
+          forbid_log=("My first show",))   # the title is the person's own words: it is typed into X, and the log only says how long it was
+    check("Go Live stays grey until the title is typed: the title Live Studio showed is replaced by the one chosen here",
+          pilot_start + "livetitle=New title,wait=4,expect=pilotTitle:New title,expect=pilotPhase:waiting,expect=pilotReason:Your source must be on to go live,expect=pilotProgress:2,expect=chatXId:",
+          fake_backend=True, extra_env=studio("on=60000&prefill=Old title"), limit=30)
+    check("with no title chosen the helper types the default one, so Go Live is never grey for want of a title",
+          pilot_start + "wait=4,expect=pilotTitle:Live with MOBS,expect=liveTitle:Live with MOBS,expect=pilotPhase:waiting", fake_backend=True, extra_env=studio("on=60000"), limit=30)
+    check("a livestream for me only is set to Private in the form", pilot_start + "livepublic=0,wait=5,expect=pilotVisibility:private,expect=pilotPhase:waiting", fake_backend=True, extra_env=studio("on=60000"), limit=30)
+    check("a form that starts on Private is changed to Public when everyone should watch", pilot_start + "wait=5,expect=pilotVisibility:public,expect=pilotPhase:waiting", fake_backend=True, extra_env=studio("on=60000&private=1"), limit=30)
+    check("with two sources the one the person named is picked, and the livestream goes live",
+          pilot_start + "sourcename=MOBS,wait=9,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, extra_env=studio("two=1&on=300"), limit=45)
+    check("a source that is never seen on makes the helper say so in X's words and hand over", 
+          pilot_start + "wait=6,expect=pilotPhase:failed,expect=pilotFailure:still does not see your video,click=goLiveHide,expect=mainHeld:0",
+          fake_backend=True, extra_env=studio("never=1") | {"MOBS_PILOT_WAIT_MS": "2500"}, limit=30)
+    check("an error from Live Studio after Go Live is shown and the helper hands over", pilot_start + "wait=7,expect=pilotPhase:failed,expect=pilotFailure:Error creating livestream", fake_backend=True, extra_env=studio("on=300&fail=1"), limit=30)
+    check("a signed-out Live Studio is signed in to in the box, and the helper carries on by itself afterwards",
+          pilot_start + "wait=1.5,expect=pilotPhase:signin,wait=9,expect=chatXId:1PJqrNmYLjYxb", fake_backend=True, extra_env=studio("login=3000&on=300"), limit=45)
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the go-live window with the helper at work fits", pilot_start + "wait=3,expect=pilotPhase:waiting,checklayout", size, True, extra_env=studio("on=60000"), limit=30)
+        check("the go-live window with the helper given up fits", pilot_start + "wait=5,expect=pilotPhase:failed,checklayout", size, True, extra_env=studio("never=1") | {"MOBS_PILOT_WAIT_MS": "2500"}, limit=30)
+    for size in ("860x560", "1024x768", "1180x720"):
+        check("the ready screen with the title box and who can watch fits", live_setup + "pick=1,wait=0.3,expect=readyTitle:A rather long title for my livestream about omarchy,checklayout,livepublic=0,wait=0.1,checklayout", size, True,
+              ini_extra="liveTitle=A rather long title for my livestream about omarchy\n")
     check("a copied X link that is not a livestream link gets a note, and a real one attaches the chat",
           live_setup + "xurl=https://x.com/home,pick=1,arm=1,start,expect=state:recording,clip=https://x.com/NixFred/status/1234567890123456789,wait=3,expect=mainHeld:1,expect=goLiveNote:not a livestream link,checklayout,"   # copied DURING the broadcast: what is on the clipboard when it begins is old
           "clip=https://x.com/i/broadcasts/1PJqrNXnQywxb,wait=3,expect=chatXId:1PJqrNXnQywxb,expect=goLiveNote:Chat attached", fake_backend=True,

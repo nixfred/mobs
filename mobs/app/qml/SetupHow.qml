@@ -1,8 +1,8 @@
 import QtQuick
 import MobsCore
 
-// Step 9: what going live looks like, every time, with the real Live Studio dialog. X makes a new livestream for each broadcast; the source
-// (the front door) stays. This is the one thing MOBS cannot do for the person, so the page says it plainly and shows it.
+// Step 7: what going live looks like, every time. MOBS does the steps in X's Live Studio itself (LivePilot): it types the title, waits until X says it sees the video, presses Go Live and
+// takes the livestream's address from the page. The picture is the REAL Create Livestream form it fills in, with a ring on the two things that matter.
 Item {
     id: root
     objectName: "setupHow"
@@ -13,16 +13,16 @@ Item {
         spacing: 26
         GuideImage {
             name: "x-create-livestream.png"; maxWidth: 440; maxHeight: 250
-            rings: [{ x: 0.26, y: 0.399, w: 0.575, h: 0.073 }, { x: 0.854, y: 0.901, w: 0.086, h: 0.06 }]
+            rings: [{ x: 0.26, y: 0.185, w: 0.575, h: 0.085 }, { x: 0.854, y: 0.901, w: 0.086, h: 0.06 }]
         }
         Column {
             width: Math.min(380, root.width - 48 - 440 - 26); spacing: 9
             Txt { text: "Going live, every time"; font.pixelSize: 24; font.bold: true }
             Txt {
                 width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; color: Omarchy.foreground; lineHeight: 1.2
-                text: "1. In MOBS press GO LIVE. Your picture goes to X. Nobody sees it yet.\n2. In Live Studio press New Livestream and pick your source" + (Prefs.sourceName !== "" ? ", " + Prefs.sourceName : "") + ". A green dot means MOBS is connected to it.\n3. Choose Public (or Private to try it out), then press Go Live.\n4. Press Post livestream on X so your followers know."
+                text: "1. Type a title on the ready screen (MOBS remembers it) and press GO LIVE. Your picture goes to X.\n2. MOBS fills in this form for you in its own box: the title, who can watch. X will not let you go live without a title.\n3. MOBS waits until X says it sees your video (X looks every 20 seconds), then presses Go Live. Your chat shows under your webcam and this window steps out of the picture."
             }
-            Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "MOBS opens Live Studio for you and shows this again right before you go live." }
+            Txt { width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 12; color: Omarchy.tertiaryText; text: "There is nothing to click in X. If something goes wrong MOBS says what X said, and you can finish in the same box." }
         }
     }
 }

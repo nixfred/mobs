@@ -34,6 +34,9 @@ class Settings : public QObject {
     Q_PROPERTY(bool xSignedIn READ xSignedIn NOTIFY changed)           // the person signed in to X inside MOBS, so the chat can show under the webcam
     Q_PROPERTY(QString sourceName READ sourceName NOTIFY changed)      // what the person calls their source on X: shown again when they go live, so they pick the right one
     Q_PROPERTY(bool micLocked READ micLocked NOTIFY changed)           // the person pressed "this is my microphone": it stays until they change it
+    Q_PROPERTY(QString liveTitle READ liveTitle NOTIFY changed)        // what the person typed as the title of their livestream ("" = they have not): X will not let anyone go live without one
+    Q_PROPERTY(QString liveTitleForX READ liveTitleForX NOTIFY changed)   // the title MOBS types into Live Studio: what was typed, or the default when nothing was
+    Q_PROPERTY(bool livePublic READ livePublic NOTIFY changed)         // everyone can watch (X's own default), or only the person (a test)
     Q_PROPERTY(QString aboutText READ aboutText CONSTANT)
 public:
     // streamKeyFile is where the stream key is kept (owner-only). Empty = nowhere, so a test can never write into a real config.
@@ -69,6 +72,13 @@ public:
     int setupStep() const { return m_setupStep; }
     bool micLocked() const { return m_micLocked; }
     QString sourceName() const { return m_sourceName; }
+    QString liveTitle() const { return m_liveTitle; }
+    QString liveTitleForX() const { return m_liveTitle.isEmpty() ? defaultLiveTitle() : m_liveTitle; }
+    static QString defaultLiveTitle() { return QStringLiteral("Live with MOBS"); }
+    static QString cleanLiveTitle(const QString &title);   // one line of plain text, at most 100 characters: it is typed into X's own form
+    Q_INVOKABLE void setLiveTitle(const QString &title);
+    bool livePublic() const { return m_livePublic; }
+    Q_INVOKABLE void setLivePublic(bool everyone);
     Q_INVOKABLE void setSourceName(const QString &name);
     static QString cleanSourceName(const QString &name);   // plain words only, at most 40 characters: it is shown as text
     bool xSignedIn() const { return m_xSignedIn; }
@@ -126,7 +136,8 @@ private:
     int m_chatRelayPort = 8799;
     bool m_setupDone = false, m_micLocked = false, m_xSignedIn = false;
     int m_setupStep = 0;
-    QString m_sourceName;
+    QString m_sourceName, m_liveTitle;
+    bool m_livePublic = true;
     QString m_streamUrl = kXUsEast, m_streamKeyFile;
     bool m_keySaved = false;
     int m_streamQuality = 2;

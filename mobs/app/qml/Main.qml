@@ -13,6 +13,8 @@ Window {
     title: "mobs"
     color: Omarchy.background
 
+    // A text box on a screen (the livestream title on the ready screen) lets go of the keyboard when it is done, so the keys of the screen work again.
+    function focusKeys() { keyboard.forceActiveFocus() }
     // Monologue's unchanged EditBar calls these methods on its host window.
     function preciseTime(seconds) { return reviewScreen.preciseTime(seconds) }
     function restoreGap(gap) { reviewScreen.restoreGap(gap) }

@@ -30,11 +30,11 @@ qt_add_qml_module(mobs
     qml/Main.qml qml/Txt.qml qml/Glyph.qml qml/Key.qml qml/Chip.qml qml/Card.qml
     qml/Header.qml qml/Footer.qml qml/ChooseScreen.qml qml/ReadyScreen.qml qml/RecordingScreen.qml qml/CameraPanel.qml qml/PreviewView.qml qml/ReviewScreen.qml qml/Button.qml qml/ProDrawer.qml qml/Toggle.qml qml/AudioPage.qml qml/LevelMeter.qml qml/DevicePicker.qml ${MONOLOGUE_SRC}/EditBar.qml
 )
-qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml qml/ChatPanel.qml)   # the opening screen, the webcam window and its chat card
+qt_target_qml_sources(mobs QML_FILES qml/SplashScreen.qml qml/PipWindow.qml qml/ChatPanel.qml qml/ListBar.qml)   # the opening screen, the webcam window and its chat card
 target_link_libraries(mobs PRIVATE mobs-core Qt6::WebEngineQuick)
 # The guided setup ("easy mode"): its pages, and the REAL pictures of X's screens it points at (cropped from real screenshots, never drawn).
-qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/XLiveFinder.qml qml/FlowPicture.qml qml/SetupChat.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupStudio.qml qml/SetupSource.qml qml/SetupKey.qml qml/SetupHow.qml qml/SetupDone.qml
-    RESOURCES assets/guide/x-live-studio.png assets/guide/x-manage-sources.png assets/guide/x-source-card.png assets/guide/x-create-livestream.png assets/guide/x-livestream-live.png)
+qt_target_qml_sources(mobs QML_FILES qml/BigButton.qml qml/GuideImage.qml qml/GoLiveGuide.qml qml/XChatView.qml qml/XLiveFinder.qml qml/XStudioView.qml qml/LivePilot.qml qml/SourcePilot.qml qml/SetupX.qml qml/SetupGuide.qml qml/SetupWelcome.qml qml/SetupCamera.qml qml/SetupMic.qml qml/SetupScreen.qml qml/SetupWebcam.qml qml/SetupHow.qml qml/SetupDone.qml
+    RESOURCES assets/guide/x-create-livestream.png assets/pilot/xstudio-pilot.js)
 
 foreach(t palette appstate engine control camera preview review settings audiodevices obsbackend mobslog pipcontroller streamhealth chatmodel chatrelay)
   add_executable(tst_${t} tests/tst_${t}.cpp)

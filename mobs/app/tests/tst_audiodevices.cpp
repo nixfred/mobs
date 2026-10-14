@@ -35,6 +35,24 @@ private slots:
         QCOMPARE(devices.name("test:usb"), QString("USB microphone"));
         QCOMPARE(devices.name("missing"), QString("unavailable microphone"));
     }
+    void theSystemDefaultIsNamedByTheMicrophoneItIs() {
+        qputenv("MOBS_FAKE_AUDIO", "1"); qunsetenv("MOBS_FAKE_DEFAULT_SOURCE"); AudioDevices devices; devices.refresh();
+        QCOMPARE(devices.defaultMicName(), QString());                                   // the stand-in default is "default": no microphone to name
+        qputenv("MOBS_FAKE_DEFAULT_SOURCE", "test:usb");
+        QCOMPARE(devices.defaultMicName(), QString("USB microphone"));
+        qputenv("MOBS_FAKE_DEFAULT_SOURCE", "not-a-listed-microphone");
+        QCOMPARE(devices.defaultMicName(), QString());                                   // a default that is not a listed microphone (an output monitor, say) is not named
+        qunsetenv("MOBS_FAKE_DEFAULT_SOURCE");
+    }
+    void aTestCanAskForMoreMicrophones() {
+        qputenv("MOBS_FAKE_AUDIO", "1"); qunsetenv("MOBS_FAKE_MORE_MICS"); AudioDevices few; few.refresh();
+        QCOMPARE(few.microphones().size(), 3);
+        qputenv("MOBS_FAKE_MORE_MICS", "2"); AudioDevices more; more.refresh();
+        QCOMPARE(more.microphones().size(), 5);
+        QCOMPARE(more.microphones().last().toMap()["name"].toString(), QString("Extra microphone 2"));
+        QCOMPARE(more.desktops().size(), 2);                                             // the outputs are untouched
+        qunsetenv("MOBS_FAKE_MORE_MICS");
+    }
     void asynchronousFailureClearsOldDevicesAndFinishesScanning() {
         qputenv("MOBS_FAKE_AUDIO", "1"); AudioDevices devices(nullptr, "/no/such/pactl"); devices.refresh();
         QVERIFY(devices.ready()); qunsetenv("MOBS_FAKE_AUDIO"); devices.refresh();

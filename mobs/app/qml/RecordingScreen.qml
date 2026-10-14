@@ -102,10 +102,11 @@ Item {
                 objectName: "liveStudioLink"
                 width: controls.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap   // wraps in the narrow column instead of running off it
                 visible: Engine.streamRequested && Engine.state !== "stopping"
-                text: Engine.streamState === "live" ? "viewers see it after you press Go live in X Live Studio" : "open X Live Studio"
+                text: Chat.xId !== "" ? "you are live on X: open your livestream in Live Studio"   // the livestream exists (MOBS pressed Go Live, or the person did)
+                    : Engine.streamState === "live" ? "viewers see it after Go live is pressed in X Live Studio" : "open X Live Studio"
                 font.pixelSize: 13; font.underline: true; color: Omarchy.accent
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("https://studio.x.com/live") }
+                TapHandler { onTapped: Qt.openUrlExternally(Chat.xId !== "" ? "https://studio.x.com/live/" + Chat.xId : "https://studio.x.com/live") }
             }
             Txt {
                 text: Engine.elapsedText; font.bold: true; width: controls.width; horizontalAlignment: Text.AlignHCenter

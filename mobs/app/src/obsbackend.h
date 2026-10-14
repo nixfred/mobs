@@ -43,6 +43,7 @@ private:
     void applyPlacement(const RecordSpec &spec);
     QString screenTokenFile() const;
     void tickGraph();
+    void saveScreenChoice();   // the screen share's restore token, saved as soon as the person has answered the picker
     void dropGraph();
     bool startOutput(const RecordSpec &spec, QString *error);
     void stopOutput();

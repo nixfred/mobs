@@ -44,6 +44,8 @@ Settings::Settings(QSettings *settings, QObject *parent, QString streamKeyFile)
     m_setupStep = qBound(0, m_settings->value("setupStep", 0).toInt(), 20);
     m_micLocked = m_settings->value("micLocked", false).toBool();
     m_sourceName = cleanSourceName(m_settings->value("sourceName").toString());
+    m_liveTitle = cleanLiveTitle(m_settings->value("liveTitle").toString());
+    m_livePublic = m_settings->value("livePublic", true).toBool();
     m_xSignedIn = m_settings->value("xSignedIn", false).toBool();
     const QString url = m_settings->value("streamUrl").toString().trimmed();
     if (streamUrlProblem(url).isEmpty()) m_streamUrl = url;

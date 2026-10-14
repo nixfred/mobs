@@ -3,14 +3,14 @@ import MobsCore
 
 // The guided setup ("easy mode"): one thing per page, a big NEXT, and real pictures of what to click. It opens by itself the first time
 // and any time from "setup guide" on the ready screen. It never asks anything MOBS can work out, and it keeps what the person chose:
-// the camera and the microphone they lock in, the whole screen, the X stream key. Where the person stopped is remembered (Prefs.setupStep).
+// the camera and the microphone they lock in, the whole screen, and X (MOBS reads the stream key from X itself). Where the person stopped is remembered (Prefs.setupStep).
 Rectangle {
     id: root
     objectName: "contentScreen"   // the layout check treats it like every other screen: nothing may leave its area
     color: Omarchy.background
     visible: App.setupOpen
     property int step: Math.max(0, Math.min(Prefs.setupStep, titles.length - 1))   // a step saved by an older build can never point past the last page
-    readonly property var titles: ["welcome", "camera", "microphone", "your screen", "your webcam", "open X", "your source", "stream key", "chat", "going live", "all set"]
+    readonly property var titles: ["welcome", "camera", "microphone", "your screen", "your webcam", "your X account", "going live", "all set"]
     readonly property int last: titles.length - 1
     readonly property var page: pageLoader.item
     readonly property bool pageCanNext: page ? page.canNext : false
@@ -76,17 +76,14 @@ Rectangle {
     Loader {
         id: pageLoader
         anchors { top: progress.bottom; bottom: buttons.top; left: parent.left; right: parent.right; topMargin: 6; bottomMargin: 6 }
-        sourceComponent: [welcome, camera, mic, screen, webcam, studio, source, key, chatPage, how, done][root.step]
+        sourceComponent: [welcome, camera, mic, screen, webcam, xAccount, how, done][root.step]
     }
     Component { id: welcome; SetupWelcome {} }
     Component { id: camera; SetupCamera {} }
     Component { id: mic; SetupMic {} }
     Component { id: screen; SetupScreen {} }
     Component { id: webcam; SetupWebcam {} }
-    Component { id: studio; SetupStudio {} }
-    Component { id: source; SetupSource {} }
-    Component { id: key; SetupKey {} }
-    Component { id: chatPage; SetupChat {} }
+    Component { id: xAccount; SetupX {} }
     Component { id: how; SetupHow {} }
     Component { id: done; SetupDone {} }
 

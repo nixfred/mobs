@@ -12,6 +12,7 @@
 #include "settings.h"
 #include "thumbprovider.h"
 #include <QDateTime>
+#include <QFile>
 #include <QQmlContext>
 #include <QDir>
 #include <QGuiApplication>
@@ -326,6 +327,16 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("xLoginUrl", qEnvironmentVariable("MOBS_X_LOGIN_URL", "https://x.com/home"));
     engine.rootContext()->setContextProperty("xChatUrlTemplate", qEnvironmentVariable("MOBS_X_CHAT_URL", "https://studio.x.com/live/%1"));   // the page itself: x.com/i/live-studio/<id> holds it in an iframe a script cannot see into
     engine.rootContext()->setContextProperty("xStudioUrl", qEnvironmentVariable("MOBS_X_STUDIO_URL", "https://studio.x.com/live"));   // the guide opens it once after sign-in, to see that Live Studio opens for this account
+    // The go-live helper (LivePilot): it does the steps in Live Studio for the person. MOBS_NO_PILOT=1 turns it off (the window is then the steps for the person alone, as before),
+    // MOBS_PILOT_TICK_MS is how often it looks at the page, and MOBS_PILOT_WAIT_MS how long it waits for X to say it sees the video before it gives up (tests shorten both).
+    {   // the page half of the helper (a file in the resources): loaded into every Live Studio page the helper opens
+        QFile helper(QStringLiteral(":/qt/qml/Mobs/assets/pilot/xstudio-pilot.js"));
+        engine.rootContext()->setContextProperty("pilotHelperJs", helper.open(QIODevice::ReadOnly) ? QString::fromUtf8(helper.readAll()) : QString());
+    }
+    engine.rootContext()->setContextProperty("pilotAllowed", qEnvironmentVariable("MOBS_NO_PILOT") != "1");
+    engine.rootContext()->setContextProperty("pilotTickMs", qEnvironmentVariableIntValue("MOBS_PILOT_TICK_MS") > 0 ? qEnvironmentVariableIntValue("MOBS_PILOT_TICK_MS") : 1000);
+    engine.rootContext()->setContextProperty("pilotPatienceMs", qEnvironmentVariableIntValue("MOBS_PILOT_WAIT_MS") > 0 ? qEnvironmentVariableIntValue("MOBS_PILOT_WAIT_MS") : 100000);
+    engine.rootContext()->setContextProperty("xSourcesUrl", qEnvironmentVariable("MOBS_X_SOURCES_URL", "https://studio.x.com/live/sources"));   // the Sources page: the setup guide reads the stream key and address from it
     engine.rootContext()->setContextProperty("xChatTries", qEnvironmentVariableIntValue("MOBS_X_TRIES") > 0 ? qEnvironmentVariableIntValue("MOBS_X_TRIES") : 12);   // tests shorten how long the chat card is looked for
     engine.loadFromModule("Mobs", "Main");
     syncPreview();   // a preview left on last time starts with the app
@@ -556,11 +567,27 @@ int main(int argc, char *argv[]) {
                 }   // MOBS's window is kept up while the person finishes going live
                 else if (ok && condition[0] == "setupStep") ok = prefs.setupStep() == condition[1].toInt();
                 else if (ok && condition[0] == "sourceName") ok = prefs.sourceName() == condition[1];
-                else if (ok && condition[0] == "setupSourceMode") { auto *page = window->findChild<QObject *>("setupSource"); ok = page && page->property("mode").toString() == condition[1]; }   // "" until the person says whether a source exists
+                else if (ok && condition[0] == "setupMicAllShown") { auto *list = window->findChild<QObject *>("setupMicList"); ok = list && list->property("allShown").toBool() == (condition[1] == "1"); }   // every microphone is in view (else the bar beside the list shows)
+                else if (ok && condition[0] == "setupMicRows") { auto *list = window->findChild<QObject *>("setupMicList"); ok = list && list->property("count").toInt() == condition[1].toInt(); }   // how many rows the microphone list has, "system default" included
+                else if (ok && condition[0] == "setupMicFirst") { auto *list = window->findChild<QObject *>("setupMicList"); ok = list && list->property("firstRow").toString().contains(condition[1]); }   // the first row says what the system default is
+                else if (ok && condition[0] == "setupCameraAllShown") { auto *list = window->findChild<QObject *>("setupCameraList"); ok = list && list->property("allShown").toBool() == (condition[1] == "1"); }
+                else if (ok && condition[0] == "studioTitle") { auto *view = window->findChild<QObject *>("studioView"); ok = view && view->property("title").toString().contains(condition[1]); }   // what the page in the helper's box calls itself (the stand-in sign-in page writes what it saw there)
+                else if (ok && condition[0] == "sourcePhase") { auto *pilot = window->findChild<QObject *>("sourcePilot"); ok = pilot ? pilot->property("phase").toString() == condition[1] : condition[1] == "none"; }   // what the setup page's helper is doing: loading, signin, looking, creating, reading, done, failed
+                else if (ok && condition[0] == "streamUrlHas") ok = prefs.streamUrl().contains(condition[1]);   // the server address contains this (no colon: the expect syntax has only one)
+                else if (ok && condition[0] == "streamKeyIs") ok = prefs.streamSpec().key == condition[1];   // tests use a made-up key: this compares it, C++ only, and never prints a real one
+                else if (ok && condition[0] == "pilotPhase") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot ? pilot->property("phase").toString() == condition[1] : condition[1] == "none"; }   // what the go-live helper is doing: loading, opening, filling, waiting, pressing, done, failed (none: it is not running)
+                else if (ok && condition[0] == "pilotProgress") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("progress").toInt() == condition[1].toInt(); }
+                else if (ok && condition[0] == "pilotNote") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("note").toString().contains(condition[1]); }
+                else if (ok && condition[0] == "pilotReason") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("reason").toString().contains(condition[1]); }
+                else if (ok && condition[0] == "pilotFailure") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("failure").toString().contains(condition[1]); }
+                else if (ok && condition[0] == "pilotTitle") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("seenTitle").toString() == condition[1]; }   // the title the form showed when the helper last looked
+                else if (ok && condition[0] == "pilotVisibility") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("seenVisibility").toString() == condition[1]; }
+                else if (ok && condition[0] == "pilotSource") { auto *pilot = window->findChild<QObject *>("livePilot"); ok = pilot && pilot->property("seenSource").toString() == condition[1]; }
+                else if (ok && condition[0] == "readyTitle") { auto *box = window->findChild<QObject *>("liveTitleInput"); ok = box && box->property("text").toString() == condition[1]; }   // what the ready screen's title box shows
+                else if (ok && condition[0] == "liveTitle") ok = prefs.liveTitleForX() == condition[1];
+                else if (ok && condition[0] == "livePublic") ok = prefs.livePublic() == (condition[1] == "1");
                 else if (ok && condition[0] == "goLiveSteps") { auto *steps = window->findChild<QObject *>("goLiveSteps"); ok = steps && steps->property("text").toString().contains(condition[1]); }   // the go-live window's steps say this
-                else if (ok && condition[0] == "setupChatTitle") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("pageTitle").toString() == condition[1]; }   // what the stand-in sign-in page reports it saw
                 else if (ok && condition[0] == "goLiveNote") { auto *line = window->findChild<QObject *>("goLiveChatStatus"); ok = line && line->property("text").toString().contains(condition[1]); }   // the go-live window's chat line says this
-                else if (ok && condition[0] == "setupChatStudio") { auto *page = window->findChild<QObject *>("setupChat"); ok = page && page->property("studio").toString() == condition[1]; }   // does Live Studio open for the signed-in account?
                 else if (ok && condition[0] == "setupDone") ok = prefs.setupDone() == (condition[1] == "1");
                 else if (ok && condition[0] == "cameraLocked") ok = state.cameraLocked() == (condition[1] == "1");
                 else if (ok && condition[0] == "micLocked") ok = prefs.micLocked() == (condition[1] == "1");
@@ -580,7 +607,9 @@ int main(int argc, char *argv[]) {
             else if (st == "checklayout") {
                 if (!qmlWarnings.isEmpty()) { app.exit(6); return; }
                 QStringList problems;
-                std::function<void(QQuickItem *, QRectF)> inspect = [&](QQuickItem *item, QRectF area) {
+                // A row of a list that scrolls in place sits outside the list's box until it is scrolled to: it is clipped away, so it is not on the screen at all (only what
+                // a clipping parent really shows is checked against the screen).
+                std::function<void(QQuickItem *, QRectF, QRectF)> inspect = [&](QQuickItem *item, QRectF area, QRectF shown) {
                     if (!item->isVisible()) return;
                     if (item->objectName() == "contentScreen" || item->objectName() == "expertPanel")
                         area = item->mapRectToItem(window->contentItem(), QRectF(0, 0, item->width(), item->height()));
@@ -592,12 +621,13 @@ int main(int argc, char *argv[]) {
                     }
                     if ((!text.isEmpty() && !item->inherits("QQuickTextInput")) || item->objectName() == "recordButton" || item->objectName() == "readyPreview" || item->objectName() == "recordingPreview" || item->objectName() == "liveBadge") {
                         const QRectF box = item->mapRectToItem(window->contentItem(), QRectF(0, 0, item->width(), item->height()));
-                        if (box.left() < area.left() - 1 || box.top() < area.top() - 1 || box.right() > area.right() + 1 || box.bottom() > area.bottom() + 1)
+                        if (box.intersects(shown) && (box.left() < area.left() - 1 || box.top() < area.top() - 1 || box.right() > area.right() + 1 || box.bottom() > area.bottom() + 1))
                             problems.append(text.isEmpty() ? item->objectName() : text.left(100));
                     }
-                    for (auto *child : item->childItems()) inspect(child, area);
+                    if (item->clip()) shown = shown.intersected(item->mapRectToItem(window->contentItem(), QRectF(0, 0, item->width(), item->height())));
+                    for (auto *child : item->childItems()) inspect(child, area, shown);
                 };
-                inspect(window->contentItem(), QRectF(0, 0, window->width(), window->height()));
+                inspect(window->contentItem(), QRectF(0, 0, window->width(), window->height()), QRectF(0, 0, window->width(), window->height()));
                 if (!problems.isEmpty()) { std::fprintf(stderr, "layout overflow: %s\n", qPrintable(problems.join(" | "))); app.exit(5); return; }
                 QTimer::singleShot(0, &app, *run);
             }
@@ -635,6 +665,8 @@ int main(int argc, char *argv[]) {
             else if (st.startsWith("sourcename=")) { prefs.setSourceName(st.mid(11)); QTimer::singleShot(0, &app, *run); }   // the name of the source on X, as typed on the key page
             else if (st.startsWith("xurl=")) { prefs.noteXUrl(st.mid(5)); QTimer::singleShot(0, &app, *run); }   // the sign-in browser showed this page
             else if (st.startsWith("xattach=")) { std::printf("script: xattach %d\n", int(chat.attachX(st.mid(8)))); QTimer::singleShot(0, &app, *run); }   // a Live Studio link was copied
+            else if (st.startsWith("livetitle=")) { prefs.setLiveTitle(st.mid(10)); QTimer::singleShot(0, &app, *run); }   // what the person typed as the title of their livestream
+            else if (st.startsWith("livepublic=")) { prefs.setLivePublic(st.mid(11) == "1"); QTimer::singleShot(0, &app, *run); }
             else if (st.startsWith("setupstep=")) { prefs.setSetupStep(st.mid(10).toInt()); QTimer::singleShot(0, &app, *run); }   // jump the guided setup to a page
             else if (st.startsWith("clip=")) {   // text on the clipboard of THIS run only: never on a real desktop's, so only the offscreen platform may do it
                 if (QGuiApplication::platformName() != "offscreen") { std::fprintf(stderr, "script: clip= works only on the offscreen platform\n"); app.exit(4); return; }

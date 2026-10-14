@@ -19,8 +19,8 @@ Item {
             visible: showPreview
             anchors.horizontalCenter: parent.horizontalCenter
             // The space the controls below really take: a fixed budget missed the extra rows on taller windows.
-            readonly property real reservedHeight: goLive.height + statusLine.height + checks.height + recordOnly.height + (hotkeys.visible ? hotkeys.height : 0)
-                + (warningText.visible ? warningText.height : 0) + (noticeText.visible ? noticeText.height : 0) + readyColumn.spacing * (4 + (hotkeys.visible ? 1 : 0)
+            readonly property real reservedHeight: goLive.height + liveOptions.height + statusLine.height + checks.height + recordOnly.height + (hotkeys.visible ? hotkeys.height : 0)
+                + (warningText.visible ? warningText.height : 0) + (noticeText.visible ? noticeText.height : 0) + readyColumn.spacing * (5 + (hotkeys.visible ? 1 : 0)
                 + (warningText.visible ? 1 : 0) + (noticeText.visible ? 1 : 0)) + 12
             previewWidth: Math.min(480, Math.max(96, (root.height - reservedHeight - captionHeight) * 16 / 9))   // a small window shrinks the picture, never pushes it off the top
         }
@@ -37,7 +37,36 @@ Item {
             Txt { id: goLiveLabel; anchors.centerIn: parent; font.pixelSize: 22; font.bold: true; text: "GO LIVE to X"; color: Omarchy.accentForeground }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: goLive.clicked() }
-            onClicked: { if (Prefs.streamReady) { Engine.setStreamArmed(true); Engine.start(App.pick) } else root.guide(5) }
+            onClicked: { Window.window.focusKeys(); if (Prefs.streamReady) { Engine.setStreamArmed(true); Engine.start(App.pick) } else root.guide(5) }
+        }
+        // What the livestream is called, and who can watch it. X's Live Studio will not let anyone go live without a title, so MOBS types it there for you; both are kept until you change them.
+        Row {
+            id: liveOptions
+            objectName: "liveOptions"
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: 10
+            Rectangle {
+                width: Math.min(340, root.width - 200); height: 36; radius: 18; color: Omarchy.lighterBackground
+                border.color: titleInput.activeFocus ? Omarchy.accent : Omarchy.selection
+                TextInput {
+                    id: titleInput
+                    objectName: "liveTitleInput"
+                    anchors { fill: parent; leftMargin: 16; rightMargin: 16 }
+                    verticalAlignment: TextInput.AlignVCenter; clip: true; maximumLength: 100
+                    font.pixelSize: 13; color: Omarchy.foreground
+                    Component.onCompleted: text = Prefs.liveTitle
+                    onTextEdited: Prefs.setLiveTitle(text)
+                    onAccepted: Window.window.focusKeys()
+                    Keys.onEscapePressed: Window.window.focusKeys()
+                }
+                Txt { anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter } visible: titleInput.text === ""; text: "title of your livestream: " + Prefs.liveTitleForX; font.pixelSize: 13; color: Omarchy.tertiaryText }
+            }
+            Chip {
+                objectName: "livePublicChip"; glyph: ""; clickable: true; implicitHeight: 36
+                text: Prefs.livePublic ? "everyone can watch" : "only me (test)"
+                tint: Prefs.livePublic ? Omarchy.green : Omarchy.yellow
+                onClicked: Prefs.setLivePublic(!Prefs.livePublic)
+            }
         }
         Column {
             id: statusLine
@@ -83,13 +112,13 @@ Item {
             Chip {
                 objectName: "checkX"; glyph: "X"; clickable: true; tint: Prefs.streamReady ? Omarchy.green : Omarchy.red
                 text: Prefs.streamReady ? (Prefs.sourceName !== "" ? "X: " + Prefs.sourceName : "X connected") : "connect X"
-                onClicked: root.guide(Prefs.streamReady ? 7 : 5)
+                onClicked: root.guide(5)
             }
             Chip {
                 objectName: "checkChat"; glyph: "\uf086"; clickable: true
                 tint: Chat.xId !== "" ? Omarchy.green : Prefs.xSignedIn ? Omarchy.yellow : Omarchy.tertiaryText
                 text: Chat.xId !== "" ? "chat attached" : Prefs.xSignedIn ? "chat: found when you go live" : "add chat"
-                onClicked: root.guide(8)
+                onClicked: root.guide(5)
             }
         }
         Row {

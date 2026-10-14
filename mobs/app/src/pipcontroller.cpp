@@ -33,7 +33,7 @@ PipController::PipController(AppState *state, Engine *engine, Settings *prefs, Q
     connect(m_engine, &Engine::previewingChanged, this, [this] { rememberActive(); emit changed(); });
     connect(m_engine, &Engine::stateChanged, this, &PipController::onEngineState);
     m_holdTimer.setSingleShot(true);
-    m_holdTimer.setInterval(qEnvironmentVariableIntValue("MOBS_HOLD_MS") ?: 180000);   // tests shorten it
+    m_holdTimer.setInterval(qEnvironmentVariableIntValue("MOBS_HOLD_MS") ?: 300000);   // tests shorten it
     connect(&m_holdTimer, &QTimer::timeout, this, [this] {
         MobsLog::write("pip", "MOBS's window was kept up for a few minutes while going live: hiding it now");
         Notifier::send("MOBS: window hidden", "MOBS stepped out of the picture. SUPER + SHIFT + V stops the stream.");
@@ -357,8 +357,10 @@ void PipController::holdMain() {
     m_held = true;
     emit heldChanged();
     m_holdTimer.start();
-    MobsLog::write("pip", "going live: MOBS's window stays up until you press \"I'm live\" (or a few minutes pass)");
-    Notifier::send("MOBS: now finish in X", "Open Live Studio, press New Livestream, pick your source, choose Public and press Go Live. Then press I'M LIVE in MOBS.");
+    MobsLog::write("pip", "going live: MOBS's window stays up while it goes live in X (until the livestream exists, or a few minutes pass)");
+    // With the go-live helper (the default) MOBS does the steps in Live Studio itself, in the box of its own window; without it they are the person's.
+    if (qEnvironmentVariable("MOBS_NO_PILOT") != "1") Notifier::send("MOBS: going live for you", "MOBS types the title in X's Live Studio, waits until X sees your video and presses Go Live. Nothing for you to press. This window leaves the picture by itself.");
+    else Notifier::send("MOBS: now finish in X", "Open Live Studio, press New Livestream, type a title, pick your source, choose Public and press Go Live. Then press I'M LIVE in MOBS.");
 }
 
 void PipController::releaseHold() {

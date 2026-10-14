@@ -42,20 +42,25 @@ Item {
                 width: parent.width; wrapMode: Text.WordWrap; font.pixelSize: 14; color: Omarchy.secondaryText
                 text: "That is you on the left. Click your camera, then press the button. MOBS keeps it until you change it."
             }
-            ListView {
-                id: list
-                objectName: "setupCameraList"
-                width: parent.width; height: Math.min(Math.max(1, count) * 38, 114); clip: true
-                model: App.cameras; spacing: 4
-                delegate: Rectangle {
-                    required property var modelData
-                    width: list.width; height: 34; radius: 17
-                    color: App.camera === modelData.path ? Omarchy.accent : "transparent"
-                    border.color: App.camera === modelData.path ? Omarchy.accent : Omarchy.selection
-                    Txt { anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 } elide: Text.ElideRight; font.pixelSize: 13; text: modelData.name; color: App.camera === modelData.path ? Omarchy.accentForeground : Omarchy.foreground }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: App.setCamera(modelData.path) }
+            Item {   // the list and its scroll bar: a list cut off after a few rows must say there are more
+                width: parent.width; height: list.height
+                ListView {
+                    id: list
+                    objectName: "setupCameraList"
+                    width: parent.width; height: Math.min(Math.max(1, count) * 38 - 4, Math.max(114, root.height - 215)); clip: true
+                    model: App.cameras; spacing: 4
+                    readonly property bool allShown: contentHeight <= height + 1   // every row is in view (else the bar beside the list says there are more)
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: list.width - (bar.needed ? 10 : 0); height: 34; radius: 17
+                        color: App.camera === modelData.path ? Omarchy.accent : "transparent"
+                        border.color: App.camera === modelData.path ? Omarchy.accent : Omarchy.selection
+                        Txt { anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 } elide: Text.ElideRight; font.pixelSize: 13; text: modelData.name; color: App.camera === modelData.path ? Omarchy.accentForeground : Omarchy.foreground }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: App.setCamera(modelData.path) }
+                    }
                 }
+                ListBar { id: bar; view: list }
             }
             Row {
                 spacing: 10

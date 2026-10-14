@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Live Studio | X Studio (a stand-in page for tests)</title>
+<style>
+  body { background:#000; color:#eee; font-family:sans-serif; margin:12px }
+  button { background:#222; color:#eee; border:1px solid #555; border-radius:16px; padding:6px 12px; margin:2px }
+  button:disabled { opacity:.45 }
+  #dlg { position:fixed; left:40px; top:40px; width:620px; background:#151515; border:1px solid #444; border-radius:14px; padding:14px }
+  input { background:#111; color:#eee; border:1px solid #555; border-radius:6px; padding:8px; width:360px }
+  [role=option] { padding:6px 10px; border:1px solid #444; margin:2px; width:300px; cursor:pointer }
+  [role=radio] { display:inline-block; width:20px; height:20px; border:2px solid #888; border-radius:50%; margin:4px }
+  [role=radio][aria-checked=true] { background:#fff }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px }
+  #reason { color:#999; font-size:12px; margin-left:10px }
+</style></head>
+<body>
+<!-- A stand-in for X Live Studio with the same structure as the real page (read on 2026-10-13): the same words, roles and labels. Tests only: no network, no account.
+     Behaviour by address: ?on=MS the source starts receiving after MS ms (default 2500), ?never=1 it never does, ?prefill=TEXT the title starts filled, ?private=1 the form starts on Private,
+     ?two=1 two sources (Gus off, MOBS on), ?fail=1 Go Live answers with an error, ?slow=MS the page takes MS ms to draw its buttons, ?login=MS a sign-in page for MS ms first. -->
+<div id="login" style="display:none"><h2>Sign in to X</h2><input name="password" type="password" autocomplete="current-password" placeholder="Password"><button type="button">Log in</button></div>
+<div id="app" style="display:none">
+  <nav><a href="#/live">Livestreams</a> <a href="#/sources">Sources</a></nav>
+  <h2>Live Studio</h2>
+  <button type="button" aria-label="General Settings">General Settings</button>
+  <button type="button" aria-label="Manage Sources">Manage Sources</button>
+  <button type="button" id="new">New Livestream</button>
+  <p id="empty">No livestreams yet. Click New Livestream to start streaming.</p>
+</div>
+<div id="dlg" role="dialog" aria-label="Create Livestream" style="display:none">
+  <button type="button" aria-label="Close">X</button> <b>Create Livestream</b>
+  <div>
+    <button type="button" role="tab" aria-selected="true">Details</button>
+    <button type="button" role="tab" aria-selected="false">Thumbnail</button>
+    <button type="button" role="tab" aria-selected="false">Audience</button>
+    <button type="button" role="tab" aria-selected="false">Post</button>
+  </div>
+  <div><button type="button">Now</button><button type="button">Later</button></div>
+  <div id="p-details">
+    <p><label for="broadcast-title">Title</label><br><small>Choose a title for your livestream.</small><br>
+    <input id="broadcast-title" autocomplete="off" placeholder="Enter a title..."></p>
+    <p>Source<br><small>Choose your media source.</small></p>
+    <button type="button" role="combobox" aria-label="Source"><span class="dot" id="srcdot"></span><span id="srcname">Gus</span></button>
+    <div id="options" style="display:none"></div>
+    <div><button type="button">New source</button><button type="button">RTMP details</button></div>
+  </div>
+  <div id="p-audience" style="display:none">
+    <p>Visibility</p>
+    <div role="radiogroup" aria-label="Visibility"><span role="radio" aria-label="Public" aria-checked="true"></span> Public <span role="radio" aria-label="Private" aria-checked="false"></span> Private</div>
+  </div>
+  <div id="p-thumbnail" style="display:none"><p>Thumbnail</p></div>
+  <div id="p-post" style="display:none"><p>Post</p><textarea aria-label="Post text" placeholder="What’s happening?"></textarea></div>
+  <p><button type="button">Next</button><button type="button" id="go" disabled>Go Live</button><span id="reason"></span></p>
+</div>
+<div id="toast" role="alert" style="display:none; position:fixed; bottom:10px; left:10px; background:#400; padding:8px"></div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var sources = q.get('two') ? [{ name: 'Gus', on: false }, { name: 'MOBS', on: false }] : [{ name: 'Gus', on: false }];
+  var chosen = q.get('two') ? 0 : 0;                       // X preselects the first one (here the one that is off, so that choosing matters)
+  var started = Date.now(), onAfter = parseInt(q.get('on') || '2500', 10), never = !!q.get('never');
+  function $(id) { return document.getElementById(id) }
+  function state() { sources.forEach(function (s, i) { s.on = !never && (!q.get('two') || s.name === 'MOBS') && (Date.now() - started > onAfter) }) }
+  function update() {
+    state();
+    var title = $('broadcast-title').value.trim(), src = sources[chosen], reason = '';
+    if (!title) reason = 'Add a title to go live.'; else if (!src) reason = 'Select a source to go live.'; else if (!src.on) reason = 'Your source must be on to go live.';
+    $('go').disabled = reason !== ''; $('reason').textContent = reason;
+    $('srcname').textContent = src.name; $('srcdot').style.background = src.on ? 'rgb(16, 185, 129)' : 'rgba(255,255,255,0.18)';
+    $('new').disabled = $('dlg').style.display !== 'none';
+  }
+  function tab(name) {
+    ['details', 'thumbnail', 'audience', 'post'].forEach(function (n) { $('p-' + n).style.display = n === name ? 'block' : 'none' });
+    Array.prototype.forEach.call(document.querySelectorAll('[role=tab]'), function (t) { t.setAttribute('aria-selected', t.textContent.toLowerCase() === name ? 'true' : 'false') });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[role=tab]'), function (t) { t.addEventListener('click', function () { tab(t.textContent.toLowerCase()) }) });
+  Array.prototype.forEach.call(document.querySelectorAll('[role=radio]'), function (r) { r.addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('[role=radio]'), function (o) { o.setAttribute('aria-checked', o === r ? 'true' : 'false') }) }) });
+  if (q.get('private')) { var rs = document.querySelectorAll('[role=radio]'); rs[0].setAttribute('aria-checked', 'false'); rs[1].setAttribute('aria-checked', 'true') }
+  $('broadcast-title').value = q.get('prefill') || '';
+  $('broadcast-title').addEventListener('input', update);
+  $('new').addEventListener('click', function () { $('dlg').style.display = 'block'; tab('details'); update() });
+  document.querySelector('[aria-label=Close]').addEventListener('click', function () { $('dlg').style.display = 'none'; update() });
+  document.querySelector('[role=combobox]').addEventListener('click', function () {
+    var o = $('options'); o.innerHTML = '';
+    sources.forEach(function (s, i) { var d = document.createElement('div'); d.setAttribute('role', 'option'); d.textContent = s.name;
+      d.addEventListener('click', function () { chosen = i; o.style.display = 'none'; update() }); o.appendChild(d) });
+    o.style.display = o.style.display === 'none' ? 'block' : 'none';
+  });
+  $('go').addEventListener('click', function () {
+    if ($('go').disabled) return;
+    if (q.get('fail')) { $('toast').textContent = 'Error creating livestream'; $('toast').style.display = 'block'; return }
+    $('dlg').style.display = 'none';
+    location.hash = '#/live/1PJqrNmYLjYxb';               // Live Studio moves to the new livestream's page: /live/<id>
+  });
+  setInterval(update, 300);
+  var slow = parseInt(q.get('slow') || '0', 10), login = parseInt(q.get('login') || '0', 10);
+  setTimeout(function () { if (login) { $('login').style.display = 'block'; setTimeout(function () { $('login').style.display = 'none'; $('app').style.display = 'block' }, login) } else $('app').style.display = 'block' }, slow);
+</script>
+</body>
+</html>

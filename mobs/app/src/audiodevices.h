@@ -27,6 +27,7 @@ public:
     // "System default microphone" is not a device: it follows whatever becomes the default later (a headset plugged in). A microphone the person LOCKS IN has to be a
     // particular one, so locking resolves "default" to the source the system uses right now. Anything else, or a default that is not a listed microphone, comes back as it was.
     Q_INVOKABLE QString resolveDefault(const QString &id) const;
+    Q_INVOKABLE QString defaultMicName() const;   // the name of the microphone the system uses right now, "" when that cannot be told
     Q_INVOKABLE void refresh();
 signals:
     void changed();

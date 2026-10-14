@@ -214,6 +214,33 @@ private slots:
         c2.setSourceName(QString(80, 'x')); QCOMPARE(c2.sourceName().size(), 40);                       // a name, not an essay
         c2.setSourceName(""); QVERIFY(c2.sourceName().isEmpty());
     }
+    void theTitleOfTheLivestreamIsKeptCleanedAndNeverEmptyForX() {
+        // X's form keeps Go Live grey until it has a title, so MOBS always has one to type: the person's own, or the default.
+        QTemporaryDir d; const QString path = d.path() + "/title.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QVERIFY(c.liveTitle().isEmpty());
+          QCOMPARE(c.liveTitleForX(), Settings::defaultLiveTitle());                   // nothing typed: the default is what goes to X
+          QVERIFY(!Settings::defaultLiveTitle().trimmed().isEmpty());
+          c.setLiveTitle("  Late   night\tcoding  "); QCOMPARE(c.liveTitle(), QString("Late night coding")); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2);
+        QCOMPARE(c2.liveTitle(), QString("Late night coding"));                         // kept for the next start
+        QCOMPARE(c2.liveTitleForX(), QString("Late night coding"));
+        c2.setLiveTitle("<b>Hello</b>\n"); QVERIFY(!c2.liveTitle().contains('<')); QVERIFY(!c2.liveTitle().contains('>')); QVERIFY(!c2.liveTitle().contains('\n'));
+        c2.setLiveTitle(QString(300, 'x')); QCOMPARE(c2.liveTitle().size(), 100);        // a title, not an essay
+        c2.setLiveTitle("   "); QVERIFY(c2.liveTitle().isEmpty()); QCOMPARE(c2.liveTitleForX(), Settings::defaultLiveTitle());   // blank is not a title
+        QSignalSpy changed(&c2, &Settings::changed);
+        c2.setLiveTitle("");  QCOMPARE(changed.count(), 0);                             // no change, no signal
+        c2.setLiveTitle("Show"); QCOMPARE(changed.count(), 1);
+    }
+    void whoCanWatchIsEveryoneUntilTheyChooseOtherwiseAndIsKept() {
+        QTemporaryDir d; const QString path = d.path() + "/public.ini";
+        { QSettings s(path, QSettings::IniFormat); Settings c(&s);
+          QVERIFY(c.livePublic());                                                       // X's own default: everyone
+          c.setLivePublic(false); QVERIFY(!c.livePublic()); }
+        QSettings s2(path, QSettings::IniFormat); Settings c2(&s2);
+        QVERIFY(!c2.livePublic());                                                       // a test run for me only stays that way until it is changed
+        c2.setLivePublic(true); QVERIFY(c2.livePublic());
+    }
     void aStreamKeyFromTheClipboardIsSavedOnlyWhenItLooksLikeOne() {
         if (QGuiApplication::platformName() != "offscreen") QSKIP("this test writes to the clipboard: only on the offscreen platform, never on a real desktop");
         QTemporaryDir d; QSettings s(d.path() + "/key.ini", QSettings::IniFormat);
